@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DOK Scanner rule set DSL",
+  "type": "object",
+  "required": ["rule_set_id", "version", "rules"],
+  "properties": {
+    "rule_set_id": {"type": "string"},
+    "version": {"type": "integer", "minimum": 1},
+    "parent_version": {"type": "integer"},
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "condition", "actions"],
+        "properties": {
+          "id": {"type": "string"},
+          "name": {"type": "string"},
+          "condition": {"$ref": "#/$defs/condition"},
+          "actions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["type"],
+              "properties": {
+                "type": {
+                  "enum": ["set_folder", "set_filename", "set_validation_status",
+                           "add_flag", "set_metadata_field", "trigger_delivery",
+                           "skip_stage"]
+                },
+                "value": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "condition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["operator", "checks"],
+          "properties": {
+            "operator": {"enum": ["AND", "OR", "NOT"]},
+            "checks": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"$ref": "#/$defs/condition"}
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["field", "op"],
+          "properties": {
+            "field": {"type": "string"},
+            "op": {
+              "enum": ["eq", "neq", "contains", "not_contains", "is_empty",
+                       "is_not_empty", "gt", "lt", "gte", "lte", "matches_regex"]
+            },
+            "value": {}
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}
