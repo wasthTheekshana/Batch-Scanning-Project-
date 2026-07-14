@@ -47,6 +47,9 @@ class QCReviewPanel(QWidget):
         right_layout.addLayout(views)
 
         self.score_label = QLabel("")
+        # word wrap keeps long QC detail from inflating the window's
+        # minimum width beyond the screen (QLabel min width = text width)
+        self.score_label.setWordWrap(True)
         right_layout.addWidget(self.score_label)
 
         buttons = QHBoxLayout()
@@ -84,11 +87,31 @@ class QCReviewPanel(QWidget):
         doc = self.db.get_document(current.data(Qt.ItemDataRole.UserRole))
         if doc is None:
             return
-        self.score_label.setText(
-            f"QC score: {doc['qc_score']} — detail: "
-            f"{json.dumps(json.loads(doc['qc_detail'] or '{}'))[:400]}")
+        self.score_label.setText(self._summarise_qc(doc))
         if doc["storage_path"]:
             self.after_view.set_image(doc["storage_path"])
+
+    @staticmethod
+    def _summarise_qc(doc) -> str:
+        """Compact human-readable stage summary, e.g.
+        'QC score: 70 — page 3: advanced −20 [blur_warn]'."""
+        try:
+            detail = json.loads(doc["qc_detail"] or "{}")
+        except json.JSONDecodeError:
+            detail = {}
+        parts = []
+        for page_no, stages in detail.get("pages", {}).items():
+            for stage, info in stages.items():
+                if not isinstance(info, dict):
+                    continue
+                deduction = info.get("deduction", 0)
+                if deduction:
+                    parts.append(f"page {page_no}: {stage} −{deduction}")
+            flags = stages.get("flags") if isinstance(stages, dict) else None
+            if flags:
+                parts.append(f"page {page_no} flags: {', '.join(flags)}")
+        summary = "; ".join(parts) if parts else "no deductions recorded"
+        return f"QC score: {doc['qc_score']} — {summary}"
 
     def _action(self, action: str) -> None:
         doc_id = self.current_document_id()

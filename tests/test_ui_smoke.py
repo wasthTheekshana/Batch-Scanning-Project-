@@ -86,6 +86,29 @@ def test_qc_review_lists_pending_documents(qtbot, db):
     assert panel.queue.count() == 0
 
 
+def test_qc_detail_does_not_inflate_minimum_width(qtbot, db):
+    """Regression: long qc_detail text forced a 2253px minimum window
+    width (wider than a 1920px screen)."""
+    user = login_as(db, "qc_officer")
+    db.insert_project("p1", "P", {})
+    db.insert_batch("b1", "p1", "op")
+    long_detail = {"pages": {"1": {
+        "advanced": {"deduction": 20, "laplacian_variance": 12.3,
+                     "background_std": 4.2, "extra": "x" * 300},
+        "color": {"deduction": 10, "michelson_contrast": 0.21},
+        "flags": ["blur_warn", "low_contrast"]}}}
+    db.insert_document("d1", "b1", "p1", validation_status="pending_qc",
+                       qc_score=70, page_range="1-1", qc_detail=long_detail)
+    panel = QCReviewPanel(db, None, user)
+    qtbot.addWidget(panel)
+    panel.refresh()
+    panel.queue.setCurrentRow(0)
+    assert "QC score: 70" in panel.score_label.text()
+    assert "advanced −20" in panel.score_label.text()
+    assert panel.score_label.wordWrap()
+    assert panel.minimumSizeHint().width() < 1200
+
+
 def test_qc_buttons_disabled_for_viewer_role(qtbot, db):
     user = login_as(db, "viewer")
     panel = QCReviewPanel(db, None, user)
