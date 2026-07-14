@@ -10,7 +10,8 @@ import uuid
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (QComboBox, QFileDialog, QLabel, QListWidget,
-                             QPushButton, QVBoxLayout, QWizard, QWizardPage)
+                             QMessageBox, QPushButton, QVBoxLayout, QWizard,
+                             QWizardPage)
 
 from core.models import ScanJob
 from scanning.file_import import import_files
@@ -98,10 +99,21 @@ class ScanWizard(QWizard):
     def accept(self) -> None:
         project_id = self.project_page.selected_project_id()
         files = self.source_page.selected_files()
-        if project_id and files:
-            batch_id = str(uuid.uuid4())
-            jobs: list[ScanJob] = import_files(
-                files, batch_id, project_id, self.staging_dir)
-            if jobs:
-                self.batch_ready.emit(batch_id, jobs)
+        if not project_id or not files:
+            QMessageBox.warning(
+                self, "Nothing to scan",
+                "Select a project and add at least one file before starting.")
+            return  # keep the wizard open
+        batch_id = str(uuid.uuid4())
+        jobs: list[ScanJob] = import_files(
+            files, batch_id, project_id, self.staging_dir)
+        if not jobs:
+            QMessageBox.critical(
+                self, "Import failed",
+                "No pages could be imported from the selected files.\n\n"
+                "Check the Job Monitor log — common causes: unsupported "
+                "file type, or PDF support (PyMuPDF) missing from this "
+                "installation.")
+            return  # keep the wizard open so the operator can retry
+        self.batch_ready.emit(batch_id, jobs)
         super().accept()

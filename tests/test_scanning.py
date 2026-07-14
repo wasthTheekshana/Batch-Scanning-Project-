@@ -32,6 +32,23 @@ def test_import_explodes_multipage_tiff(tmp_path):
     assert [j.page_no for j in jobs] == [1, 2, 3]
 
 
+def test_import_explodes_pdf(tmp_path):
+    pytest.importorskip("fitz", reason="PyMuPDF not installed")
+    import img2pdf
+    pages = []
+    for i in range(2):
+        p = tmp_path / f"src{i}.png"
+        cv2.imwrite(str(p), make_text_page())
+        pages.append(str(p))
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(img2pdf.convert(pages))
+    jobs = import_files([pdf], "b1", "proj", tmp_path / "staging")
+    assert len(jobs) == 2
+    assert all(j.image_path.endswith(".png") for j in jobs)
+    img = cv2.imread(jobs[0].image_path)
+    assert img is not None and img.shape[0] > 100
+
+
 def test_import_skips_unsupported(tmp_path):
     bad = tmp_path / "notes.txt"
     bad.write_text("hello")
