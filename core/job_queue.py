@@ -15,6 +15,7 @@ recover() re-queues anything unfinished (HLD §14.2).
 """
 from __future__ import annotations
 
+import json
 import logging
 import queue
 import threading
@@ -245,6 +246,12 @@ class Pipeline:
                 record.qc_score = verdict.score
                 record.qc_grade = verdict.grade
                 record.qc_detail = {**verdict.detail, "flags": verdict.flags}
+            # image paths ride along so the QC review UI can show
+            # before/after and re-export after operator approval
+            record.qc_detail = {**record.qc_detail,
+                                "original_path": record.job.image_path,
+                                "working_path": record.working_path,
+                                "ocr_text": record.ocr_text}
             self.db.mark_job(record.job.job_id, "complete")
             self._emit("qc", "done", job_id=record.job.job_id,
                        batch_id=record.job.batch_id, grade=record.qc_grade,
@@ -336,7 +343,12 @@ class Pipeline:
 
             export_cfg = self.profile.get("export", {})
             with self._lock:
-                state = self._batches[document["batch_id"]]
+                # setdefault: batch state may be gone after a restart
+                # (e.g. review-approved documents from an old session)
+                state = self._batches.setdefault(
+                    document["batch_id"],
+                    {"expected": 0, "pages": [], "counter": 0,
+                     "operator": "review"})
                 state["counter"] += 1
                 counter = state["counter"]
             ctx = {"batch_id": document["batch_id"],
@@ -386,6 +398,44 @@ class Pipeline:
                        delivery_status=delivered_status or "pending")
             self._maybe_complete_batch(document["batch_id"])
         self._pump(self.delivery_q, "delivery", handle)
+
+    def resubmit_document(self, document_id: str) -> bool:
+        """Push an operator-approved review document into the delivery
+        stage (QC review 'Accept → export'). Page images come from the
+        paths recorded in qc_detail during QC. Returns False when the
+        document is unknown or predates path recording."""
+        row = self.db.get_document(document_id)
+        if row is None:
+            return False
+        detail = json.loads(row["qc_detail"] or "{}")
+        pages = detail.get("pages", {})
+        records = []
+        for page_no in sorted(pages, key=int):
+            info = pages[page_no]
+            working = info.get("working_path")
+            if not working or not Path(working).exists():
+                continue
+            job = ScanJob(batch_id=row["batch_id"],
+                          project_id=row["project_id"],
+                          page_no=int(page_no),
+                          image_path=info.get("original_path", working))
+            records.append(PageRecord(job=job, working_path=working,
+                                      ocr_text=info.get("ocr_text", "")))
+        if not records:
+            log.warning("cannot re-export %s: page images unavailable",
+                        document_id)
+            return False
+        fields = json.loads(row["extracted_fields"] or "{}")
+        document = {
+            "document_id": document_id,
+            "batch_id": row["batch_id"],
+            "barcode": fields.get("barcode"),
+            "qc_score": row["qc_score"],
+            "validation_status": "auto_approved",  # operator approved
+            "extracted_fields": fields,
+        }
+        self.delivery_q.put({"document": document, "records": records})
+        return True
 
     def _deliver_with_retry(self, channel, doc_path: str, metadata: dict):
         """Retry hard failures up to delivery_attempts; a queued result

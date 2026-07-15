@@ -15,11 +15,12 @@ from ui.image_viewer import ImageView
 class QCReviewPanel(QWidget):
     document_actioned = pyqtSignal(str, str)  # document_id, action
 
-    def __init__(self, db, audit, current_user, parent=None):
+    def __init__(self, db, audit, current_user, pipeline=None, parent=None):
         super().__init__(parent)
         self.db = db
         self.audit = audit
         self.current_user = current_user
+        self.pipeline = pipeline
 
         layout = QHBoxLayout(self)
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -66,6 +67,7 @@ class QCReviewPanel(QWidget):
         right_layout.addLayout(buttons)
         splitter.addWidget(right)
         splitter.setSizes([250, 750])
+        self.refresh()  # show documents held in previous sessions too
 
     # -- data ----------------------------------------------------------------
     def refresh(self) -> None:
@@ -88,8 +90,26 @@ class QCReviewPanel(QWidget):
         if doc is None:
             return
         self.score_label.setText(self._summarise_qc(doc))
-        if doc["storage_path"]:
-            self.after_view.set_image(doc["storage_path"])
+        original, working = self._first_page_paths(doc)
+        if original:
+            self.before_view.set_image(original)
+        if working:
+            self.after_view.set_image(working)
+
+    @staticmethod
+    def _first_page_paths(doc) -> tuple[str | None, str | None]:
+        """(original_path, working_path) of the document's first page,
+        recorded in qc_detail by the QC worker."""
+        try:
+            pages = json.loads(doc["qc_detail"] or "{}").get("pages", {})
+        except json.JSONDecodeError:
+            return None, None
+        for page_no in sorted(pages, key=lambda k: int(k) if str(k).isdigit() else 0):
+            info = pages[page_no]
+            if isinstance(info, dict) and (info.get("original_path")
+                                           or info.get("working_path")):
+                return info.get("original_path"), info.get("working_path")
+        return None, None
 
     @staticmethod
     def _summarise_qc(doc) -> str:
@@ -124,5 +144,11 @@ class QCReviewPanel(QWidget):
         if self.audit:
             self.audit.log("qc_review", user, document_id=doc_id,
                            decision=action)
+        if action == "accept" and self.pipeline is not None:
+            # push the approved document through export + delivery
+            if not self.pipeline.resubmit_document(doc_id):
+                self.score_label.setText(
+                    "Accepted, but page images are no longer available — "
+                    "export skipped (see log).")
         self.document_actioned.emit(doc_id, action)
         self.refresh()

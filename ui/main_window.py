@@ -46,8 +46,10 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(scan_tab, "Scan")
 
         # QC review tab
-        self.qc_panel = QCReviewPanel(db, audit, user)
+        self.qc_panel = QCReviewPanel(db, audit, user, pipeline=pipeline)
         self.tabs.addTab(self.qc_panel, "QC Review")
+        # always show current queue when the operator opens the tab
+        self.tabs.currentChanged.connect(self._on_tab_changed)
 
         # Index tab (zones from the first active project, if any)
         zones = []
@@ -79,6 +81,10 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"Logged in as {user.username} ({user.role})" if user else
             "Not logged in")
+
+    def _on_tab_changed(self, index: int) -> None:
+        if self.tabs.widget(index) is self.qc_panel:
+            self.qc_panel.refresh()
 
     def open_scan_wizard(self) -> None:
         projects = []
