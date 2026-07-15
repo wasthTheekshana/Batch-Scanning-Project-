@@ -3,14 +3,54 @@
 Complete schema (HLD §9) created on first run — all Phase 1/2/3 columns
 present from day one so no migrations are ever needed. WAL journal mode,
 foreign keys on, audit_log strictly append-only (no update/delete helpers).
+
+Phase 2: pass `key=` to encrypt with SQLCipher (AES-256). A plaintext
+Phase 1 database is migrated once with migrate_to_encrypted().
 """
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
+
+log = logging.getLogger(__name__)
+
+try:
+    from sqlcipher3 import dbapi2 as _sqlcipher
+except ImportError:
+    _sqlcipher = None
+
+
+def _key_pragma_value(key: bytes) -> str:
+    return f"\"x'{key.hex()}'\""
+
+
+def is_encrypted(path: str | Path) -> bool:
+    """A plaintext SQLite file starts with the magic header; an
+    SQLCipher file starts with its random salt."""
+    p = Path(path)
+    if not p.exists() or p.stat().st_size < 16:
+        return False
+    return p.read_bytes()[:16] != b"SQLite format 3\x00"
+
+
+def migrate_to_encrypted(plain_path: str | Path, enc_path: str | Path,
+                         key: bytes) -> None:
+    """One-time Phase 1 → Phase 2 migration via sqlcipher_export."""
+    if _sqlcipher is None:
+        raise RuntimeError("sqlcipher3 not installed — cannot encrypt")
+    conn = _sqlcipher.connect(str(plain_path))
+    try:
+        conn.execute(
+            f"ATTACH DATABASE '{Path(enc_path).as_posix()}' AS encrypted "
+            f"KEY {_key_pragma_value(key)}")
+        conn.execute("SELECT sqlcipher_export('encrypted')")
+        conn.execute("DETACH DATABASE encrypted")
+    finally:
+        conn.close()
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
@@ -104,11 +144,23 @@ class Database:
     """Thread-safe SQLite wrapper. One connection guarded by a lock —
     fine at pipeline throughput; every write is a single short transaction."""
 
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, key: bytes | None = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(str(self.path), check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
+        self.encrypted = False
+        if key is not None and _sqlcipher is not None:
+            self.conn = _sqlcipher.connect(str(self.path),
+                                           check_same_thread=False)
+            self.conn.execute(f"PRAGMA key = {_key_pragma_value(key)}")
+            self.conn.row_factory = _sqlcipher.Row
+            self.encrypted = True
+        else:
+            if key is not None:
+                log.warning("sqlcipher3 not installed — falling back to "
+                            "UNENCRYPTED database")
+            self.conn = sqlite3.connect(str(self.path),
+                                        check_same_thread=False)
+            self.conn.row_factory = sqlite3.Row
         self._lock = threading.RLock()
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
@@ -243,6 +295,28 @@ class Database:
         with self._lock:
             return self.conn.execute(
                 "SELECT * FROM users WHERE username=?", (username,)).fetchone()
+
+    def set_password_hash(self, username: str, password_hash: str) -> None:
+        with self._lock, self.conn:
+            self.conn.execute(
+                "UPDATE users SET password_hash=? WHERE username=?",
+                (password_hash, username))
+
+    def set_user_active(self, username: str, active: bool) -> None:
+        with self._lock, self.conn:
+            self.conn.execute(
+                "UPDATE users SET active=? WHERE username=?",
+                (1 if active else 0, username))
+
+    def set_user_role(self, username: str, role: str) -> None:
+        with self._lock, self.conn:
+            self.conn.execute(
+                "UPDATE users SET role=? WHERE username=?", (role, username))
+
+    def list_users(self) -> list[sqlite3.Row]:
+        with self._lock:
+            return self.conn.execute(
+                "SELECT * FROM users ORDER BY username").fetchall()
 
     def touch_login(self, username: str) -> None:
         with self._lock, self.conn:
