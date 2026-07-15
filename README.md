@@ -35,6 +35,28 @@ Tesseract 5 must be on PATH for OCR features (bundled in the packaged EXE).
 | `delivery/` | local folder channel + SFTP/CD-DVD stubs (Phase 3) |
 | `ui/` | PyQt6 panels: scan wizard, viewer, QC review, index editor, job monitor |
 
+## Phase status
+
+- **Phase 1 (core)** — complete: pipeline, 5-stage QC, OCR, export, local delivery, UI.
+- **Phase 2 (enhanced)** — complete: bcrypt auth, DPAPI keystore, SQLCipher
+  encrypted DB (auto-migrates a plaintext Phase 1 DB on startup), encrypted
+  scheduled backups with restore, admin panel, workflow designer, vendor SDK
+  scaffolding (drop vendor DLLs into `vendor_sdks/`).
+- **Phase 3 (new modules)** — complete: real SFTP delivery (paramiko, LAN
+  only, retry + size verification), CD/DVD burn queue with checksum verify
+  and disc log (configure `burner_cmd` for ImgBurn/cdrecord), multi-channel
+  delivery incl. rule-triggered channels, benchmark suite
+  (`python scripts/benchmark.py --pages 100 [--ocr]`; dev machine:
+  141 pages/min no-OCR, 115 pages/min with OCR).
+
 ## Packaging
 
-PyInstaller one-file build via `docscanner.spec` (see HLD §21).
+PyInstaller one-file build via `docscanner.spec` (see HLD §21):
+
+```powershell
+.\.venv\Scripts\pyinstaller docscanner.spec --noconfirm
+```
+
+For a release build, place `tesseract.exe`, `tessdata/` and
+`libzbar-64.dll` next to the spec first so OCR and barcode decoding work
+on machines without those components installed.
