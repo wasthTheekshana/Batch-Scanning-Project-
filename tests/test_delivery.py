@@ -29,15 +29,15 @@ def test_local_channel_unavailable_without_path():
     assert not LocalFolderChannel({"path": "C:/x"}).is_available()
 
 
-def test_stubs_fail_without_network(tmp_path):
+def test_unconfigured_channels_fail_safely(tmp_path):
     src = tmp_path / "doc.pdf"
     src.write_bytes(b"x")
     for cls in (SFTPChannel, CDDVDChannel):
-        ch = cls({"enabled": True})
+        ch = cls({"enabled": True})  # enabled but not configured
         assert not ch.is_available()
         result = ch.deliver(str(src), {})
         assert not result.success
-        assert "not yet enabled" in result.detail["reason"]
+        assert "error" in result.detail
 
 
 def test_registry_builds_all_three():

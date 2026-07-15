@@ -49,10 +49,16 @@ class Pipeline:
 
     def __init__(self, db, profile: dict, channels: list, export_fn,
                  audit=None, ocr_fn=None, ocr_workers: int = 2,
-                 working_dir: str | Path = "staging"):
+                 working_dir: str | Path = "staging",
+                 trigger_pool: dict | None = None,
+                 delivery_attempts: int = 3):
         self.db = db
         self.profile = profile
         self.channels = channels
+        # channels addressable by the trigger_delivery rule action, even
+        # when not project-enabled (Phase 3 multi-channel delivery)
+        self.trigger_pool = trigger_pool or {c.name: c for c in channels}
+        self.delivery_attempts = delivery_attempts
         self.export_fn = export_fn
         self.audit = audit
         self.ocr_fn = ocr_fn
@@ -348,15 +354,25 @@ class Pipeline:
                 self.audit.log("export", "system", document_id=doc_id,
                                path=str(out_path))
 
+            # multi-channel: project-enabled channels + rule-triggered ones
+            targets = list(self.channels)
+            names = {c.name for c in targets}
+            for trigger in document.get("trigger_channels", []):
+                extra = self.trigger_pool.get(trigger)
+                if extra is not None and extra.name not in names:
+                    targets.append(extra)
+                    names.add(extra.name)
+
             delivered_status = None
             details = {}
-            for channel in self.channels:
-                result = channel.deliver(str(out_path), document)
+            for channel in targets:
+                result = self._deliver_with_retry(channel, str(out_path),
+                                                  document)
                 details[channel.name] = {"success": result.success,
                                          "checksum": result.checksum,
                                          **result.detail}
                 if result.success:
-                    delivered_status = channel.status_value
+                    delivered_status = delivered_status or channel.status_value
                     if self.audit:
                         self.audit.log("deliver", "system",
                                        document_id=doc_id,
@@ -370,6 +386,20 @@ class Pipeline:
                        delivery_status=delivered_status or "pending")
             self._maybe_complete_batch(document["batch_id"])
         self._pump(self.delivery_q, "delivery", handle)
+
+    def _deliver_with_retry(self, channel, doc_path: str, metadata: dict):
+        """Retry hard failures up to delivery_attempts; a queued result
+        (e.g. CD/DVD staged awaiting burn) is not an error and is
+        returned as-is."""
+        result = None
+        for attempt in range(1, self.delivery_attempts + 1):
+            result = channel.deliver(doc_path, metadata)
+            if result.success or result.detail.get("queued"):
+                return result
+            log.warning("delivery via %s failed (attempt %d/%d): %s",
+                        channel.name, attempt, self.delivery_attempts,
+                        result.detail.get("error"))
+        return result
 
     def _maybe_complete_batch(self, batch_id: str) -> None:
         pending = [d for d in self.db.list_documents(batch_id)
