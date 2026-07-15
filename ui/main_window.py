@@ -1,20 +1,22 @@
 """Main window shell — tab bar with role-gated panels (HLD §16, §10.1)."""
 from __future__ import annotations
 
-from PyQt6.QtWidgets import (QLabel, QMainWindow, QPushButton, QTabWidget,
+from PyQt6.QtWidgets import (QMainWindow, QPushButton, QTabWidget,
                              QVBoxLayout, QWidget)
 
 from core.rbac import Session
+from ui.admin_panel import AdminPanel
 from ui.image_viewer import ImageViewer
 from ui.index_editor import IndexEditor
 from ui.job_monitor import JobMonitor
 from ui.qc_review import QCReviewPanel
 from ui.scan_wizard import ScanWizard
+from ui.workflow_designer import WorkflowDesigner
 
 
 class MainWindow(QMainWindow):
     def __init__(self, db, profile_manager, bus, pipeline=None, audit=None,
-                 staging_dir="staging", parent=None):
+                 staging_dir="staging", backup_service=None, parent=None):
         super().__init__(parent)
         self.db = db
         self.profile_manager = profile_manager
@@ -60,14 +62,16 @@ class MainWindow(QMainWindow):
         self.job_monitor = JobMonitor(bus)
         self.tabs.addTab(self.job_monitor, "Job Monitor")
 
-        # Projects tab — admin only (role gate from week 3, HLD §17.5)
+        # Workflow designer — project.edit only (HLD §17.5 role gate)
         if user is not None and user.can("project.edit"):
-            projects_tab = QWidget()
-            pl = QVBoxLayout(projects_tab)
-            pl.addWidget(QLabel(
-                "Project administration (clone/version/rollback via "
-                "ProfileManager; full designer arrives in Phase 2)"))
-            self.tabs.addTab(projects_tab, "Projects")
+            self.designer = WorkflowDesigner(db, profile_manager, user)
+            self.tabs.addTab(self.designer, "Projects")
+
+        # Admin panel — user.manage only (Phase 2)
+        if user is not None and user.can("user.manage"):
+            self.admin_panel = AdminPanel(db, user,
+                                          backup_service=backup_service)
+            self.tabs.addTab(self.admin_panel, "Admin")
 
         bus.qc_ready.connect(lambda _doc_id: self.qc_panel.refresh())
         self.statusBar().showMessage(

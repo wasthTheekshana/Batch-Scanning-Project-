@@ -18,7 +18,9 @@ from core.job_queue import Pipeline
 from core.profile_manager import ProfileManager
 from core.rbac import Session
 from data.audit import AuditLogger
-from data.db import Database
+from data.backup import BackupService
+from data.db import Database, is_encrypted, migrate_to_encrypted
+from data.keystore import KeyStore
 from delivery.registry import active_channels
 from export.batch_exporter import export_document
 from ocr.tesseract_engine import is_available as tesseract_available, ocr_page
@@ -32,6 +34,25 @@ def data_dir() -> Path:
     root = Path(os.environ.get("LOCALAPPDATA", Path.home())) / APP_NAME
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def open_database(root: Path, key: bytes) -> Database:
+    """Open the encrypted database, migrating a Phase 1 plaintext DB
+    in place on first Phase 2 launch (HLD §10.2: encryption at creation;
+    migration path documented for existing installs)."""
+    db_path = root / "dokscanner.db"
+    if db_path.exists() and not is_encrypted(db_path):
+        logging.info("migrating plaintext database to SQLCipher…")
+        enc_path = root / "dokscanner.enc.db"
+        if enc_path.exists():
+            enc_path.unlink()
+        migrate_to_encrypted(db_path, enc_path, key)
+        backup_plain = root / "dokscanner.pre-encryption.bak"
+        db_path.replace(backup_plain)
+        enc_path.replace(db_path)
+        logging.info("migration complete; plaintext backup at %s",
+                     backup_plain)
+    return Database(db_path, key=key)
 
 
 def build_default_project(pm: ProfileManager, db: Database,
@@ -52,9 +73,14 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
     root = data_dir()
-    db = Database(root / "dokscanner.db")
+    key = KeyStore(root / "keys" / "master.bin").get_or_create()
+    db = open_database(root, key)
     audit = AuditLogger(db, root / "logs")
     pm = ProfileManager(root / "projects", db)
+    backup_service = BackupService(
+        db, sources=[root / "projects", root / "delivered"],
+        dest_dir=root / "backups", master_key=key, interval_hours=24)
+    backup_service.start()
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
@@ -82,10 +108,12 @@ def main() -> int:
     pipeline.recover()
 
     window = MainWindow(db, pm, bus, pipeline=pipeline, audit=audit,
-                        staging_dir=root / "staging")
+                        staging_dir=root / "staging",
+                        backup_service=backup_service)
     window.show()
     code = app.exec()
 
+    backup_service.stop()
     pipeline.shutdown(wait=False)
     Session.logout(db)
     audit.close()
