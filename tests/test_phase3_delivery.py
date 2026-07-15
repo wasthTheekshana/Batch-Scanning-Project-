@@ -228,7 +228,8 @@ def test_cddvd_rejects_malicious_label(tmp_path, doc):
     metacharacters must be rejected (command/argument injection)."""
     ch, disc = make_channel(tmp_path)
     ch.deliver(str(doc), {})
-    for bad in ('X" /EJECT "y', "a;del *", "a b", "x&calc", "", "L" * 33):
+    # note: empty label is allowed — it falls back to the timestamp default
+    for bad in ('X" /EJECT "y', "a;del *", "a b", "x&calc", "L" * 33):
         result = ch.burn(label=bad)
         assert not result.success
         assert "invalid disc label" in result.detail["error"]
