@@ -265,6 +265,32 @@ class WorkflowDesigner(QWidget):
         e_layout.addRow("Delivery folder", self.delivery_path)
         layout.addWidget(exp_box)
 
+        # SFTP delivery (Phase 3)
+        sftp_box = QGroupBox("SFTP delivery (LAN)")
+        sftp_layout = QFormLayout(sftp_box)
+        self.sftp_host = QLineEdit()
+        self.sftp_port = QSpinBox()
+        self.sftp_port.setRange(1, 65535)
+        self.sftp_port.setValue(22)
+        self.sftp_user = QLineEdit()
+        self.sftp_password = QLineEdit()
+        self.sftp_password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.sftp_key_file = QLineEdit()
+        self.sftp_remote_path = QLineEdit()
+        for w in (self.sftp_host, self.sftp_port, self.sftp_user,
+                  self.sftp_password, self.sftp_key_file,
+                  self.sftp_remote_path):
+            w.setEnabled(self.can_edit)
+        sftp_layout.addRow("Host", self.sftp_host)
+        sftp_layout.addRow("Port", self.sftp_port)
+        sftp_layout.addRow("Username", self.sftp_user)
+        sftp_layout.addRow("Password", self.sftp_password)
+        sftp_layout.addRow("Key file (optional)", self.sftp_key_file)
+        sftp_layout.addRow("Remote path", self.sftp_remote_path)
+        sftp_layout.addRow(QLabel(
+            "Enable via the 'sftp' feature toggle above."))
+        layout.addWidget(sftp_box)
+
         # rules
         rule_box = QGroupBox("Rules (IF / THEN)")
         r_layout = QVBoxLayout(rule_box)
@@ -330,6 +356,13 @@ class WorkflowDesigner(QWidget):
         self.output_path.setText(cfg["export"]["output_path"])
         self.delivery_path.setText(
             cfg["delivery"]["local_folder"].get("path", ""))
+        sftp = cfg["delivery"].get("sftp", {})
+        self.sftp_host.setText(sftp.get("host", ""))
+        self.sftp_port.setValue(int(sftp.get("port", 22)))
+        self.sftp_user.setText(sftp.get("username", ""))
+        self.sftp_password.setText(sftp.get("password", ""))
+        self.sftp_key_file.setText(sftp.get("key_file", ""))
+        self.sftp_remote_path.setText(sftp.get("remote_path", ""))
         self._refresh_rules()
 
     def _refresh_rules(self) -> None:
@@ -364,6 +397,14 @@ class WorkflowDesigner(QWidget):
         # sync shorthand toggles to delivery blocks (HLD Appendix B)
         cfg["delivery"]["sftp"]["enabled"] = cfg["features"]["sftp"]
         cfg["delivery"]["cd_dvd"]["enabled"] = cfg["features"]["cd_burn"]
+        cfg["delivery"]["sftp"].update({
+            "host": self.sftp_host.text().strip(),
+            "port": self.sftp_port.value(),
+            "username": self.sftp_user.text().strip(),
+            "password": self.sftp_password.text(),
+            "key_file": self.sftp_key_file.text().strip(),
+            "remote_path": self.sftp_remote_path.text().strip(),
+        })
         cfg["rules"]["rules"] = [
             self.rule_list.item(i).data(Qt.ItemDataRole.UserRole)
             for i in range(self.rule_list.count())]

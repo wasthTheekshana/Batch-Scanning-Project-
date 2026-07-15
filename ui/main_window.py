@@ -16,7 +16,8 @@ from ui.workflow_designer import WorkflowDesigner
 
 class MainWindow(QMainWindow):
     def __init__(self, db, profile_manager, bus, pipeline=None, audit=None,
-                 staging_dir="staging", backup_service=None, parent=None):
+                 staging_dir="staging", backup_service=None,
+                 cddvd_channel=None, parent=None):
         super().__init__(parent)
         self.db = db
         self.profile_manager = profile_manager
@@ -70,7 +71,8 @@ class MainWindow(QMainWindow):
         # Admin panel — user.manage only (Phase 2)
         if user is not None and user.can("user.manage"):
             self.admin_panel = AdminPanel(db, user,
-                                          backup_service=backup_service)
+                                          backup_service=backup_service,
+                                          cddvd_channel=cddvd_channel)
             self.tabs.addTab(self.admin_panel, "Admin")
 
         bus.qc_ready.connect(lambda _doc_id: self.qc_panel.refresh())

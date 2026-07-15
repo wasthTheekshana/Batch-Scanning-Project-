@@ -95,9 +95,11 @@ def main() -> int:
     if ocr_fn is None:
         logging.warning("Tesseract not found — OCR disabled this session")
 
+    channels = active_channels(profile.get("delivery", {}))
+    cddvd_channel = next((c for c in channels if c.name == "cd_dvd"), None)
     pipeline = Pipeline(
         db, profile,
-        channels=active_channels(profile.get("delivery", {})),
+        channels=channels,
         export_fn=export_document,
         audit=audit,
         ocr_fn=ocr_fn,
@@ -109,7 +111,8 @@ def main() -> int:
 
     window = MainWindow(db, pm, bus, pipeline=pipeline, audit=audit,
                         staging_dir=root / "staging",
-                        backup_service=backup_service)
+                        backup_service=backup_service,
+                        cddvd_channel=cddvd_channel)
     window.show()
     code = app.exec()
 

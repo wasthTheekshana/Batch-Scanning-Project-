@@ -128,6 +128,58 @@ def test_designer_read_only_for_non_admin(qtbot, db, tmp_path):
     assert not d.add_rule_btn.isEnabled()
 
 
+def test_designer_sftp_fields_round_trip(designer):
+    designer.feature_checks["sftp"].setChecked(True)
+    designer.sftp_host.setText("192.168.1.50")
+    designer.sftp_user.setText("scans")
+    designer.sftp_remote_path.setText("/incoming")
+    cfg = designer.collect_config()
+    assert cfg["delivery"]["sftp"]["enabled"] is True
+    assert cfg["delivery"]["sftp"]["host"] == "192.168.1.50"
+    assert cfg["delivery"]["sftp"]["username"] == "scans"
+    assert cfg["delivery"]["sftp"]["remote_path"] == "/incoming"
+    saved = designer.pm.save(cfg)   # passes schema validation
+    assert saved["delivery"]["sftp"]["host"] == "192.168.1.50"
+
+
+def test_admin_burn_tab(qtbot, db, tmp_path):
+    import sys
+    from delivery.cddvd_channel import CDDVDChannel
+    script = tmp_path / "burner.py"
+    script.write_text(
+        "import shutil, sys, pathlib\n"
+        "src, dst = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])\n"
+        "dst.mkdir(parents=True, exist_ok=True)\n"
+        "[shutil.copy2(f, dst / f.name) for f in src.iterdir()"
+        " if f.is_file() and f.name != 'manifest.json']\n")
+    disc = tmp_path / "disc"
+    channel = CDDVDChannel({
+        "enabled": True, "staging_dir": str(tmp_path / "queue"),
+        "verify_dir": str(disc),
+        "burner_cmd": f'"{sys.executable}" "{script}" '
+                      f'"{{source_dir}}" "{disc}"'})
+    doc = tmp_path / "doc.pdf"
+    doc.write_bytes(b"%PDF-x")
+    channel.deliver(str(doc), {})
+
+    from ui.admin_panel import BurnTab
+    tab = BurnTab(channel, ADMIN)
+    qtbot.addWidget(tab)
+    assert "1 file(s)" in tab.queue_label.text()
+    tab.label_edit.setText("UAT_DISC-1")
+    tab.burn_now()
+    assert "Burn OK" in tab.result.text()
+    assert (disc / "doc.pdf").exists()
+    assert "0 file(s)" in tab.queue_label.text()
+
+
+def test_admin_burn_tab_disabled_without_channel(qtbot, db):
+    from ui.admin_panel import BurnTab
+    tab = BurnTab(None, ADMIN)
+    qtbot.addWidget(tab)
+    assert not tab.burn_btn.isEnabled()
+
+
 # ---- vendor SDK sources ------------------------------------------------------------
 
 @pytest.mark.parametrize("cls", [KodakSource, AlarisSource,

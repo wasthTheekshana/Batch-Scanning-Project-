@@ -188,13 +188,69 @@ class BackupTab(QWidget):
             self.result.setText(f"Backup FAILED: {e}")
 
 
+class BurnTab(QWidget):
+    """CD/DVD burn queue status + operator burn trigger (Phase 3)."""
+
+    def __init__(self, cddvd_channel, current_user, parent=None):
+        super().__init__(parent)
+        self.channel = cddvd_channel
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self.queue_label = QLabel("")
+        form.addRow("Burn queue", self.queue_label)
+        self.label_edit = QLineEdit()
+        self.label_edit.setPlaceholderText(
+            "Disc label (letters, digits, - _ ; empty = timestamp)")
+        form.addRow("Disc label", self.label_edit)
+        layout.addLayout(form)
+
+        self.burn_btn = QPushButton("Burn disc now")
+        can_burn = current_user is not None and \
+            current_user.can("config.backup")
+        self.burn_btn.setEnabled(can_burn and cddvd_channel is not None)
+        self.burn_btn.clicked.connect(self.burn_now)
+        layout.addWidget(self.burn_btn)
+
+        self.result = QLabel("" if cddvd_channel is not None else
+                             "CD/DVD channel is not enabled in the active "
+                             "project (features → cd_burn).")
+        self.result.setWordWrap(True)
+        layout.addWidget(self.result)
+        layout.addStretch(1)
+        self.refresh()
+
+    def refresh(self) -> None:
+        if self.channel is None:
+            self.queue_label.setText("channel disabled")
+            return
+        self.queue_label.setText(
+            f"{self.channel.queue.file_count()} file(s) · "
+            f"{self.channel.queue.total_size_mb():.1f} MB staged")
+
+    def burn_now(self) -> None:
+        if self.channel is None:
+            return
+        result = self.channel.burn(self.label_edit.text().strip() or None)
+        if result.success:
+            self.result.setText(
+                f"Burn OK — label {result.destination}, "
+                f"{result.detail['files']} file(s), verified="
+                f"{result.detail['verified']}")
+        else:
+            self.result.setText(f"Burn FAILED: {result.detail.get('error') or result.detail}")
+        self.refresh()
+
+
 class AdminPanel(QWidget):
-    def __init__(self, db, current_user, backup_service=None, parent=None):
+    def __init__(self, db, current_user, backup_service=None,
+                 cddvd_channel=None, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         tabs = QTabWidget()
         self.users_tab = UsersTab(db, current_user)
         self.backup_tab = BackupTab(backup_service, current_user)
+        self.burn_tab = BurnTab(cddvd_channel, current_user)
         tabs.addTab(self.users_tab, "Users")
         tabs.addTab(self.backup_tab, "Backup")
+        tabs.addTab(self.burn_tab, "CD/DVD")
         layout.addWidget(tabs)
