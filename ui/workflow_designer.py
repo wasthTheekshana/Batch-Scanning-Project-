@@ -1,0 +1,443 @@
+"""Workflow designer (HLD §16, Phase 2 §18 weeks 5-6).
+
+Edits the same project JSON the engine runs — the rule builder emits
+the exact Phase 1 DSL, validated by RuleEngine before save, so there is
+complete backwards compatibility (HLD §8). Saving goes through
+ProfileManager.save which versions + archives automatically.
+"""
+from __future__ import annotations
+
+import json
+
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+                             QFormLayout, QGroupBox, QHBoxLayout,
+                             QInputDialog, QLabel, QLineEdit, QListWidget,
+                             QListWidgetItem, QMessageBox, QPushButton,
+                             QScrollArea, QSpinBox, QVBoxLayout, QWidget)
+
+from core.profile_manager import ProjectConfigError
+from separation.rule_engine import RuleEngine, RuleSetError
+
+QC_STAGES = ["punch_hole", "rotation", "margin", "color", "advanced"]
+STRATEGIES = ["barcode", "blank_page", "zone", "fixed_pages"]
+OPERATORS = ["eq", "neq", "contains", "not_contains", "is_empty",
+             "is_not_empty", "gt", "lt", "gte", "lte", "matches_regex"]
+ACTIONS = ["set_folder", "set_filename", "set_validation_status",
+           "add_flag", "set_metadata_field", "trigger_delivery",
+           "skip_stage"]
+EXPORT_FORMATS = ["searchable_pdf", "image_pdf", "pdf_a", "tiff"]
+
+
+class RuleDialog(QDialog):
+    """Build one rule: N condition checks joined by AND/OR + N actions."""
+
+    def __init__(self, rule: dict | None = None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Rule editor")
+        self.setMinimumWidth(520)
+        layout = QVBoxLayout(self)
+
+        form = QFormLayout()
+        self.name = QLineEdit(rule["name"] if rule else "")
+        form.addRow("Rule name", self.name)
+        self.join = QComboBox()
+        self.join.addItems(["AND", "OR"])
+        form.addRow("Combine checks with", self.join)
+        layout.addLayout(form)
+
+        layout.addWidget(QLabel("Conditions (field · operator · value):"))
+        self.checks = QListWidget()
+        layout.addWidget(self.checks)
+        check_btns = QHBoxLayout()
+        add_check = QPushButton("Add condition…")
+        del_check = QPushButton("Remove selected")
+        add_check.clicked.connect(self.add_check)
+        del_check.clicked.connect(
+            lambda: self.checks.takeItem(self.checks.currentRow()))
+        check_btns.addWidget(add_check)
+        check_btns.addWidget(del_check)
+        layout.addLayout(check_btns)
+
+        layout.addWidget(QLabel("Actions (type · value):"))
+        self.actions = QListWidget()
+        layout.addWidget(self.actions)
+        action_btns = QHBoxLayout()
+        add_action = QPushButton("Add action…")
+        del_action = QPushButton("Remove selected")
+        add_action.clicked.connect(self.add_action)
+        del_action.clicked.connect(
+            lambda: self.actions.takeItem(self.actions.currentRow()))
+        action_btns.addWidget(add_action)
+        action_btns.addWidget(del_action)
+        layout.addLayout(action_btns)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
+                                   QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        if rule:
+            cond = rule["condition"]
+            checks = cond["checks"] if "operator" in cond else [cond]
+            if "operator" in cond and cond["operator"] in ("AND", "OR"):
+                self.join.setCurrentText(cond["operator"])
+            for c in checks:
+                self._append_check(c)
+            for a in rule["actions"]:
+                self._append_action(a)
+
+    # -- check/action rows ------------------------------------------------------
+    def _append_check(self, check: dict) -> None:
+        item = QListWidgetItem(
+            f"{check['field']}  {check['op']}  {check.get('value', '')}")
+        item.setData(Qt.ItemDataRole.UserRole, check)
+        self.checks.addItem(item)
+
+    def _append_action(self, action: dict) -> None:
+        item = QListWidgetItem(
+            f"{action['type']}  →  {json.dumps(action.get('value'))}")
+        item.setData(Qt.ItemDataRole.UserRole, action)
+        self.actions.addItem(item)
+
+    def add_check(self) -> None:
+        field, ok = QInputDialog.getText(
+            self, "Condition", "Field path (e.g. extracted_fields.invoice_no):")
+        if not ok or not field.strip():
+            return
+        op, ok = QInputDialog.getItem(self, "Condition", "Operator:",
+                                      OPERATORS, 0, False)
+        if not ok:
+            return
+        check = {"field": field.strip(), "op": op}
+        if op not in ("is_empty", "is_not_empty"):
+            value, ok = QInputDialog.getText(self, "Condition", "Value:")
+            if not ok:
+                return
+            check["value"] = value
+        self._append_check(check)
+
+    def add_action(self) -> None:
+        action_type, ok = QInputDialog.getItem(self, "Action", "Type:",
+                                               ACTIONS, 0, False)
+        if not ok:
+            return
+        if action_type == "set_metadata_field":
+            field, ok = QInputDialog.getText(self, "Action", "Field name:")
+            if not ok:
+                return
+            value, ok = QInputDialog.getText(self, "Action", "Field value:")
+            if not ok:
+                return
+            self._append_action({"type": action_type,
+                                 "value": {"field": field, "value": value}})
+        else:
+            value, ok = QInputDialog.getText(self, "Action", "Value:")
+            if not ok:
+                return
+            self._append_action({"type": action_type, "value": value})
+
+    def build_rule(self, rule_id: str) -> dict:
+        checks = [self.checks.item(i).data(Qt.ItemDataRole.UserRole)
+                  for i in range(self.checks.count())]
+        actions = [self.actions.item(i).data(Qt.ItemDataRole.UserRole)
+                   for i in range(self.actions.count())]
+        condition = checks[0] if len(checks) == 1 else {
+            "operator": self.join.currentText(), "checks": checks}
+        return {"id": rule_id, "name": self.name.text().strip() or rule_id,
+                "condition": condition, "actions": actions}
+
+
+class WorkflowDesigner(QWidget):
+    def __init__(self, db, profile_manager, current_user, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.pm = profile_manager
+        self.user = current_user
+        self.config: dict | None = None
+        self.can_edit = current_user is not None and \
+            current_user.can("project.edit")
+
+        outer = QVBoxLayout(self)
+
+        top = QHBoxLayout()
+        self.project_combo = QComboBox()
+        self.project_combo.currentIndexChanged.connect(self.load_selected)
+        top.addWidget(QLabel("Project:"))
+        top.addWidget(self.project_combo, stretch=1)
+        self.clone_btn = QPushButton("Clone…")
+        self.clone_btn.clicked.connect(self.clone_project)
+        self.rollback_btn = QPushButton("Version history…")
+        self.rollback_btn.clicked.connect(self.rollback_dialog)
+        self.save_btn = QPushButton("Save (new version)")
+        self.save_btn.clicked.connect(self.save)
+        for b in (self.clone_btn, self.rollback_btn, self.save_btn):
+            b.setEnabled(self.can_edit)
+            top.addWidget(b)
+        outer.addLayout(top)
+
+        self.version_label = QLabel("")
+        outer.addWidget(self.version_label)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        body = QWidget()
+        scroll.setWidget(body)
+        outer.addWidget(scroll, stretch=1)
+        layout = QVBoxLayout(body)
+
+        # feature toggles
+        feature_box = QGroupBox("Feature toggles")
+        f_layout = QVBoxLayout(feature_box)
+        self.feature_checks: dict[str, QCheckBox] = {}
+        for key in ("auto_index", "duplicate_check", "sftp", "cd_burn"):
+            cb = QCheckBox(key)
+            cb.setEnabled(self.can_edit)
+            self.feature_checks[key] = cb
+            f_layout.addWidget(cb)
+        layout.addWidget(feature_box)
+
+        # separation strategies
+        sep_box = QGroupBox("Separation strategy")
+        s_layout = QVBoxLayout(sep_box)
+        self.strategy_checks: dict[str, QCheckBox] = {}
+        for key in STRATEGIES:
+            cb = QCheckBox(key)
+            cb.setEnabled(self.can_edit)
+            self.strategy_checks[key] = cb
+            s_layout.addWidget(cb)
+        fixed_row = QFormLayout()
+        self.fixed_pages = QSpinBox()
+        self.fixed_pages.setRange(0, 999)
+        self.fixed_pages.setSpecialValueText("(off)")
+        self.fixed_pages.setEnabled(self.can_edit)
+        fixed_row.addRow("Fixed pages per document", self.fixed_pages)
+        s_layout.addLayout(fixed_row)
+        layout.addWidget(sep_box)
+
+        # QC config
+        qc_box = QGroupBox("QC pipeline")
+        q_layout = QFormLayout(qc_box)
+        self.qc_enabled = QCheckBox("QC enabled")
+        self.qc_enabled.setEnabled(self.can_edit)
+        q_layout.addRow(self.qc_enabled)
+        self.qc_stage_checks: dict[str, QCheckBox] = {}
+        for stage in QC_STAGES:
+            cb = QCheckBox(stage)
+            cb.setEnabled(self.can_edit)
+            self.qc_stage_checks[stage] = cb
+            q_layout.addRow(cb)
+        self.pass_score = QSpinBox()
+        self.pass_score.setRange(0, 100)
+        self.blur_warn = QSpinBox()
+        self.blur_warn.setRange(0, 10000)
+        self.blur_fail = QSpinBox()
+        self.blur_fail.setRange(0, 10000)
+        for w in (self.pass_score, self.blur_warn, self.blur_fail):
+            w.setEnabled(self.can_edit)
+        q_layout.addRow("Pass score ≥", self.pass_score)
+        q_layout.addRow("Blur WARN threshold", self.blur_warn)
+        q_layout.addRow("Blur FAIL threshold", self.blur_fail)
+        layout.addWidget(qc_box)
+
+        # scanner + export
+        exp_box = QGroupBox("Scanner & export")
+        e_layout = QFormLayout(exp_box)
+        self.dpi = QSpinBox()
+        self.dpi.setRange(75, 1200)
+        self.color = QComboBox()
+        self.color.addItems(["bw", "grayscale", "color"])
+        self.export_format = QComboBox()
+        self.export_format.addItems(EXPORT_FORMATS)
+        self.filename_template = QLineEdit()
+        self.output_path = QLineEdit()
+        self.delivery_path = QLineEdit()
+        for w in (self.dpi, self.color, self.export_format,
+                  self.filename_template, self.output_path,
+                  self.delivery_path):
+            w.setEnabled(self.can_edit)
+        e_layout.addRow("Scan DPI", self.dpi)
+        e_layout.addRow("Colour mode", self.color)
+        e_layout.addRow("Export format", self.export_format)
+        e_layout.addRow("Filename template", self.filename_template)
+        e_layout.addRow("Export path", self.output_path)
+        e_layout.addRow("Delivery folder", self.delivery_path)
+        layout.addWidget(exp_box)
+
+        # rules
+        rule_box = QGroupBox("Rules (IF / THEN)")
+        r_layout = QVBoxLayout(rule_box)
+        self.rule_list = QListWidget()
+        r_layout.addWidget(self.rule_list)
+        rule_btns = QHBoxLayout()
+        self.add_rule_btn = QPushButton("Add rule…")
+        self.edit_rule_btn = QPushButton("Edit…")
+        self.del_rule_btn = QPushButton("Delete")
+        self.add_rule_btn.clicked.connect(self.add_rule)
+        self.edit_rule_btn.clicked.connect(self.edit_rule)
+        self.del_rule_btn.clicked.connect(self.delete_rule)
+        for b in (self.add_rule_btn, self.edit_rule_btn, self.del_rule_btn):
+            b.setEnabled(self.can_edit)
+            rule_btns.addWidget(b)
+        r_layout.addLayout(rule_btns)
+        layout.addWidget(rule_box)
+        layout.addStretch(1)
+
+        self.refresh_projects()
+
+    # -- project selection --------------------------------------------------------
+    def refresh_projects(self) -> None:
+        self.project_combo.blockSignals(True)
+        self.project_combo.clear()
+        for row in self.db.list_projects():
+            self.project_combo.addItem(
+                f"{row['name']} (v{row['version']})", row["project_id"])
+        self.project_combo.blockSignals(False)
+        if self.project_combo.count():
+            self.project_combo.setCurrentIndex(0)
+            self.load_selected()
+
+    def load_selected(self) -> None:
+        project_id = self.project_combo.currentData()
+        if not project_id:
+            return
+        self.config = self.pm.load(project_id)
+        self._bind_config()
+
+    def _bind_config(self) -> None:
+        cfg = self.config
+        self.version_label.setText(
+            f"Editing v{cfg['version']} · status {cfg['status']} · "
+            f"archived versions: "
+            f"{self.pm.list_versions(cfg['project_id']) or 'none'}")
+        for key, cb in self.feature_checks.items():
+            cb.setChecked(bool(cfg["features"].get(key)))
+        for key, cb in self.strategy_checks.items():
+            cb.setChecked(key in cfg["separation"]["strategy"])
+        self.fixed_pages.setValue(cfg["separation"].get("fixed_pages") or 0)
+        qc = cfg["qc"]
+        self.qc_enabled.setChecked(qc["enabled"])
+        for stage, cb in self.qc_stage_checks.items():
+            cb.setChecked(stage in qc["stages"])
+        self.pass_score.setValue(qc.get("pass_score", 80))
+        self.blur_warn.setValue(int(qc.get("blur_warn_threshold", 80)))
+        self.blur_fail.setValue(int(qc.get("blur_fail_threshold", 30)))
+        self.dpi.setValue(cfg["scanner"]["dpi"])
+        self.color.setCurrentText(cfg["scanner"]["color"])
+        self.export_format.setCurrentText(cfg["export"]["format"])
+        self.filename_template.setText(cfg["export"]["filename_template"])
+        self.output_path.setText(cfg["export"]["output_path"])
+        self.delivery_path.setText(
+            cfg["delivery"]["local_folder"].get("path", ""))
+        self._refresh_rules()
+
+    def _refresh_rules(self) -> None:
+        self.rule_list.clear()
+        for rule in self.config.get("rules", {}).get("rules", []):
+            item = QListWidgetItem(f"{rule['id']} — {rule['name']}")
+            item.setData(Qt.ItemDataRole.UserRole, rule)
+            self.rule_list.addItem(item)
+
+    # -- editing --------------------------------------------------------------------
+    def collect_config(self) -> dict:
+        """Read every widget back into a config dict (pure; used by save
+        and by tests)."""
+        cfg = json.loads(json.dumps(self.config))  # deep copy
+        cfg["features"].update({k: cb.isChecked()
+                                for k, cb in self.feature_checks.items()})
+        cfg["separation"]["strategy"] = [
+            k for k, cb in self.strategy_checks.items() if cb.isChecked()]
+        cfg["separation"]["fixed_pages"] = self.fixed_pages.value() or None
+        cfg["qc"]["enabled"] = self.qc_enabled.isChecked()
+        cfg["qc"]["stages"] = [s for s, cb in self.qc_stage_checks.items()
+                               if cb.isChecked()]
+        cfg["qc"]["pass_score"] = self.pass_score.value()
+        cfg["qc"]["blur_warn_threshold"] = self.blur_warn.value()
+        cfg["qc"]["blur_fail_threshold"] = self.blur_fail.value()
+        cfg["scanner"]["dpi"] = self.dpi.value()
+        cfg["scanner"]["color"] = self.color.currentText()
+        cfg["export"]["format"] = self.export_format.currentText()
+        cfg["export"]["filename_template"] = self.filename_template.text()
+        cfg["export"]["output_path"] = self.output_path.text()
+        cfg["delivery"]["local_folder"]["path"] = self.delivery_path.text()
+        # sync shorthand toggles to delivery blocks (HLD Appendix B)
+        cfg["delivery"]["sftp"]["enabled"] = cfg["features"]["sftp"]
+        cfg["delivery"]["cd_dvd"]["enabled"] = cfg["features"]["cd_burn"]
+        cfg["rules"]["rules"] = [
+            self.rule_list.item(i).data(Qt.ItemDataRole.UserRole)
+            for i in range(self.rule_list.count())]
+        return cfg
+
+    def save(self) -> None:
+        try:
+            cfg = self.collect_config()
+            RuleEngine(cfg["rules"])          # validate DSL before saving
+            self.config = self.pm.save(cfg)   # version++ & archive
+            self._bind_config()
+            self.refresh_projects_keep_selection()
+            QMessageBox.information(
+                self, "Saved", f"Saved as version {self.config['version']}.")
+        except (ProjectConfigError, RuleSetError) as e:
+            QMessageBox.critical(self, "Invalid configuration", str(e))
+
+    def refresh_projects_keep_selection(self) -> None:
+        current = self.project_combo.currentData()
+        self.refresh_projects()
+        idx = self.project_combo.findData(current)
+        if idx >= 0:
+            self.project_combo.setCurrentIndex(idx)
+
+    def clone_project(self) -> None:
+        if self.config is None:
+            return
+        name, ok = QInputDialog.getText(self, "Clone project",
+                                        "New project name:")
+        if ok and name.strip():
+            self.pm.clone(self.config["project_id"], name.strip())
+            self.refresh_projects()
+
+    def rollback_dialog(self) -> None:
+        if self.config is None:
+            return
+        versions = self.pm.list_versions(self.config["project_id"])
+        if not versions:
+            QMessageBox.information(self, "Version history",
+                                    "No archived versions yet.")
+            return
+        version, ok = QInputDialog.getItem(
+            self, "Rollback", "Restore version:",
+            [str(v) for v in versions], len(versions) - 1, False)
+        if ok:
+            self.config = self.pm.rollback(self.config["project_id"],
+                                           int(version))
+            self._bind_config()
+            self.refresh_projects_keep_selection()
+
+    def add_rule(self) -> None:
+        dlg = RuleDialog(parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            existing = self.rule_list.count()
+            rule = dlg.build_rule(f"r{existing + 1:03d}")
+            if not rule["actions"] or "field" not in json.dumps(rule["condition"]):
+                QMessageBox.warning(self, "Rule editor",
+                                    "A rule needs at least one condition "
+                                    "and one action.")
+                return
+            item = QListWidgetItem(f"{rule['id']} — {rule['name']}")
+            item.setData(Qt.ItemDataRole.UserRole, rule)
+            self.rule_list.addItem(item)
+
+    def edit_rule(self) -> None:
+        item = self.rule_list.currentItem()
+        if item is None:
+            return
+        rule = item.data(Qt.ItemDataRole.UserRole)
+        dlg = RuleDialog(rule, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            updated = dlg.build_rule(rule["id"])
+            item.setData(Qt.ItemDataRole.UserRole, updated)
+            item.setText(f"{updated['id']} — {updated['name']}")
+
+    def delete_rule(self) -> None:
+        self.rule_list.takeItem(self.rule_list.currentRow())

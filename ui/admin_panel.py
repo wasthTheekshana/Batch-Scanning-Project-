@@ -1,0 +1,200 @@
+"""Admin panel — user management + backup settings (HLD §16, Phase 2).
+
+All actions go through core.rbac helpers, which enforce user.manage /
+config.backup permissions and write audit rows.
+"""
+from __future__ import annotations
+
+from PyQt6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
+                             QDoubleSpinBox, QFileDialog, QFormLayout,
+                             QHBoxLayout, QInputDialog, QLabel, QLineEdit,
+                             QMessageBox, QPushButton, QTableWidget,
+                             QTableWidgetItem, QTabWidget, QVBoxLayout,
+                             QWidget)
+
+from core.rbac import (ROLE_PERMISSIONS, AuthError, create_user,
+                       reset_password, set_user_active, set_user_role)
+
+
+class AddUserDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Add user")
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self.username = QLineEdit()
+        self.password = QLineEdit()
+        self.password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.role = QComboBox()
+        self.role.addItems(sorted(ROLE_PERMISSIONS))
+        form.addRow("Username", self.username)
+        form.addRow("Password", self.password)
+        form.addRow("Role", self.role)
+        layout.addLayout(form)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
+                                   QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+
+class UsersTab(QWidget):
+    def __init__(self, db, current_user, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.current_user = current_user
+        layout = QVBoxLayout(self)
+
+        self.table = QTableWidget(0, 4)
+        self.table.setHorizontalHeaderLabels(
+            ["Username", "Role", "Active", "Last login"])
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows)
+        layout.addWidget(self.table)
+
+        buttons = QHBoxLayout()
+        self.add_btn = QPushButton("Add user…")
+        self.toggle_btn = QPushButton("Activate / deactivate")
+        self.role_btn = QPushButton("Change role…")
+        self.reset_btn = QPushButton("Reset password…")
+        can_manage = current_user is not None and \
+            current_user.can("user.manage")
+        for btn, handler in ((self.add_btn, self.add_user),
+                             (self.toggle_btn, self.toggle_active),
+                             (self.role_btn, self.change_role),
+                             (self.reset_btn, self.reset_pw)):
+            btn.setEnabled(can_manage)
+            btn.clicked.connect(handler)
+            buttons.addWidget(btn)
+        layout.addLayout(buttons)
+        self.refresh()
+
+    def refresh(self) -> None:
+        rows = self.db.list_users()
+        self.table.setRowCount(len(rows))
+        for i, row in enumerate(rows):
+            for col, value in enumerate(
+                    [row["username"], row["role"],
+                     "yes" if row["active"] else "no",
+                     row["last_login"] or "never"]):
+                self.table.setItem(i, col, QTableWidgetItem(str(value)))
+
+    def selected_username(self) -> str | None:
+        row = self.table.currentRow()
+        if row < 0:
+            return None
+        return self.table.item(row, 0).text()
+
+    def _guard(self, fn) -> None:
+        try:
+            fn()
+            self.refresh()
+        except (AuthError, ValueError) as e:
+            QMessageBox.warning(self, "User management", str(e))
+
+    def add_user(self) -> None:
+        dlg = AddUserDialog(self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._guard(lambda: create_user(
+            self.db, self.current_user, dlg.username.text().strip(),
+            dlg.password.text(), dlg.role.currentText()))
+
+    def toggle_active(self) -> None:
+        username = self.selected_username()
+        if not username:
+            return
+        active = self.db.get_user(username)["active"]
+        self._guard(lambda: set_user_active(
+            self.db, self.current_user, username, not active))
+
+    def change_role(self) -> None:
+        username = self.selected_username()
+        if not username:
+            return
+        role, ok = QInputDialog.getItem(
+            self, "Change role", f"New role for {username}:",
+            sorted(ROLE_PERMISSIONS), 0, False)
+        if ok:
+            self._guard(lambda: set_user_role(
+                self.db, self.current_user, username, role))
+
+    def reset_pw(self) -> None:
+        username = self.selected_username()
+        if not username:
+            return
+        pw, ok = QInputDialog.getText(
+            self, "Reset password", f"New password for {username}:",
+            QLineEdit.EchoMode.Password)
+        if ok and pw:
+            self._guard(lambda: reset_password(
+                self.db, self.current_user, username, pw))
+
+
+class BackupTab(QWidget):
+    def __init__(self, backup_service, current_user, parent=None):
+        super().__init__(parent)
+        self.backup_service = backup_service
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+
+        self.dest = QLineEdit(
+            str(backup_service.dest_dir) if backup_service else "")
+        pick = QPushButton("Browse…")
+        pick.clicked.connect(self.pick_dest)
+        dest_row = QHBoxLayout()
+        dest_row.addWidget(self.dest)
+        dest_row.addWidget(pick)
+        form.addRow("Backup destination", dest_row)
+
+        self.interval = QDoubleSpinBox()
+        self.interval.setRange(0.5, 168)
+        self.interval.setValue(
+            backup_service.interval_hours if backup_service else 24.0)
+        self.interval.setSuffix(" hours")
+        form.addRow("Interval", self.interval)
+        layout.addLayout(form)
+
+        self.run_btn = QPushButton("Run backup now")
+        can_backup = current_user is not None and \
+            current_user.can("config.backup")
+        self.run_btn.setEnabled(can_backup and backup_service is not None)
+        self.run_btn.clicked.connect(self.run_now)
+        layout.addWidget(self.run_btn)
+
+        self.result = QLabel("No backup run this session.")
+        self.result.setWordWrap(True)
+        layout.addWidget(self.result)
+        layout.addStretch(1)
+
+    def pick_dest(self) -> None:
+        path = QFileDialog.getExistingDirectory(self, "Backup destination")
+        if path:
+            self.dest.setText(path)
+            if self.backup_service:
+                from pathlib import Path
+                self.backup_service.dest_dir = Path(path)
+
+    def run_now(self) -> None:
+        if self.backup_service is None:
+            return
+        self.backup_service.interval_hours = self.interval.value()
+        try:
+            path = self.backup_service.run_backup()
+            self.result.setText(f"Backup OK: {path}")
+        except Exception as e:
+            self.result.setText(f"Backup FAILED: {e}")
+
+
+class AdminPanel(QWidget):
+    def __init__(self, db, current_user, backup_service=None, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        tabs = QTabWidget()
+        self.users_tab = UsersTab(db, current_user)
+        self.backup_tab = BackupTab(backup_service, current_user)
+        tabs.addTab(self.users_tab, "Users")
+        tabs.addTab(self.backup_tab, "Backup")
+        layout.addWidget(tabs)
