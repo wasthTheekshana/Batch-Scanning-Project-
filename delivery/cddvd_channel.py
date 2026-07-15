@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -26,6 +27,11 @@ from delivery.burn_queue import BurnQueue
 log = logging.getLogger(__name__)
 
 BURN_TIMEOUT_S = 30 * 60
+
+# Disc labels are interpolated into the burner command line; restrict to
+# characters that cannot break out of the argument (no quotes, spaces,
+# or shell/CreateProcess metacharacters). ISO 9660 labels are ≤ 32 chars.
+LABEL_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 
 
 class CDDVDChannel(BaseDeliveryChannel):
@@ -92,6 +98,11 @@ class CDDVDChannel(BaseDeliveryChannel):
             return DeliveryResult(success=False, channel=self.name,
                                   detail={"error": "burn queue is empty"})
         label = label or datetime.now().strftime("DOK_%Y%m%d_%H%M")
+        if not LABEL_PATTERN.fullmatch(label):
+            return DeliveryResult(
+                success=False, channel=self.name,
+                detail={"error": "invalid disc label: use 1-32 letters, "
+                                 "digits, '-' or '_' only"})
         cmd = self.config["burner_cmd"].format(
             source_dir=str(self.queue.staging_dir), label=label)
         try:

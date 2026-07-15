@@ -223,6 +223,19 @@ def test_cddvd_capacity_guard(tmp_path, doc):
     assert "capacity" in result.detail["error"]
 
 
+def test_cddvd_rejects_malicious_label(tmp_path, doc):
+    """Labels are interpolated into the burner command line — quotes and
+    metacharacters must be rejected (command/argument injection)."""
+    ch, disc = make_channel(tmp_path)
+    ch.deliver(str(doc), {})
+    for bad in ('X" /EJECT "y', "a;del *", "a b", "x&calc", "", "L" * 33):
+        result = ch.burn(label=bad)
+        assert not result.success
+        assert "invalid disc label" in result.detail["error"]
+    assert not disc.exists()  # burner never ran
+    assert ch.burn(label="GOOD_LABEL-01").success
+
+
 def test_cddvd_empty_queue_burn_rejected(tmp_path):
     ch, _ = make_channel(tmp_path)
     result = ch.burn()
