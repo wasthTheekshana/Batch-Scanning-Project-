@@ -5,6 +5,10 @@ config.backup permissions and write audit rows.
 """
 from __future__ import annotations
 
+import logging
+import os
+import subprocess
+
 from PyQt6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
                              QDoubleSpinBox, QFileDialog, QFormLayout,
                              QHBoxLayout, QInputDialog, QLabel, QLineEdit,
@@ -14,6 +18,28 @@ from PyQt6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
 
 from core.rbac import (ROLE_PERMISSIONS, AuthError, create_user,
                        reset_password, set_user_active, set_user_role)
+
+log = logging.getLogger(__name__)
+
+
+def _write_secret_file(path: str, content: str) -> None:
+    """Create the file owner-only before the secret hits disk: 0o600 at
+    creation, then on NTFS strip inherited ACLs so only the current user
+    (and SYSTEM) can read it. FAT32/exFAT has no ACLs — the UI warns
+    that physical custody is the control there."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(content)
+    if os.name == "nt":
+        user = os.environ.get("USERNAME", "")
+        try:
+            subprocess.run(
+                ["icacls", path, "/inheritance:r",
+                 "/grant:r", f"{user}:F", "/grant:r", "SYSTEM:F"],
+                capture_output=True, text=True, timeout=30, check=True)
+        except (OSError, subprocess.SubprocessError) as e:
+            # non-NTFS destination (USB stick) or icacls unavailable
+            log.warning("could not restrict ACL on %s: %s", path, e)
 
 
 class AddUserDialog(QDialog):
@@ -206,16 +232,16 @@ class BackupTab(QWidget):
             "Text files (*.txt)")
         if not path:
             return
-        from pathlib import Path
-        Path(path).write_text(self.backup_service.master_key.hex(),
-                              encoding="utf-8")
+        _write_secret_file(path, self.backup_service.master_key.hex())
         self.backup_service.db.append_audit(
             None, "admin", "key_export", {"path": path})
         QMessageBox.warning(
             self, "Master key exported",
             "The key file unlocks every backup archive.\n"
             "Store it on removable media in a safe location — "
-            "NOT on this machine.")
+            "NOT on this machine. Note: on FAT32/exFAT USB sticks the "
+            "file cannot be permission-protected; physical custody of "
+            "the media is the control.")
 
 
 class BurnTab(QWidget):

@@ -128,6 +128,11 @@ def test_key_export_writes_hex_and_audits(qtbot, db, tmp_path, monkeypatch):
         staticmethod(lambda *a, **k: None))
     tab.export_key()
     assert out.read_text(encoding="utf-8") == key.hex()
+    if __import__("os").name == "nt":
+        # ACL restricted to current user: inherited entries stripped
+        acl = __import__("subprocess").run(
+            ["icacls", str(out)], capture_output=True, text=True).stdout
+        assert "(I)" not in acl  # no inherited ACEs remain
     row = db.conn.execute(
         "SELECT * FROM audit_log WHERE action='key_export'").fetchone()
     assert row is not None
