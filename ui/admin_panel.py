@@ -164,6 +164,15 @@ class BackupTab(QWidget):
         self.run_btn.clicked.connect(self.run_now)
         layout.addWidget(self.run_btn)
 
+        # clean-machine restore needs the master key (UAT §5 / HLD §14.3)
+        self.export_key_btn = QPushButton("Export master key…")
+        can_manage = current_user is not None and \
+            current_user.can("user.manage")
+        self.export_key_btn.setEnabled(can_manage and
+                                       backup_service is not None)
+        self.export_key_btn.clicked.connect(self.export_key)
+        layout.addWidget(self.export_key_btn)
+
         self.result = QLabel("No backup run this session.")
         self.result.setWordWrap(True)
         layout.addWidget(self.result)
@@ -186,6 +195,27 @@ class BackupTab(QWidget):
             self.result.setText(f"Backup OK: {path}")
         except Exception as e:
             self.result.setText(f"Backup FAILED: {e}")
+
+    def export_key(self) -> None:
+        """Write the master key as hex for clean-machine restores
+        (scripts/restore.py --key-hex). Keep the file OFF this machine."""
+        if self.backup_service is None:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export master key", "dokscanner-master-key.txt",
+            "Text files (*.txt)")
+        if not path:
+            return
+        from pathlib import Path
+        Path(path).write_text(self.backup_service.master_key.hex(),
+                              encoding="utf-8")
+        self.backup_service.db.append_audit(
+            None, "admin", "key_export", {"path": path})
+        QMessageBox.warning(
+            self, "Master key exported",
+            "The key file unlocks every backup archive.\n"
+            "Store it on removable media in a safe location — "
+            "NOT on this machine.")
 
 
 class BurnTab(QWidget):

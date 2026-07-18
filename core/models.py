@@ -39,3 +39,4 @@ class PageRecord:
     qc_grade: str = ""                   # PASS / WARN / FAIL
     qc_detail: dict = field(default_factory=dict)
     extracted_fields: dict = field(default_factory=dict)
+    low_conf_fields: list = field(default_factory=list)

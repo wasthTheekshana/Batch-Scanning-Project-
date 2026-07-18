@@ -209,10 +209,34 @@ class Pipeline:
                 if result is not None:
                     record.ocr_text = result.text
                     record.ocr_confidence = result.confidence
+                self._extract_zone_fields(record, image)
             self._emit("ocr", "done", job_id=record.job.job_id,
                        batch_id=record.job.batch_id)
             self.enhance_q.put(record)
         self._pump(self.ocr_q, "ocr", handle)
+
+    def _extract_zone_fields(self, record: PageRecord, image) -> None:
+        """Auto-index: extract configured OCR zones into page fields
+        (HLD §4 Layer 5). Values below the confidence threshold are kept
+        but flagged so the operator can correct them in the index editor."""
+        ocr_cfg = self.profile.get("ocr", {})
+        zones = ocr_cfg.get("zones", [])
+        if not zones or not self.profile.get("features", {}).get("auto_index"):
+            return
+        from ocr.zone_extractor import extract_fields
+        threshold = float(ocr_cfg.get("confidence_threshold", 0.75))
+        try:
+            fields = extract_fields(image, zones,
+                                    lang=ocr_cfg.get("lang", "eng"),
+                                    ocr_fn=self.ocr_fn)
+        except Exception as e:
+            log.warning("zone extraction failed for page %s: %s",
+                        record.job.page_no, e)
+            return
+        for name, fv in fields.items():
+            record.extracted_fields[name] = fv.value
+            if not fv.value or fv.confidence < threshold:
+                record.low_conf_fields.append(name)
 
     def _enhance_worker(self) -> None:
         def handle(record: PageRecord):
@@ -288,6 +312,15 @@ class Pipeline:
             records = [p["record"] for p in doc["pages"]]
             worst = min((r.qc_score for r in records), default=100)
             grades = {r.qc_grade for r in records}
+            # auto-index: merge page zone fields (first non-empty wins)
+            merged_fields: dict = {}
+            low_conf: set[str] = set()
+            for r in records:
+                for name, value in r.extracted_fields.items():
+                    if value and not merged_fields.get(name):
+                        merged_fields[name] = value
+                low_conf.update(r.low_conf_fields)
+
             document = {
                 "document_id": new_id(),
                 "batch_id": item["batch_id"],
@@ -295,13 +328,20 @@ class Pipeline:
                 "qc_score": worst,
                 "validation_status": "auto_approved"
                 if grades <= {"PASS"} else "pending_qc",
-                "extracted_fields": {},
+                "extracted_fields": merged_fields,
                 "ocr_text": " ".join(r.ocr_text for r in records if r.ocr_text),
                 "flags": sorted({f for r in records
                                  for f in r.qc_detail.get("flags", [])}),
             }
+            if low_conf:
+                document["flags"] = sorted(set(document["flags"])
+                                           | {"low_confidence_index"})
             if doc.get("barcode"):
                 document["extracted_fields"]["barcode"] = doc["barcode"]
+
+            # duplicate detection: MD5 + pHash of first page, barcode
+            # cross-check against previously processed documents
+            fingerprint_detail = self._check_duplicate(document, records)
 
             rules = self.profile.get("rules") or {}
             if rules.get("rules"):
@@ -311,6 +351,11 @@ class Pipeline:
                     log.error("rule set invalid, skipping rules: %s", e)
 
             page_nos = [p["page_no"] for p in doc["pages"]]
+            qc_detail = {"pages": {str(r.job.page_no): r.qc_detail
+                                   for r in records},
+                         "flags": document["flags"]}
+            if fingerprint_detail:
+                qc_detail["fingerprint"] = fingerprint_detail
             self.db.insert_document(
                 document["document_id"], item["batch_id"],
                 self.profile["project_id"],
@@ -319,8 +364,8 @@ class Pipeline:
                 extracted_fields=document["extracted_fields"],
                 validation_status=document["validation_status"],
                 qc_score=worst,
-                qc_detail={"pages": {str(r.job.page_no): r.qc_detail
-                                     for r in records}})
+                qc_detail=qc_detail,
+                duplicate_of=document.get("duplicate_of"))
             if self.audit:
                 self.audit.log("rule_engine", "system",
                                document_id=document["document_id"],
@@ -398,6 +443,43 @@ class Pipeline:
                        delivery_status=delivered_status or "pending")
             self._maybe_complete_batch(document["batch_id"])
         self._pump(self.delivery_q, "delivery", handle)
+
+    def _check_duplicate(self, document: dict, records: list) -> dict | None:
+        """Fingerprint the first non-blank page and compare with earlier
+        documents (features.duplicate_check, HLD §4 Layer 5). A match
+        sets duplicate_of + holds the document for review."""
+        if not self.profile.get("features", {}).get("duplicate_check"):
+            return None
+        first = next((r for r in records if not r.is_blank
+                      and r.working_path), None)
+        if first is None:
+            return None
+        try:
+            from ocr.duplicate import find_duplicate, fingerprint
+            md5, phash = fingerprint(first.working_path)
+        except Exception as e:
+            log.warning("duplicate fingerprint failed: %s", e)
+            return None
+        known = []
+        for row in self.db.list_documents():
+            try:
+                fp = json.loads(row["qc_detail"] or "{}").get("fingerprint")
+            except json.JSONDecodeError:
+                continue
+            if fp:
+                known.append({"document_id": row["document_id"],
+                              "md5": fp.get("md5"), "phash": fp.get("phash"),
+                              "barcode": fp.get("barcode")})
+        dup_id = find_duplicate(md5, phash, known,
+                                barcode=document.get("barcode"))
+        if dup_id:
+            document["duplicate_of"] = dup_id
+            document["validation_status"] = "pending_qc"
+            document["flags"] = sorted(set(document["flags"]) | {"duplicate"})
+            log.info("document %s flagged as duplicate of %s",
+                     document["document_id"], dup_id)
+        return {"md5": md5, "phash": phash,
+                "barcode": document.get("barcode")}
 
     def resubmit_document(self, document_id: str) -> bool:
         """Push an operator-approved review document into the delivery
