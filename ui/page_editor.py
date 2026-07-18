@@ -30,13 +30,15 @@ UNDO_DEPTH = 10
 
 
 def np_to_pixmap(img: np.ndarray) -> QPixmap:
+    # tobytes() re-packs sliced (non-contiguous) arrays such as crop
+    # results into a contiguous buffer with the stride QImage expects
     if img.ndim == 2:
         h, w = img.shape
-        qimg = QImage(img.data, w, h, w, QImage.Format.Format_Grayscale8)
+        qimg = QImage(img.tobytes(), w, h, w, QImage.Format.Format_Grayscale8)
     else:
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         h, w, _ = rgb.shape
-        qimg = QImage(rgb.data, w, h, 3 * w, QImage.Format.Format_RGB888)
+        qimg = QImage(rgb.tobytes(), w, h, 3 * w, QImage.Format.Format_RGB888)
     return QPixmap.fromImage(qimg.copy())
 
 
@@ -167,12 +169,17 @@ class PageEditDialog(QDialog):
         undo.clicked.connect(self._undo_last)
         reset = QPushButton("Reset to original scan")
         reset.clicked.connect(self._reset)
-        self.save_btn = QPushButton("Save")
+        self.save_btn = QPushButton("Save changes")
         self.save_btn.clicked.connect(self._save)
         cancel = QPushButton("Cancel")
         cancel.clicked.connect(self.reject)
-        for b in (undo, reset, self.save_btn, cancel):
-            bottom.addWidget(b)
+        bottom.addWidget(undo)
+        bottom.addWidget(reset)
+        bottom.addStretch(1)
+        bottom.addWidget(cancel)
+        bottom.addWidget(self.save_btn)
+        from ui.theme import mark
+        mark(self.save_btn, "primary")
         layout.addLayout(bottom)
 
         self._load_page()

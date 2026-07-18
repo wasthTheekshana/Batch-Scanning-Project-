@@ -172,6 +172,8 @@ class WorkflowDesigner(QWidget):
         self.rollback_btn.clicked.connect(self.rollback_dialog)
         self.save_btn = QPushButton("Save (new version)")
         self.save_btn.clicked.connect(self.save)
+        from ui.theme import mark
+        mark(self.save_btn, "primary")
         for b in (self.clone_btn, self.rollback_btn, self.save_btn):
             b.setEnabled(self.can_edit)
             top.addWidget(b)

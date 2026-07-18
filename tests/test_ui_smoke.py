@@ -1,5 +1,6 @@
 """UI smoke tests — offscreen Qt via pytest-qt."""
 import cv2
+import numpy as np
 import pytest
 
 from core.event_bus import EventBus
@@ -56,6 +57,22 @@ def test_image_viewer_loads_pages(qtbot, tmp_path):
     qtbot.addWidget(viewer)
     viewer.load_pages(paths)
     assert viewer.thumbnails.count() == 2
+
+
+def test_np_to_pixmap_accepts_noncontiguous_arrays(qtbot):
+    # auto_crop/crop_rect return numpy slices whose buffers are strided;
+    # np_to_pixmap must render them regardless of contiguity
+    from ui.page_editor import np_to_pixmap
+
+    gray = np.full((100, 80), 200, np.uint8)[10:90, 10:70]
+    assert not gray.flags["C_CONTIGUOUS"]
+    pm = np_to_pixmap(gray)
+    assert (pm.width(), pm.height()) == (60, 80)
+
+    color = np.full((100, 80, 3), 120, np.uint8)[5:95, 5:75]
+    assert not color.flags["C_CONTIGUOUS"]
+    pm = np_to_pixmap(color)
+    assert (pm.width(), pm.height()) == (70, 90)
 
 
 def test_job_monitor_shows_events(qtbot):

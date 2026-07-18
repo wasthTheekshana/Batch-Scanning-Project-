@@ -39,6 +39,8 @@ class ReportsPanel(QWidget):
         right.addWidget(self.table, stretch=1)
 
         self.export_btn = QPushButton("Export QC report PDF…")
+        from ui.theme import mark
+        mark(self.export_btn, "primary")
         can_export = current_user is not None and \
             current_user.can("report.export")
         self.export_btn.setEnabled(can_export)
@@ -77,6 +79,10 @@ class ReportsPanel(QWidget):
             f"{stats['duplicates']} duplicates · "
             + ", ".join(f"{k}: {v}" for k, v in
                         sorted(stats["by_status"].items())))
+        from PyQt6.QtGui import QBrush, QColor
+
+        from ui.theme import STATUS_COLORS
+        self.table.setAlternatingRowColors(True)
         self.table.setRowCount(len(stats["docs"]))
         for i, d in enumerate(stats["docs"]):
             cells = [d["document_id"][:8], d["page_range"],
@@ -84,7 +90,12 @@ class ReportsPanel(QWidget):
                      d["delivery_status"],
                      (d["duplicate_of"] or "")[:8]]
             for col, text in enumerate(cells):
-                self.table.setItem(i, col, QTableWidgetItem(text))
+                item = QTableWidgetItem(text)
+                if col in (3, 4):
+                    color = STATUS_COLORS.get(text)
+                    if color:
+                        item.setForeground(QBrush(QColor(color)))
+                self.table.setItem(i, col, item)
 
     def export_pdf(self) -> None:
         batch_id = self.current_batch_id()

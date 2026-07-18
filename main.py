@@ -83,8 +83,9 @@ def main() -> int:
     backup_service.start()
 
     app = QApplication(sys.argv)
-    app.setStyle("Fusion")
     app.setApplicationName(APP_NAME)
+    from ui.theme import apply_theme
+    apply_theme(app)
 
     login = LoginDialog(db)
     if login.exec() != login.DialogCode.Accepted:

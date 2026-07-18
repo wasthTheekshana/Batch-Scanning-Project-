@@ -73,6 +73,9 @@ class QCReviewPanel(QWidget):
         self.edit_btn.setEnabled(can_review)
         self.edit_btn.clicked.connect(self.open_editor)
         buttons.addWidget(self.edit_btn)
+        from ui.theme import mark
+        mark(self.accept_btn, "primary")
+        mark(self.reject_btn, "danger")
         right_layout.addLayout(buttons)
         splitter.addWidget(right)
         splitter.setSizes([250, 750])
@@ -86,11 +89,17 @@ class QCReviewPanel(QWidget):
             docs = self.db.list_documents()
         else:
             docs = self.db.list_documents(validation_status="pending_qc")
+        from PyQt6.QtGui import QBrush, QColor
+
+        from ui.theme import STATUS_COLORS
         for doc in docs:
             item = QListWidgetItem(
                 f"{doc['document_id'][:8]} · pages {doc['page_range']} · "
                 f"score {doc['qc_score']} · {doc['validation_status']}")
             item.setData(Qt.ItemDataRole.UserRole, doc["document_id"])
+            color = STATUS_COLORS.get(doc["validation_status"])
+            if color:
+                item.setForeground(QBrush(QColor(color)))
             self.queue.addItem(item)
 
     def current_document_id(self) -> str | None:

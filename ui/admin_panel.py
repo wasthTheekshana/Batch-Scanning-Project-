@@ -94,6 +94,9 @@ class UsersTab(QWidget):
             btn.setEnabled(can_manage)
             btn.clicked.connect(handler)
             buttons.addWidget(btn)
+        from ui.theme import mark
+        mark(self.add_btn, "primary")
+        self.table.setAlternatingRowColors(True)
         layout.addLayout(buttons)
         self.refresh()
 
@@ -184,6 +187,8 @@ class BackupTab(QWidget):
         layout.addLayout(form)
 
         self.run_btn = QPushButton("Run backup now")
+        from ui.theme import mark
+        mark(self.run_btn, "primary")
         can_backup = current_user is not None and \
             current_user.can("config.backup")
         self.run_btn.setEnabled(can_backup and backup_service is not None)
@@ -261,6 +266,8 @@ class BurnTab(QWidget):
         layout.addLayout(form)
 
         self.burn_btn = QPushButton("Burn disc now")
+        from ui.theme import mark
+        mark(self.burn_btn, "primary")
         can_burn = current_user is not None and \
             current_user.can("config.backup")
         self.burn_btn.setEnabled(can_burn and cddvd_channel is not None)
