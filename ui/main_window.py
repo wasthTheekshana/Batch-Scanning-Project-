@@ -65,6 +65,12 @@ class MainWindow(QMainWindow):
         self.job_monitor = JobMonitor(bus)
         self.tabs.addTab(self.job_monitor, "Job Monitor")
 
+        # Reports tab — report.view roles (admin, qc_officer, viewer)
+        if user is not None and user.can("report.view"):
+            from ui.reports_panel import ReportsPanel
+            self.reports_panel = ReportsPanel(db, user)
+            self.tabs.addTab(self.reports_panel, "Reports")
+
         # Workflow designer — project.edit only (HLD §17.5 role gate)
         if user is not None and user.can("project.edit"):
             self.designer = WorkflowDesigner(db, profile_manager, user)
@@ -83,8 +89,11 @@ class MainWindow(QMainWindow):
             "Not logged in")
 
     def _on_tab_changed(self, index: int) -> None:
-        if self.tabs.widget(index) is self.qc_panel:
+        widget = self.tabs.widget(index)
+        if widget is self.qc_panel:
             self.qc_panel.refresh()
+        elif widget is getattr(self, "reports_panel", None):
+            self.reports_panel.refresh()
 
     def open_scan_wizard(self) -> None:
         projects = []

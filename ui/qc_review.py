@@ -64,6 +64,10 @@ class QCReviewPanel(QWidget):
             btn.setEnabled(can_review)
             btn.clicked.connect(lambda _=False, a=action: self._action(a))
             buttons.addWidget(btn)
+        self.edit_btn = QPushButton("Edit page…")
+        self.edit_btn.setEnabled(can_review)
+        self.edit_btn.clicked.connect(self.open_editor)
+        buttons.addWidget(self.edit_btn)
         right_layout.addLayout(buttons)
         splitter.addWidget(right)
         splitter.setSizes([250, 750])
@@ -132,6 +136,40 @@ class QCReviewPanel(QWidget):
                 parts.append(f"page {page_no} flags: {', '.join(flags)}")
         summary = "; ".join(parts) if parts else "no deductions recorded"
         return f"QC score: {doc['qc_score']} — {summary}"
+
+    def editable_pages(self, doc_id: str) -> dict[str, dict]:
+        """page_no -> {original_path, working_path} for pages whose
+        working image still exists on disk."""
+        from pathlib import Path
+        doc = self.db.get_document(doc_id)
+        if doc is None:
+            return {}
+        try:
+            pages = json.loads(doc["qc_detail"] or "{}").get("pages", {})
+        except json.JSONDecodeError:
+            return {}
+        return {no: {"original_path": info.get("original_path"),
+                     "working_path": info.get("working_path")}
+                for no, info in pages.items()
+                if isinstance(info, dict) and info.get("working_path")
+                and Path(info["working_path"]).exists()}
+
+    def open_editor(self) -> None:
+        doc_id = self.current_document_id()
+        if doc_id is None:
+            return
+        pages = self.editable_pages(doc_id)
+        if not pages:
+            self.score_label.setText(
+                "No editable page images for this document.")
+            return
+        from ui.page_editor import PageEditDialog
+        user = self.current_user.username if self.current_user else "unknown"
+        dlg = PageEditDialog(doc_id, pages, audit=self.audit,
+                             username=user, parent=self)
+        dlg.saved.connect(lambda *_: self._show_document(
+            self.queue.currentItem(), None))
+        dlg.exec()
 
     def _action(self, action: str) -> None:
         doc_id = self.current_document_id()
