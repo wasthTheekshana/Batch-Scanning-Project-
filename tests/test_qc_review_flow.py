@@ -87,6 +87,19 @@ def test_accept_exports_and_delivers(qtbot, held_doc_env):
     assert len(delivered) >= 1
 
 
+def test_all_documents_filter_shows_passed_docs(qtbot, held_doc_env):
+    """Admin can open any document (and its page editor), not just the
+    WARN/FAIL review queue."""
+    db, _profile, _tmp = held_doc_env
+    panel = QCReviewPanel(db, None, QC_OFFICER)
+    qtbot.addWidget(panel)
+    assert panel.queue.count() == 1          # default: review queue only
+    panel.filter_combo.setCurrentIndex(1)    # All documents
+    assert panel.queue.count() == 2          # passed doc now visible too
+    panel.queue.setCurrentRow(0)
+    assert panel.editable_pages(panel.current_document_id())
+
+
 def test_reject_does_not_export(qtbot, held_doc_env):
     db, profile, tmp_path = held_doc_env
     panel = QCReviewPanel(db, None, QC_OFFICER)

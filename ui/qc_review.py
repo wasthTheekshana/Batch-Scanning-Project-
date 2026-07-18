@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QListWidget,
+from PyQt6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QListWidget,
                              QListWidgetItem, QPushButton, QSplitter,
                              QVBoxLayout, QWidget)
 
@@ -28,7 +28,12 @@ class QCReviewPanel(QWidget):
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
-        left_layout.addWidget(QLabel("Review queue (WARN / FAIL)"))
+        left_layout.addWidget(QLabel("Documents"))
+        self.filter_combo = QComboBox()
+        self.filter_combo.addItem("Review queue (WARN / FAIL)", "pending")
+        self.filter_combo.addItem("All documents", "all")
+        self.filter_combo.currentIndexChanged.connect(lambda _: self.refresh())
+        left_layout.addWidget(self.filter_combo)
         self.queue = QListWidget()
         self.queue.currentItemChanged.connect(self._show_document)
         left_layout.addWidget(self.queue)
@@ -76,10 +81,15 @@ class QCReviewPanel(QWidget):
     # -- data ----------------------------------------------------------------
     def refresh(self) -> None:
         self.queue.clear()
-        for doc in self.db.list_documents(validation_status="pending_qc"):
+        mode = self.filter_combo.currentData()
+        if mode == "all":
+            docs = self.db.list_documents()
+        else:
+            docs = self.db.list_documents(validation_status="pending_qc")
+        for doc in docs:
             item = QListWidgetItem(
                 f"{doc['document_id'][:8]} · pages {doc['page_range']} · "
-                f"score {doc['qc_score']}")
+                f"score {doc['qc_score']} · {doc['validation_status']}")
             item.setData(Qt.ItemDataRole.UserRole, doc["document_id"])
             self.queue.addItem(item)
 
