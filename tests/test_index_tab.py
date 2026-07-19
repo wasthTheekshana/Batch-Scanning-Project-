@@ -147,6 +147,85 @@ def test_auto_extract_prefers_original_geometry(qtbot, env, monkeypatch):
     assert seen["shape"][:2] == (1000, 800)  # original, not the crop
 
 
+def test_zone_scaling_is_resolution_independent():
+    """A zone drawn on a small sample must land on the same relative
+    region of a higher-resolution page."""
+    from ocr.zone_extractor import extract_fields, scaled_rect
+
+    zone = {"name": "f", "x": 100, "y": 50, "w": 200, "h": 100,
+            "ref_w": 800, "ref_h": 1000}
+    assert scaled_rect(zone, 1600, 2000) == (200, 100, 400, 200)
+    assert scaled_rect(zone, 800, 1000) == (100, 50, 200, 100)
+    # zone without ref stays absolute (backwards compatible)
+    legacy = {"name": "f", "x": 100, "y": 50, "w": 200, "h": 100}
+    assert scaled_rect(legacy, 1600, 2000) == (100, 50, 200, 100)
+
+    # end-to-end: big page, dark patch only inside the scaled region
+    import numpy as np
+    page = np.full((2000, 1600), 255, np.uint8)
+    page[100:300, 200:600] = 0
+    seen = {}
+
+    def fake_ocr(region):
+        seen["shape"] = region.shape
+        return OCRResult(text="HIT" if region.min() < 128 else "",
+                         confidence=0.9)
+
+    fields = extract_fields(page, [zone], ocr_fn=fake_ocr)
+    assert fields["f"].value == "HIT"
+    assert seen["shape"] == (200, 400)  # the scaled rect, not the raw one
+
+
+def test_auto_extract_searches_all_pages(qtbot, env, monkeypatch):
+    """A field on page 2 must still be found."""
+    db, audit, tmp = env
+    page1 = tmp / "p1.png"; page2 = tmp / "p2.png"
+    cv2.imwrite(str(page1), make_text_page())
+    cv2.imwrite(str(page2), make_text_page())
+    db.update_document("d1", qc_detail={
+        "flags": [], "pages": {
+            "1": {"original_path": str(page1)},
+            "2": {"original_path": str(page2)}}})
+    calls = {"n": 0}
+
+    def fake_extract(image, zones, lang="eng", ocr_fn=None):
+        calls["n"] += 1
+        from ocr.zone_extractor import FieldValue
+        # page 1 reads nothing; page 2 has the value
+        value = "INV-2ND" if calls["n"] == 2 else ""
+        return {"invoice_no": FieldValue(value, 0.9)}
+
+    monkeypatch.setattr("ocr.zone_extractor.extract_fields", fake_extract)
+    editor = IndexEditor(db, ZONES, audit, ADMIN)
+    qtbot.addWidget(editor)
+    editor.filter_combo.setCurrentIndex(1)
+    for i in range(editor.doc_list.count()):
+        if "d1" in editor.doc_list.item(i).text():
+            editor.doc_list.setCurrentRow(i)
+            break
+    editor.auto_extract()
+    assert editor._inputs["invoice_no"].text() == "INV-2ND"
+    assert "page 2" in editor.hint.text()
+
+
+def test_zone_dialog_records_sample_reference(qtbot, tmp_path):
+    from ui.zone_dialog import ZoneDialog
+    sample = tmp_path / "s.png"
+    cv2.imwrite(str(sample), make_text_page())  # 1000h x 800w
+    dlg = ZoneDialog()
+    qtbot.addWidget(dlg)
+    dlg.load_sample(str(sample))
+    dlg.name.setText("invoice_no")
+    dlg._on_region(10, 20, 300, 80)
+    zone = dlg.build_zone()
+    assert zone["ref_w"] == 800 and zone["ref_h"] == 1000
+    # re-editing without reloading a sample keeps the reference
+    dlg2 = ZoneDialog(zone)
+    qtbot.addWidget(dlg2)
+    zone2 = dlg2.build_zone()
+    assert zone2["ref_w"] == 800 and zone2["ref_h"] == 1000
+
+
 def test_zone_dialog_builds_zone(qtbot):
     from ui.zone_dialog import ZoneDialog
     dlg = ZoneDialog()

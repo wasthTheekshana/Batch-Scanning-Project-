@@ -192,19 +192,28 @@ class IndexEditor(QWidget):
             self.hint.setText("Select a document and configure zones first.")
             return
         doc = self.db.get_document(self.document_id)
-        # extraction must use the ORIGINAL page: zones are drawn against
-        # original geometry, and the working copy is cropped/deskewed
-        image_path = self._first_page_image(doc, prefer_original=True)
-        if not image_path:
-            self.hint.setText("No page image available for this document.")
+        # extraction uses ORIGINAL pages: zones are drawn against original
+        # geometry (the working copy is cropped/deskewed); zones with
+        # ref dimensions scale automatically to each page's resolution
+        page_paths = self._page_originals(doc)
+        if not page_paths:
+            self.hint.setText("No page images available for this document.")
             return
+        best: dict[str, tuple[str, float, str]] = {}  # name -> (value, conf, page)
         try:
             import cv2
 
             from ocr.tesseract_engine import TesseractNotFound
             from ocr.zone_extractor import extract_fields
-            image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
-            fields = extract_fields(image, self.zones)
+            for page_no, path in page_paths:
+                image = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+                if image is None:
+                    continue
+                for name, fv in extract_fields(image, self.zones).items():
+                    if fv.value and name not in best:
+                        best[name] = (fv.value, fv.confidence, page_no)
+                if len(best) == len(self.zones):
+                    break  # every field found
         except TesseractNotFound:
             self.hint.setText("Tesseract OCR is not available on this "
                               "machine — enter the fields manually.")
@@ -213,19 +222,36 @@ class IndexEditor(QWidget):
             self.hint.setText(f"Extraction failed: {e}")
             return
         results = []
-        for name, fv in fields.items():
+        for zone in self.zones:
+            name = zone["name"]
             if name not in self._inputs:
                 continue
-            if fv.value:
-                self._inputs[name].setText(fv.value)
-                results.append(f"{name}: “{fv.value}” "
-                               f"({fv.confidence:.0%})")
+            if name in best:
+                value, conf, page_no = best[name]
+                self._inputs[name].setText(value)
+                results.append(f"{name}: “{value}” ({conf:.0%}, "
+                               f"page {page_no})")
             else:
-                results.append(f"{name}: no match — check the zone "
-                               "position/regex (Projects → Index zones "
-                               "→ Test zone)")
+                results.append(f"{name}: no match on any page — check the "
+                               "zone position/regex (Projects → Index "
+                               "zones → Test zone)")
         self.hint.setText("\n".join(results) if results else
                           "No zone fields configured.")
+
+    def _page_originals(self, doc) -> list[tuple[str, str]]:
+        """[(page_no, original_image_path)] for every page on disk."""
+        try:
+            pages = json.loads(doc["qc_detail"] or "{}").get("pages", {})
+        except json.JSONDecodeError:
+            return []
+        out = []
+        for no in sorted(pages, key=lambda k: int(k) if str(k).isdigit() else 0):
+            info = pages[no]
+            if isinstance(info, dict):
+                path = info.get("original_path") or info.get("working_path")
+                if path and Path(path).exists():
+                    out.append((no, path))
+        return out
 
     def save(self) -> None:
         if self.document_id is None:

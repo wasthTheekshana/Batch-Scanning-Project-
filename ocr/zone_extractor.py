@@ -21,19 +21,33 @@ class FieldValue:
     confidence: float
 
 
+def scaled_rect(zone: dict, img_w: int, img_h: int) -> tuple[int, int, int, int]:
+    """Zone rect in this image's pixels. Zones drawn on a sample of a
+    different resolution carry ref_w/ref_h and are scaled proportionally
+    so extraction is resolution-independent."""
+    x, y, w, h = int(zone["x"]), int(zone["y"]), int(zone["w"]), int(zone["h"])
+    ref_w, ref_h = zone.get("ref_w"), zone.get("ref_h")
+    if ref_w and ref_h and (int(ref_w) != img_w or int(ref_h) != img_h):
+        sx, sy = img_w / int(ref_w), img_h / int(ref_h)
+        x, y, w, h = round(x * sx), round(y * sy), round(w * sx), round(h * sy)
+    return x, y, w, h
+
+
 def extract_fields(img: np.ndarray, zones: list[dict], lang: str = "eng",
                    ocr_fn: Callable[[np.ndarray], OCRResult] | None = None
                    ) -> dict[str, FieldValue]:
     """zones: [{'name': 'invoice_no', 'x':..,'y':..,'w':..,'h':..,
-    'regex': optional}]. ocr_fn is injectable for tests."""
+    'regex': optional, 'ref_w'/'ref_h': optional sample dimensions}].
+    ocr_fn is injectable for tests."""
     run_ocr = ocr_fn or (lambda region: ocr_page(region, lang=lang))
     h, w = img.shape[:2]
     fields: dict[str, FieldValue] = {}
     for zone in zones:
-        x0 = max(0, min(int(zone["x"]), w - 1))
-        y0 = max(0, min(int(zone["y"]), h - 1))
-        x1 = max(x0 + 1, min(x0 + int(zone["w"]), w))
-        y1 = max(y0 + 1, min(y0 + int(zone["h"]), h))
+        zx, zy, zw, zh = scaled_rect(zone, w, h)
+        x0 = max(0, min(zx, w - 1))
+        y0 = max(0, min(zy, h - 1))
+        x1 = max(x0 + 1, min(x0 + zw, w))
+        y1 = max(y0 + 1, min(y0 + zh, h))
         result = run_ocr(img[y0:y1, x0:x1])
         value = result.text.strip()
         if zone.get("regex"):

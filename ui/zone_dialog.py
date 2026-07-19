@@ -23,6 +23,8 @@ class ZoneDialog(QDialog):
         self.setWindowTitle("Index zone")
         self.resize(900, 720)
         self._sample: np.ndarray | None = None
+        self._ref = ((zone.get("ref_w"), zone.get("ref_h"))
+                     if zone else (None, None))
         layout = QVBoxLayout(self)
 
         form = QFormLayout()
@@ -168,6 +170,12 @@ class ZoneDialog(QDialog):
             return None
         zone = {"name": name, "x": self.x.value(), "y": self.y.value(),
                 "w": self.w.value(), "h": self.h.value()}
+        if self._sample is not None:
+            # remember the sample's dimensions so the zone scales to
+            # pages of any resolution (resolution-independent zones)
+            zone["ref_h"], zone["ref_w"] = self._sample.shape[:2]
+        elif self._ref[0] and self._ref[1]:
+            zone["ref_w"], zone["ref_h"] = self._ref  # keep on re-edit
         if self.regex.text().strip():
             zone["regex"] = self.regex.text().strip()
         return zone
