@@ -208,6 +208,26 @@ def test_auto_extract_searches_all_pages(qtbot, env, monkeypatch):
     assert "page 2" in editor.hint.text()
 
 
+def test_zone_dialog_loads_pdf_sample(qtbot, tmp_path):
+    pytest.importorskip("fitz", reason="PyMuPDF not installed")
+    import img2pdf
+    from ui.zone_dialog import ZoneDialog
+    src = tmp_path / "page.png"
+    cv2.imwrite(str(src), make_text_page())
+    pdf = tmp_path / "sample.pdf"
+    pdf.write_bytes(img2pdf.convert([str(src)]))
+    dlg = ZoneDialog()
+    qtbot.addWidget(dlg)
+    dlg.load_sample(str(pdf))
+    assert dlg._sample is not None
+    # rendered at 300 DPI → larger than the 800px source, ref recorded
+    dlg.name.setText("f")
+    dlg._on_region(0, 0, 100, 50)
+    zone = dlg.build_zone()
+    assert zone["ref_w"] == dlg._sample.shape[1]
+    assert zone["ref_h"] == dlg._sample.shape[0]
+
+
 def test_zone_dialog_records_sample_reference(qtbot, tmp_path):
     from ui.zone_dialog import ZoneDialog
     sample = tmp_path / "s.png"

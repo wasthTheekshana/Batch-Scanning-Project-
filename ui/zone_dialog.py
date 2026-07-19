@@ -90,16 +90,51 @@ class ZoneDialog(QDialog):
         if not path:
             path, _ = QFileDialog.getOpenFileName(
                 self, "Sample page", "",
-                "Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp)")
+                "Documents (*.pdf *.png *.jpg *.jpeg *.tif *.tiff *.bmp)")
         if not path:
             return
-        img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+        if str(path).lower().endswith(".pdf"):
+            img = self._load_pdf_page(path)
+        else:
+            img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
         if img is not None:
             self._sample = img
             self.view.show_array(img)
             self._sync_overlay()
             self.hint.setText("Drag the region where the field appears, "
                               "then click Test zone.")
+
+    def _load_pdf_page(self, path: str):
+        """Rasterise a PDF page at 300 DPI — identical to how the import
+        pipeline renders PDFs, so zone geometry matches production pages."""
+        try:
+            import fitz  # PyMuPDF
+        except ImportError:
+            self.hint.setText("PDF support (PyMuPDF) is not installed — "
+                              "load an image sample instead.")
+            return None
+        import numpy as np
+        doc = fitz.open(path)
+        try:
+            page_no = 0
+            if doc.page_count > 1:
+                from PyQt6.QtWidgets import QInputDialog
+                n, ok = QInputDialog.getInt(
+                    self, "PDF sample", f"Page (1–{doc.page_count}):",
+                    1, 1, doc.page_count)
+                if not ok:
+                    return None
+                page_no = n - 1
+            pix = doc[page_no].get_pixmap(dpi=300)
+            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
+                pix.height, pix.width, pix.n)
+            if pix.n >= 3:
+                img = cv2.cvtColor(img[..., :3], cv2.COLOR_RGB2BGR)
+            else:
+                img = img[..., 0]
+            return img
+        finally:
+            doc.close()
 
     def _on_region(self, x: int, y: int, w: int, h: int) -> None:
         for sb, v in ((self.x, x), (self.y, y), (self.w, w), (self.h, h)):
