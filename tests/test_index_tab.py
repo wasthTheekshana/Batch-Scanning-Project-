@@ -95,6 +95,58 @@ def test_no_zones_shows_guidance(qtbot, env):
     assert "No index zones configured" in editor.hint.text()
 
 
+def test_zone_dialog_test_zone_shows_raw_and_regex(qtbot, tmp_path,
+                                                   monkeypatch):
+    from ui.zone_dialog import ZoneDialog
+    sample = tmp_path / "sample.png"
+    cv2.imwrite(str(sample), make_text_page())
+    dlg = ZoneDialog()
+    qtbot.addWidget(dlg)
+    dlg.load_sample(str(sample))
+    dlg._on_region(0, 0, 800, 200)
+    monkeypatch.setattr(
+        "ocr.tesseract_engine.ocr_page",
+        lambda img, lang="eng": OCRResult(text="Invoice No INV-5555",
+                                          confidence=0.91))
+    dlg.regex.setText(r"(INV-\d+)")
+    dlg.test_zone()
+    assert "INV-5555" in dlg.result.text()
+    assert "will be stored" in dlg.result.text()
+    dlg.regex.setText(r"(PO-\d+)")     # non-matching regex is diagnosed
+    dlg.test_zone()
+    assert "NO MATCH" in dlg.result.text()
+
+
+def test_auto_extract_prefers_original_geometry(qtbot, env, monkeypatch):
+    """Zones are drawn on original pages; extraction must not run on the
+    cropped working copy."""
+    db, audit, tmp = env
+    original = tmp / "orig_big.png"
+    working = tmp / "work_small.png"
+    cv2.imwrite(str(original), make_text_page())            # 1000x800
+    cv2.imwrite(str(working), make_text_page()[:500, :400])  # cropped
+    db.update_document("d1", qc_detail={
+        "flags": [], "pages": {"1": {"original_path": str(original),
+                                     "working_path": str(working)}}})
+    seen = {}
+
+    def fake_extract(image, zones, lang="eng", ocr_fn=None):
+        seen["shape"] = image.shape
+        from ocr.zone_extractor import FieldValue
+        return {"invoice_no": FieldValue("INV-1", 0.9)}
+
+    monkeypatch.setattr("ocr.zone_extractor.extract_fields", fake_extract)
+    editor = IndexEditor(db, ZONES, audit, ADMIN)
+    qtbot.addWidget(editor)
+    editor.filter_combo.setCurrentIndex(1)
+    for i in range(editor.doc_list.count()):
+        if "d1"[:8] in editor.doc_list.item(i).text():
+            editor.doc_list.setCurrentRow(i)
+            break
+    editor.auto_extract()
+    assert seen["shape"][:2] == (1000, 800)  # original, not the crop
+
+
 def test_zone_dialog_builds_zone(qtbot):
     from ui.zone_dialog import ZoneDialog
     dlg = ZoneDialog()

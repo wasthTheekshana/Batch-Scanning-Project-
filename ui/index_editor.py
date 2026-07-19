@@ -151,17 +151,23 @@ class IndexEditor(QWidget):
             self.load_document(current.data(Qt.ItemDataRole.UserRole))
 
     # -- document ------------------------------------------------------------------
-    def _first_page_image(self, doc) -> str | None:
+    def _first_page_image(self, doc, prefer_original: bool = False) -> str | None:
+        """First page image path. prefer_original=True returns the raw
+        scan — zone coordinates are defined against original geometry,
+        so extraction must NOT use the cropped/deskewed working copy."""
         try:
             pages = json.loads(doc["qc_detail"] or "{}").get("pages", {})
         except json.JSONDecodeError:
             return None
+        order = (("original_path", "working_path") if prefer_original
+                 else ("working_path", "original_path"))
         for no in sorted(pages, key=lambda k: int(k) if str(k).isdigit() else 0):
             info = pages[no]
             if isinstance(info, dict):
-                path = info.get("working_path") or info.get("original_path")
-                if path and Path(path).exists():
-                    return path
+                for key in order:
+                    path = info.get(key)
+                    if path and Path(path).exists():
+                        return path
         return None
 
     def load_document(self, document_id: str) -> None:
@@ -186,7 +192,9 @@ class IndexEditor(QWidget):
             self.hint.setText("Select a document and configure zones first.")
             return
         doc = self.db.get_document(self.document_id)
-        image_path = self._first_page_image(doc)
+        # extraction must use the ORIGINAL page: zones are drawn against
+        # original geometry, and the working copy is cropped/deskewed
+        image_path = self._first_page_image(doc, prefer_original=True)
         if not image_path:
             self.hint.setText("No page image available for this document.")
             return
@@ -204,12 +212,20 @@ class IndexEditor(QWidget):
         except Exception as e:
             self.hint.setText(f"Extraction failed: {e}")
             return
-        filled = 0
+        results = []
         for name, fv in fields.items():
-            if name in self._inputs and fv.value:
+            if name not in self._inputs:
+                continue
+            if fv.value:
                 self._inputs[name].setText(fv.value)
-                filled += 1
-        self.hint.setText(f"Extracted {filled} field(s) — review and save.")
+                results.append(f"{name}: “{fv.value}” "
+                               f"({fv.confidence:.0%})")
+            else:
+                results.append(f"{name}: no match — check the zone "
+                               "position/regex (Projects → Index zones "
+                               "→ Test zone)")
+        self.hint.setText("\n".join(results) if results else
+                          "No zone fields configured.")
 
     def save(self) -> None:
         if self.document_id is None:

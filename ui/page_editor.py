@@ -70,6 +70,19 @@ class SelectableImageView(ImageView):
         self._scene.setSceneRect(self._item.boundingRect())
         self.fit()
 
+    def show_overlay_rect(self, x: int, y: int, w: int, h: int) -> None:
+        """Draw/refresh a persistent rectangle marking a region
+        (e.g. the currently configured index zone)."""
+        from PyQt6.QtCore import QRectF
+        from PyQt6.QtGui import QColor, QPen
+        if getattr(self, "_overlay", None) is None:
+            pen = QPen(QColor("#0E7C66"))
+            pen.setWidth(3)
+            pen.setCosmetic(True)
+            self._overlay = self._scene.addRect(QRectF(), pen)
+            self._overlay.setZValue(10)
+        self._overlay.setRect(QRectF(x, y, w, h))
+
 
 class PageEditDialog(QDialog):
     """Edit one page's working image; ops are audited on save."""
