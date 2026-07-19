@@ -267,6 +267,28 @@ class WorkflowDesigner(QWidget):
         e_layout.addRow("Delivery folder", self.delivery_path)
         layout.addWidget(exp_box)
 
+        # index zones (auto-index fields)
+        zone_box = QGroupBox("Index zones (auto-index fields)")
+        z_layout = QVBoxLayout(zone_box)
+        z_layout.addWidget(QLabel(
+            "Each zone reads one field from a region of the page. "
+            "Add a zone, load a sample page, and drag the region."))
+        self.zone_list = QListWidget()
+        z_layout.addWidget(self.zone_list)
+        zone_btns = QHBoxLayout()
+        self.add_zone_btn = QPushButton("Add zone…")
+        self.edit_zone_btn = QPushButton("Edit…")
+        self.del_zone_btn = QPushButton("Remove")
+        self.add_zone_btn.clicked.connect(self.add_zone)
+        self.edit_zone_btn.clicked.connect(self.edit_zone)
+        self.del_zone_btn.clicked.connect(
+            lambda: self.zone_list.takeItem(self.zone_list.currentRow()))
+        for b in (self.add_zone_btn, self.edit_zone_btn, self.del_zone_btn):
+            b.setEnabled(self.can_edit)
+            zone_btns.addWidget(b)
+        z_layout.addLayout(zone_btns)
+        layout.addWidget(zone_box)
+
         # SFTP delivery (Phase 3)
         sftp_box = QGroupBox("SFTP delivery (LAN)")
         sftp_layout = QFormLayout(sftp_box)
@@ -358,6 +380,9 @@ class WorkflowDesigner(QWidget):
         self.output_path.setText(cfg["export"]["output_path"])
         self.delivery_path.setText(
             cfg["delivery"]["local_folder"].get("path", ""))
+        self.zone_list.clear()
+        for zone in cfg.get("ocr", {}).get("zones", []):
+            self._append_zone(zone)
         sftp = cfg["delivery"].get("sftp", {})
         self.sftp_host.setText(sftp.get("host", ""))
         self.sftp_port.setValue(int(sftp.get("port", 22)))
@@ -407,10 +432,45 @@ class WorkflowDesigner(QWidget):
             "key_file": self.sftp_key_file.text().strip(),
             "remote_path": self.sftp_remote_path.text().strip(),
         })
+        cfg["ocr"]["zones"] = [
+            self.zone_list.item(i).data(Qt.ItemDataRole.UserRole)
+            for i in range(self.zone_list.count())]
         cfg["rules"]["rules"] = [
             self.rule_list.item(i).data(Qt.ItemDataRole.UserRole)
             for i in range(self.rule_list.count())]
         return cfg
+
+    # -- index zones ---------------------------------------------------------
+    def _append_zone(self, zone: dict) -> None:
+        item = QListWidgetItem(
+            f"{zone['name']} — ({zone['x']}, {zone['y']}) "
+            f"{zone['w']}×{zone['h']}"
+            + (f" · /{zone['regex']}/" if zone.get("regex") else ""))
+        item.setData(Qt.ItemDataRole.UserRole, zone)
+        self.zone_list.addItem(item)
+
+    def add_zone(self) -> None:
+        from ui.zone_dialog import ZoneDialog
+        dlg = ZoneDialog(parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            zone = dlg.build_zone()
+            if zone:
+                self._append_zone(zone)
+
+    def edit_zone(self) -> None:
+        item = self.zone_list.currentItem()
+        if item is None:
+            return
+        from ui.zone_dialog import ZoneDialog
+        dlg = ZoneDialog(item.data(Qt.ItemDataRole.UserRole), parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            zone = dlg.build_zone()
+            if zone:
+                item.setData(Qt.ItemDataRole.UserRole, zone)
+                item.setText(
+                    f"{zone['name']} — ({zone['x']}, {zone['y']}) "
+                    f"{zone['w']}×{zone['h']}"
+                    + (f" · /{zone['regex']}/" if zone.get("regex") else ""))
 
     def save(self) -> None:
         try:

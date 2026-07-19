@@ -144,12 +144,25 @@ class MainWindow(QMainWindow):
             f"({ROLE_LABELS.get(user.role, user.role)})" if user else
             "Not signed in")
 
+    def _active_zones(self) -> list:
+        import json
+        for row in self.db.list_projects("active"):
+            cfg = json.loads(row["config_json"])
+            zones = cfg.get("ocr", {}).get("zones", [])
+            if zones:
+                return zones
+        return []
+
     def _on_tab_changed(self, index: int) -> None:
         widget = self.tabs.widget(index)
         if widget is self.qc_panel:
             self.qc_panel.refresh()
         elif widget is getattr(self, "reports_panel", None):
             self.reports_panel.refresh()
+        elif widget is self.index_editor:
+            # zones may have been edited in the designer since startup
+            self.index_editor.set_zones(self._active_zones())
+            self.index_editor.refresh()
 
     def sign_out(self) -> None:
         Session.logout(self.db)
