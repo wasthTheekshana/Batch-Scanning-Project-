@@ -2,7 +2,8 @@
 
 Fully offline Windows desktop application for batch document scanning with a
 5-stage automatic quality-control pipeline, OCR indexing, rule-based routing,
-and multi-channel export. Built per `DOK_HLD_v2.docx` (Phase 1 — Core System).
+and multi-channel export. Built per `DOK_HLD_v2.docx` (Phases 1–3, in
+progress toward go-live).
 
 ## Stack
 
@@ -48,6 +49,21 @@ Tesseract 5 must be on PATH for OCR features (bundled in the packaged EXE).
   delivery incl. rule-triggered channels, benchmark suite
   (`python scripts/benchmark.py --pages 100 [--ocr]`; dev machine:
   141 pages/min no-OCR, 115 pages/min with OCR).
+- **Layer 5 indexing (HLD §4)** — complete: indexing work queue with page
+  preview, zone-based auto-extract that searches every page and scales
+  resolution-independently, live zone-test/regex diagnosis in the workflow
+  designer (PDF or image samples, 300 DPI), and lookup-table validation
+  of extracted values against previously-indexed history.
+- **QC & reporting** — complete: manual page editor (rotate/crop/whiteout/
+  enhance, audit-logged), QC review "All documents" filter, reports tab
+  with QC report PDF export.
+- **Remaining before go-live** — bundle `tesseract.exe`/`tessdata`/
+  `libzbar-64.dll` into the release build (blocked on binaries), vendor
+  SDK `acquire()` bodies for Kodak/Alaris/CZUR/Viisan (blocked on vendor
+  DLLs), code-signing cert, Inno Setup installer compile + verify, client
+  UAT sign-off (`docs/UAT-checklist.md`).
+- Phase 4 (on-premise LLM assistant + client web portal) is out of scope
+  per the HLD and deferred to a future release.
 
 ## Packaging
 
