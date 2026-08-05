@@ -105,16 +105,7 @@ class IndexEditor(QWidget):
             self.hint.setText("")
 
     def _completer_for(self, field: str) -> QCompleter:
-        values = set()
-        for row in self.db.conn.execute(
-                "SELECT extracted_fields FROM documents").fetchall():
-            try:
-                v = json.loads(row["extracted_fields"] or "{}").get(field)
-                if v:
-                    values.add(str(v))
-            except json.JSONDecodeError:
-                continue
-        return QCompleter(sorted(values))
+        return QCompleter(sorted(self.db.known_field_values(field)))
 
     # -- work queue -------------------------------------------------------------
     def _needs_indexing(self, doc) -> bool:

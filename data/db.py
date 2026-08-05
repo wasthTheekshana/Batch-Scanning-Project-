@@ -283,6 +283,22 @@ class Database:
         with self._lock:
             return self.conn.execute(q + " ORDER BY created_at", tuple(args)).fetchall()
 
+    def known_field_values(self, field_name: str) -> set[str]:
+        """Distinct previously-indexed values for an extracted field, used
+        for autocomplete and lookup-table validation (HLD §4 Layer 5)."""
+        values: set[str] = set()
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT extracted_fields FROM documents").fetchall()
+        for row in rows:
+            try:
+                v = json.loads(row["extracted_fields"] or "{}").get(field_name)
+            except json.JSONDecodeError:
+                continue
+            if v:
+                values.add(str(v))
+        return values
+
     # -- users ------------------------------------------------------------
     def insert_user(self, user_id: str, username: str, password_hash: str,
                     role: str) -> None:

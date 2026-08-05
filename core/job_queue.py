@@ -38,6 +38,11 @@ log = logging.getLogger(__name__)
 
 _SENTINEL = object()
 
+# A field's lookup table only starts rejecting unrecognised values once
+# enough history exists to trust it — otherwise every project's first few
+# documents would flag every field as unknown.
+_LOOKUP_MIN_SAMPLES = 5
+
 
 class Pipeline:
     """Wires the six workers to a project profile.
@@ -237,6 +242,16 @@ class Pipeline:
             record.extracted_fields[name] = fv.value
             if not fv.value or fv.confidence < threshold:
                 record.low_conf_fields.append(name)
+            elif self._fails_lookup(name, fv.value):
+                record.low_conf_fields.append(name)
+
+    def _fails_lookup(self, field_name: str, value: str) -> bool:
+        """True if the value doesn't match this field's lookup table of
+        previously-indexed values (HLD §4 Layer 5: "validated against
+        lookup tables in SQLite"). Only enforced once the field has
+        enough history to be a trustworthy lookup set."""
+        known = self.db.known_field_values(field_name)
+        return len(known) >= _LOOKUP_MIN_SAMPLES and value not in known
 
     def _enhance_worker(self) -> None:
         def handle(record: PageRecord):
