@@ -11,3 +11,9 @@ dist/
 output/
 staging/
 logs/
+
+# Packaging inputs (HLD §21.1) — placed locally before a release build,
+# not committed: redistributable Tesseract/zbar binaries, not our code.
+/tesseract.exe
+/*.dll
+/tessdata/

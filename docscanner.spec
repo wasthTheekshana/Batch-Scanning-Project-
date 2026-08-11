@@ -2,6 +2,7 @@
 # Build:  pyinstaller docscanner.spec
 # Bundle tesseract.exe, tessdata/ and libzbar-64.dll next to this spec
 # before building the release EXE.
+import glob
 import os
 
 block_cipher = None
@@ -12,8 +13,14 @@ if os.path.isdir("tessdata"):
     datas.append(("tessdata", "tessdata"))
 if os.path.isfile("tesseract.exe"):
     binaries.append(("tesseract.exe", "."))
-if os.path.isfile("libzbar-64.dll"):
+    # tesseract.exe is an xcopy-deployed binary — it needs every shared
+    # library from its install dir alongside it, not just the exe itself.
+    for dll in glob.glob("*.dll"):
+        binaries.append((dll, "."))
+elif os.path.isfile("libzbar-64.dll"):
     binaries.append(("libzbar-64.dll", "."))
+    if os.path.isfile("libiconv.dll"):
+        binaries.append(("libiconv.dll", "."))
 
 a = Analysis(
     ["main.py"],
