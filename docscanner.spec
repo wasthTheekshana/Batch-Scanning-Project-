@@ -7,7 +7,12 @@ import os
 
 block_cipher = None
 
-datas = []
+datas = [
+    # module-adjacent JSON loaded via Path(__file__).parent at import time -
+    # PyInstaller only auto-detects Python imports, not data files.
+    ("core/project_schema.json", "core"),
+    ("separation/rule_schema.json", "separation"),
+]
 binaries = []
 if os.path.isdir("tessdata"):
     datas.append(("tessdata", "tessdata"))
