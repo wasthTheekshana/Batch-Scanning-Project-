@@ -117,6 +117,39 @@ def test_zone_dialog_test_zone_shows_raw_and_regex(qtbot, tmp_path,
     assert "NO MATCH" in dlg.result.text()
 
 
+@pytest.mark.parametrize("raw_text,expected", [
+    ("Invoice No. :CP11407366", r":\s*(\S+)"),      # single token
+    ("Territory : SP04-Ashan Shanuka", r":\s*(.+)"),  # value has a space
+    ("no colon here", None),
+    ("Label :", None),                               # colon but no value
+])
+def test_suggest_label_regex(raw_text, expected):
+    from ui.zone_dialog import suggest_label_regex
+    assert suggest_label_regex(raw_text) == expected
+
+
+def test_zone_dialog_suggest_regex_fills_and_tests(qtbot, tmp_path, monkeypatch):
+    """The 'Suggest regex' button fills in a regex from the raw OCR read
+    and immediately shows what it would extract, without the admin
+    having to hand-write the pattern (the fix applied for the Invoice
+    No / Territory zones, now available in the dialog itself)."""
+    from ui.zone_dialog import ZoneDialog
+    sample = tmp_path / "sample.png"
+    cv2.imwrite(str(sample), make_text_page())
+    dlg = ZoneDialog()
+    qtbot.addWidget(dlg)
+    dlg.load_sample(str(sample))
+    dlg._on_region(0, 0, 800, 200)
+    monkeypatch.setattr(
+        "ocr.tesseract_engine.ocr_page",
+        lambda img, lang="eng": OCRResult(
+            text="Territory : SP04-Ashan Shanuka", confidence=0.66))
+    dlg.suggest_regex()
+    assert dlg.regex.text() == r":\s*(.+)"
+    assert "SP04-Ashan Shanuka" in dlg.result.text()
+    assert "will be stored" in dlg.result.text()
+
+
 def test_auto_extract_prefers_original_geometry(qtbot, env, monkeypatch):
     """Zones are drawn on original pages; extraction must not run on the
     cropped working copy."""

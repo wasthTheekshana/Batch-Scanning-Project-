@@ -17,6 +17,23 @@ from ui.page_editor import SelectableImageView
 from ui.theme import mark
 
 
+def suggest_label_regex(raw_text: str) -> str | None:
+    """Guess a clean-up regex for an OCR read like "Label : value" by
+    finding the last colon (labels rarely contain one; values sometimes
+    do) and proposing a pattern that captures everything after it. Single-
+    token values (no spaces) use \\S+ so trailing junk on the line can't
+    leak in; multi-word values need .+ or they'd be cut at the first
+    space. Returns None when no colon separator is found."""
+    text = raw_text.strip()
+    idx = text.rfind(":")
+    if idx == -1:
+        return None
+    remainder = text[idx + 1:].strip()
+    if not remainder:
+        return None
+    return r":\s*(.+)" if " " in remainder else r":\s*(\S+)"
+
+
 class ZoneDialog(QDialog):
     def __init__(self, zone: dict | None = None, parent=None):
         super().__init__(parent)
@@ -57,6 +74,12 @@ class ZoneDialog(QDialog):
         mark(self.test_btn, "primary")
         self.test_btn.clicked.connect(self.test_zone)
         btn_row.addWidget(self.test_btn)
+        self.suggest_btn = QPushButton("Suggest regex")
+        self.suggest_btn.setToolTip(
+            "Reads the region and, if it looks like “Label : value”, "
+            "fills in a regex that strips the label.")
+        self.suggest_btn.clicked.connect(self.suggest_regex)
+        btn_row.addWidget(self.suggest_btn)
         btn_row.addStretch(1)
         layout.addLayout(btn_row)
 
@@ -151,15 +174,15 @@ class ZoneDialog(QDialog):
                                         self.w.value(), self.h.value())
 
     # -- live testing ------------------------------------------------------------
-    def test_zone(self) -> None:
-        """Run real OCR on the configured region of the loaded sample and
-        show the raw read + the regex result."""
+    def _read_region(self):
+        """Run real OCR on the configured region of the loaded sample.
+        Returns None (and sets self.result with why) on any failure."""
         if self._sample is None:
             self.result.setText("Load a sample page first.")
-            return
+            return None
         if not self.w.value() or not self.h.value():
             self.result.setText("Drag a region on the sample first.")
-            return
+            return None
         h, w = self._sample.shape[:2]
         x0 = max(0, min(self.x.value(), w - 1))
         y0 = max(0, min(self.y.value(), h - 1))
@@ -168,16 +191,24 @@ class ZoneDialog(QDialog):
         region = self._sample[y0:y1, x0:x1]
         try:
             from ocr.tesseract_engine import TesseractNotFound, ocr_page
-            read = ocr_page(region)
+            return ocr_page(region)
         except TesseractNotFound:
             self.result.setText("Tesseract OCR is not installed on this "
                                 "machine — cannot test here, but the zone "
                                 "will work on machines with OCR.")
-            return
+            return None
         except Exception as e:
             self.result.setText(f"OCR failed: {e}")
-            return
+            return None
 
+    def test_zone(self) -> None:
+        """Show the raw OCR read + the current regex's result."""
+        read = self._read_region()
+        if read is None:
+            return
+        self._show_test_result(read)
+
+    def _show_test_result(self, read) -> None:
         raw = read.text.strip() or "(nothing readable in this region)"
         lines = [f"OCR read: “{raw}”  (confidence "
                  f"{read.confidence:.0%})"]
@@ -198,6 +229,24 @@ class ZoneDialog(QDialog):
         else:
             lines.append(f"No regex — stored as-is: “{raw}”")
         self.result.setText("\n".join(lines))
+
+    def suggest_regex(self) -> None:
+        """Read the region and, if it looks like "Label : value", fill
+        in a regex that strips the label — then show what it produces."""
+        read = self._read_region()
+        if read is None:
+            return
+        pattern = suggest_label_regex(read.text)
+        if pattern is None:
+            raw = read.text.strip() or "(nothing readable in this region)"
+            self.result.setText(
+                f"OCR read: “{raw}”  (confidence {read.confidence:.0%})\n"
+                "No “label :” pattern detected — nothing to suggest. "
+                "Enter a regex manually, or narrow the region to cover "
+                "just the value.")
+            return
+        self.regex.setText(pattern)
+        self._show_test_result(read)  # show what the suggestion produces
 
     def build_zone(self) -> dict | None:
         name = self.name.text().strip()
