@@ -112,6 +112,15 @@ CREATE TABLE IF NOT EXISTS custody_events (
     detail       TEXT NOT NULL DEFAULT '{}'
 );
 
+CREATE TABLE IF NOT EXISTS project_templates (
+    template_id  TEXT PRIMARY KEY,
+    name         TEXT NOT NULL,
+    category     TEXT NOT NULL,
+    config_json  TEXT NOT NULL,
+    built_in     INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS users (
     user_id       TEXT PRIMARY KEY,
     username      TEXT NOT NULL UNIQUE,
@@ -370,6 +379,35 @@ class Database:
             return self.conn.execute(
                 "SELECT * FROM custody_events WHERE bundle_id=? "
                 "ORDER BY timestamp", (bundle_id,)).fetchall()
+
+    # -- project templates (Enhancement Plan §4.4) -------------------------
+    def insert_template(self, template_id: str, name: str, category: str,
+                        config: dict, built_in: bool = False) -> None:
+        with self._lock, self.conn:
+            self.conn.execute(
+                "INSERT INTO project_templates (template_id, name, "
+                "category, config_json, built_in, created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (template_id, name, category, json.dumps(config),
+                 int(built_in), _now()))
+
+    def get_template(self, template_id: str) -> sqlite3.Row | None:
+        with self._lock:
+            return self.conn.execute(
+                "SELECT * FROM project_templates WHERE template_id=?",
+                (template_id,)).fetchone()
+
+    def list_templates(self) -> list[sqlite3.Row]:
+        with self._lock:
+            return self.conn.execute(
+                "SELECT * FROM project_templates "
+                "ORDER BY category, name").fetchall()
+
+    def update_template_config(self, template_id: str, config: dict) -> None:
+        with self._lock, self.conn:
+            self.conn.execute(
+                "UPDATE project_templates SET config_json=? "
+                "WHERE template_id=?", (json.dumps(config), template_id))
 
     # -- users ------------------------------------------------------------
     def insert_user(self, user_id: str, username: str, password_hash: str,
