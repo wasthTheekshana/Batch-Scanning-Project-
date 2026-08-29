@@ -166,3 +166,35 @@ def test_seed_built_ins_missing_directory_is_a_noop(db, tmp_path):
     tm = TemplateManager(db)
     tm.seed_built_ins(tmp_path / "does-not-exist")  # must not raise
     assert tm.list_templates() == []
+
+
+def test_all_five_built_in_templates_load_and_seed(db):
+    """Guards against a JSON typo in any of the five shipped files -
+    exercises the real core/templates/ directory, not a synthetic one."""
+    tm = TemplateManager(db)
+    tm.seed_built_ins()  # default path: core/templates/ next to this module
+    templates = tm.list_templates()
+    names = {t["name"] for t in templates}
+    assert names == {"Banking", "Insurance", "HR / Personnel",
+                     "Legal / Contracts", "Invoices / Receipts"}
+    for t in templates:
+        assert t["built_in"] is True
+        assert len(t["config"]["ocr"]["zones"]) == 5
+        for zone in t["config"]["ocr"]["zones"]:
+            assert "x" not in zone and "y" not in zone  # unpositioned
+            assert zone["name"] and zone["regex"]
+
+
+def test_every_built_in_template_config_produces_a_valid_project(db):
+    """Each built-in must actually be usable: merged onto DEFAULT_PROJECT
+    and run through the real schema validator, the same check
+    ProfileManager.create() performs."""
+    from core.profile_manager import ProfileManager
+    tm = TemplateManager(db)
+    tm.seed_built_ins()
+    for t in tm.list_templates():
+        cfg = tm.build_project_config(t["template_id"])
+        cfg["project_id"] = "test"
+        cfg["name"] = "Test"
+        cfg["created"] = "2026-08-29"
+        ProfileManager.validate(cfg)  # raises ProjectConfigError if invalid

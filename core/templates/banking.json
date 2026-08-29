@@ -1,0 +1,25 @@
+{
+  "name": "Banking",
+  "category": "Banking",
+  "config": {
+    "ocr": {
+      "lang": "eng",
+      "confidence_threshold": 0.75,
+      "zones": [
+        {"name": "document_type", "regex": ":\\s*(.+)"},
+        {"name": "customer_account_reference", "regex": ":\\s*(\\S+)"},
+        {"name": "branch_code", "regex": ":\\s*(\\S+)"},
+        {"name": "document_date", "regex": ":\\s*(\\S+)"},
+        {"name": "reference_number", "regex": ":\\s*(\\S+)"}
+      ]
+    },
+    "separation": {"strategy": ["blank_page"], "blank_threshold": 0.02},
+    "qc": {"enabled": true, "stages": ["punch_hole", "rotation", "margin",
+          "color", "advanced"], "pass_score": 85, "blur_warn_threshold": 80,
+          "blur_fail_threshold": 30, "dpi_warn": 200, "dpi_fail": 150},
+    "enhancement_profile": {"deskew": true, "crop": true, "clahe": true,
+                            "despeckle": true, "whiten_bg": true,
+                            "target_dpi": 300},
+    "features": {"auto_index": true, "duplicate_check": true}
+  }
+}

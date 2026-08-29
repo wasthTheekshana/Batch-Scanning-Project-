@@ -1,0 +1,25 @@
+{
+  "name": "Invoices / Receipts",
+  "category": "Invoices",
+  "config": {
+    "ocr": {
+      "lang": "eng",
+      "confidence_threshold": 0.75,
+      "zones": [
+        {"name": "invoice_number", "regex": ":\\s*(\\S+)"},
+        {"name": "vendor_name", "regex": ":\\s*(.+)"},
+        {"name": "invoice_date", "regex": ":\\s*(\\S+)"},
+        {"name": "amount", "regex": ":\\s*(\\S+)"},
+        {"name": "po_reference", "regex": ":\\s*(\\S+)"}
+      ]
+    },
+    "separation": {"strategy": ["blank_page"], "blank_threshold": 0.02},
+    "qc": {"enabled": true, "stages": ["punch_hole", "rotation", "margin",
+          "color", "advanced"], "pass_score": 80, "blur_warn_threshold": 80,
+          "blur_fail_threshold": 30, "dpi_warn": 200, "dpi_fail": 150},
+    "enhancement_profile": {"deskew": true, "crop": true, "clahe": true,
+                            "despeckle": true, "whiten_bg": true,
+                            "target_dpi": 300},
+    "features": {"auto_index": true, "duplicate_check": true}
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "HR / Personnel",
+  "category": "HR/Personnel",
+  "config": {
+    "ocr": {
+      "lang": "eng",
+      "confidence_threshold": 0.75,
+      "zones": [
+        {"name": "employee_id", "regex": ":\\s*(\\S+)"},
+        {"name": "employee_name", "regex": ":\\s*(.+)"},
+        {"name": "department", "regex": ":\\s*(.+)"},
+        {"name": "document_type", "regex": ":\\s*(.+)"},
+        {"name": "effective_date", "regex": ":\\s*(\\S+)"}
+      ]
+    },
+    "separation": {"strategy": ["blank_page"], "blank_threshold": 0.02},
+    "qc": {"enabled": true, "stages": ["punch_hole", "rotation", "margin",
+          "color", "advanced"], "pass_score": 80, "blur_warn_threshold": 80,
+          "blur_fail_threshold": 30, "dpi_warn": 200, "dpi_fail": 150},
+    "enhancement_profile": {"deskew": true, "crop": true, "clahe": true,
+                            "despeckle": true, "whiten_bg": true,
+                            "target_dpi": 300},
+    "features": {"auto_index": true, "duplicate_check": true}
+  }
+}
