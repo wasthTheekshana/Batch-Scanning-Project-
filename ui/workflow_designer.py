@@ -174,10 +174,12 @@ class WorkflowDesigner(QWidget):
         self.rollback_btn.clicked.connect(self.rollback_dialog)
         self.save_btn = QPushButton("Save (new version)")
         self.save_btn.clicked.connect(self.save)
+        self.save_template_btn = QPushButton("Save as template…")
+        self.save_template_btn.clicked.connect(self.save_as_template)
         from ui.theme import mark
         mark(self.save_btn, "primary")
         for b in (self.new_from_template_btn, self.clone_btn,
-                  self.rollback_btn, self.save_btn):
+                  self.rollback_btn, self.save_btn, self.save_template_btn):
             b.setEnabled(self.can_edit)
             top.addWidget(b)
         outer.addLayout(top)
@@ -535,6 +537,24 @@ class WorkflowDesigner(QWidget):
         idx = self.project_combo.findData(new_cfg["project_id"])
         if idx >= 0:
             self.project_combo.setCurrentIndex(idx)
+
+    def save_as_template(self) -> None:
+        if self.config is None:
+            return
+        name, ok = QInputDialog.getText(self, "Save as template",
+                                        "Template name:")
+        if not (ok and name.strip()):
+            return
+        category, ok = QInputDialog.getText(self, "Save as template",
+                                            "Category:")
+        if not (ok and category.strip()):
+            return
+        from core.template_manager import TemplateManager
+        cfg = self.collect_config()
+        TemplateManager(self.db).save_as_template(
+            cfg, name.strip(), category.strip())
+        QMessageBox.information(self, "Saved",
+                                f"Saved as template “{name.strip()}”.")
 
     def rollback_dialog(self) -> None:
         if self.config is None:

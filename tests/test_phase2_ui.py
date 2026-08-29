@@ -257,3 +257,36 @@ def test_zone_label_shows_real_geometry(designer):
          "regex": r"(INV-\d+)"})
     assert "(12, 34)" in label
     assert "56×78" in label
+
+
+def test_save_as_template_captures_current_config(designer, monkeypatch):
+    designer.dpi.setValue(600)  # scanner.dpi must NOT appear in the template
+    calls = iter([("My Template", True), ("Custom Category", True)])
+    monkeypatch.setattr(
+        "ui.workflow_designer.QInputDialog.getText",
+        staticmethod(lambda *a, **k: next(calls)))
+    monkeypatch.setattr(
+        "ui.workflow_designer.QMessageBox.information",
+        staticmethod(lambda *a, **k: None))
+
+    designer.save_as_template()
+
+    from core.template_manager import TemplateManager
+    templates = TemplateManager(designer.db).list_templates()
+    assert len(templates) == 1
+    assert templates[0]["name"] == "My Template"
+    assert templates[0]["category"] == "Custom Category"
+    assert "scanner" not in templates[0]["config"]
+    assert "delivery" not in templates[0]["config"]
+
+
+def test_save_as_template_noop_with_no_project_loaded(qtbot, db, tmp_path):
+    from core.profile_manager import ProfileManager
+    from ui.workflow_designer import WorkflowDesigner
+    pm = ProfileManager(tmp_path / "projects3", db)
+    d = WorkflowDesigner(db, pm, ADMIN)
+    qtbot.addWidget(d)
+    d.config = None
+    d.save_as_template()  # must not raise
+    from core.template_manager import TemplateManager
+    assert TemplateManager(db).list_templates() == []
