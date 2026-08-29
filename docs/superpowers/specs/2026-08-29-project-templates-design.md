@@ -40,15 +40,17 @@ CREATE TABLE IF NOT EXISTS project_templates (
 
 ## Built-in templates
 
-Five JSON files under a new `templates/` directory at the repo root, each a `config_json`-shaped partial config with a starter set of index zones (name + placeholder position/regex an admin will still need to reposition against their own sample pages — coordinates are inherently sample-specific, so built-ins ship with zone *names and regexes* populated but position deferred to "click and place" the first time the admin loads a sample) plus sensible QC/enhancement defaults:
+Five JSON files under `core/templates/` (placed inside the `core` package, not a top-level directory — this matters for packaging: it reuses the exact bundling mechanism already proven for `core/project_schema.json`, see Packaging below), each a `config_json`-shaped partial config with a starter set of index zones (name + regex only, no x/y/w/h — coordinates are inherently sample-specific, so built-ins ship with zone *names and regexes* populated but position deferred to "click and place" the first time the admin loads a sample, which `core/project_schema.json`'s `"zones": {"type": "array"}` already permits with no `items` sub-schema forcing coordinate fields) plus sensible QC/enhancement defaults:
 
-- `templates/banking.json` — Document Type, Customer/Account Reference, Branch Code, Document Date, Reference Number
-- `templates/insurance.json` — Claim Number, Policy Number, Claimant Name, Date of Loss, Adjuster Reference
-- `templates/hr.json` — Employee ID, Employee Name, Department, Document Type, Effective Date
-- `templates/legal.json` — Contract Number, Party Names, Effective Date, Contract Type, Reference/Matter Number
-- `templates/invoices.json` — Invoice Number, Vendor Name, Invoice Date, Amount, PO Reference
+- `core/templates/banking.json` — Document Type, Customer/Account Reference, Branch Code, Document Date, Reference Number
+- `core/templates/insurance.json` — Claim Number, Policy Number, Claimant Name, Date of Loss, Adjuster Reference
+- `core/templates/hr.json` — Employee ID, Employee Name, Department, Document Type, Effective Date
+- `core/templates/legal.json` — Contract Number, Party Names, Effective Date, Contract Type, Reference/Matter Number
+- `core/templates/invoices.json` — Invoice Number, Vendor Name, Invoice Date, Amount, PO Reference
 
-On app startup, any `templates/*.json` file whose `name` doesn't already exist as a `built_in=1` row is inserted (and if it exists with different content, its `config_json` is updated in place — built-ins are meant to improve as the shipped defaults improve; an admin who wants to customize one uses "Save as template" to fork it into their own admin-saved copy first, which is never touched by reseeding).
+On app startup, any `core/templates/*.json` file whose `name` doesn't already exist as a `built_in=1` row is inserted (and if it exists with different content, its `config_json` is updated in place — built-ins are meant to improve as the shipped defaults improve; an admin who wants to customize one uses "Save as template" to fork it into their own admin-saved copy first, which is never touched by reseeding).
+
+**Packaging:** `docscanner.spec`'s `datas` list needs `("core/templates", "core/templates")` added, mirroring the existing `("core/project_schema.json", "core")` entry. Unlike that entry, this one won't be caught by the existing `tests/test_packaging_spec.py` regression test — that test's regex only matches a single literal `Path(__file__).parent / "file.ext"` call, not a directory of files loaded by `glob()`. This is a known, accepted gap in that test's coverage for this one case; the packaging task in the implementation plan adds the `datas` entry directly rather than extending the regex (extending it to handle glob-based directory loading is out of scope for this change).
 
 ## Components
 
@@ -57,7 +59,8 @@ On app startup, any `templates/*.json` file whose `name` doesn't already exist a
   - `list_templates() -> list[dict]` — all templates, built-in and admin-saved
   - `get(template_id) -> dict`
   - `save_as_template(project_config: dict, name: str, category: str) -> dict` — strips the live-project-only fields listed above, inserts a new `built_in=0` row
-  - `seed_built_ins(templates_dir: Path) -> None` — called once at app startup (`main.py`), reads `templates/*.json`, upserts each as `built_in=1`
+  - `seed_built_ins(templates_dir: Path | None = None) -> None` — called once at app startup (`main.py`), reads `core/templates/*.json` (default resolved via `Path(__file__).parent / "templates"`), upserts each as `built_in=1`
+  - `build_project_config(template_id: str) -> dict` — **required because `core/project_schema.json` marks `export.output_path` and the full `delivery` block as required keys** (confirmed: `"required": ["format", "filename_template", "output_path"]` and `"required": ["local_folder", "sftp", "cd_dvd"]`), so a template's deliberately-partial config (no `export`/`delivery` at all) cannot be handed straight to `ProfileManager.create()` — schema validation would reject the missing keys. This method deep-merges the stored template config onto a fresh copy of `DEFAULT_PROJECT` (from `core/profile_manager.py`), so the result always has every schema-required key (with `DEFAULT_PROJECT`'s empty-string/default values for anything the template doesn't specify) while the template's zones/rules/QC/enhancement settings override those defaults. The Workflow Designer's "New from template…" flow calls this, then passes the result to `ProfileManager.create(name, config=result)` as normal.
 - **`data/db.py`** — CRUD: `insert_template`, `get_template`, `list_templates`, following the exact style of the existing `insert_bundle`/`get_bundle`/`list_bundles` methods added for chain-of-custody.
 - **`ui/workflow_designer.py`** — two additions to the existing top toolbar (next to the existing Clone…/Version history…/Save buttons):
   - **"New from template…"** — opens a small picker dialog (grouped by category, built-ins and admin-saved together), prompts for the new project's name, then calls `ProfileManager.create(name, config=template_config)` (the existing `create()` already accepts an optional starting `config` dict — confirmed in `core/profile_manager.py`) and refreshes the project list, selecting the new project.
@@ -65,8 +68,8 @@ On app startup, any `templates/*.json` file whose `name` doesn't already exist a
 
 ## Data flow
 
-1. **Startup:** `main.py` calls `TemplateManager(db).seed_built_ins(Path("templates"))` once, after the DB is opened — same place `KeyStore.get_or_create()` and `open_database()` already run.
-2. **New project from template:** admin picks a template in the new dialog → `ProfileManager.create(name, config=template.config_json)` → a real, versioned, live project exists exactly as if hand-built, just pre-filled. The admin then repositions the inherited zones against their own sample pages (existing zone-editor workflow, unchanged).
+1. **Startup:** `main.py` calls `TemplateManager(db).seed_built_ins()` (default path) once, after the DB is opened — same place `KeyStore.get_or_create()` and `open_database()` already run.
+2. **New project from template:** admin picks a template in the new dialog → `TemplateManager.build_project_config(template_id)` merges it onto `DEFAULT_PROJECT` → `ProfileManager.create(name, config=merged)` → a real, versioned, live project exists exactly as if hand-built, just pre-filled. The admin then repositions the inherited zones against their own sample pages (existing zone-editor workflow, unchanged).
 3. **Save as template:** admin has a working project open in the Workflow Designer → clicks "Save as template…" → `TemplateManager.save_as_template(config, name, category)` strips live-only fields → new `project_templates` row, immediately available in the picker for the next new project.
 
 ## Error handling
