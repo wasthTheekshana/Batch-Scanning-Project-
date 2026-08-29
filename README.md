@@ -63,6 +63,12 @@ Tesseract 5 must be on PATH for OCR features (bundled in the packaged EXE).
   QC/storage/return checkpoints, reconciliation view with mismatch
   flagging, and an escalation hook for damaged/missing/compromised
   bundles (`docs/DOK_Scanner_Enhancement_Plan (1).docx` §3.2).
+- **Project templates** — complete: five built-in starter templates
+  (Banking, Insurance, HR/Personnel, Legal/Contracts, Invoices) plus
+  "Save as template" so admins can turn any configured project into a
+  reusable starting point for the next one
+  (`docs/DOK_Scanner_Enhancement_Plan (1).docx` §4.4, generalized beyond
+  banking-only per project direction).
 - **Remaining before go-live** — bundle `tesseract.exe`/`tessdata`/
   `libzbar-64.dll` into the release build (blocked on binaries), vendor
   SDK `acquire()` bodies for Kodak/Alaris/CZUR/Viisan (blocked on vendor

@@ -12,6 +12,7 @@ datas = [
     # PyInstaller only auto-detects Python imports, not data files.
     ("core/project_schema.json", "core"),
     ("separation/rule_schema.json", "separation"),
+    ("core/templates", "core/templates"),
 ]
 binaries = []
 if os.path.isdir("tessdata"):
