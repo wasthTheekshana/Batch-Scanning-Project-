@@ -24,11 +24,12 @@ class FieldValue:
     confidence: float
 
 
-def _extract_match_value(pattern: str, text: str) -> str:
+def _extract_match_value(pattern: str, text: str) -> str | None:
     """Extract value from regex match: first capture group if present,
-    otherwise the entire match. Returns empty string if no match."""
+    otherwise the entire match. Returns None if no match, or the extracted
+    string (possibly empty for matched-but-empty captures)."""
     m = re.search(pattern, text)
-    return (m.group(1) if m.lastindex else m.group(0)) if m else ""
+    return (m.group(1) if m.lastindex else m.group(0)) if m else None
 
 
 def scaled_rect(zone: dict, img_w: int, img_h: int) -> tuple[int, int, int, int]:
@@ -63,7 +64,8 @@ def extract_fields(img: np.ndarray, zones: list[dict], lang: str = "eng",
         result = run_ocr(img[y0:y1, x0:x1])
         value = result.text.strip()
         if zone.get("regex"):
-            value = _extract_match_value(zone["regex"], value)
+            extracted = _extract_match_value(zone["regex"], value)
+            value = extracted if extracted is not None else ""
         fields[zone["name"]] = FieldValue(value=value,
                                           confidence=result.confidence)
     return fields
@@ -82,7 +84,7 @@ def extract_fields_from_text(text: str, confidence: float,
             log.warning("zone %r has no regex; skipped in full-page mode", zone["name"])
             continue
         value = _extract_match_value(pattern, text)
-        if value:
+        if value is not None:
             fields[zone["name"]] = FieldValue(value=value, confidence=confidence)
         else:
             fields[zone["name"]] = FieldValue(value="", confidence=0.0)

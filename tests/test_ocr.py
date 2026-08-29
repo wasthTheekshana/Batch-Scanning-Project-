@@ -96,6 +96,14 @@ def test_extract_fields_from_text_skips_zone_without_regex(caplog):
     assert "unanchored" in caplog.text
 
 
+def test_extract_fields_from_text_matched_empty_capture_keeps_confidence():
+    from ocr.zone_extractor import extract_fields_from_text
+    zones = [{"name": "note", "regex": r"Note:\s*(\S*)"}]
+    fields = extract_fields_from_text("Note: ", 0.9, zones)
+    assert fields["note"].value == ""
+    assert fields["note"].confidence == 0.9  # matched, not "no match" (which would be 0.0)
+
+
 # ---- duplicate detection --------------------------------------------------------
 
 def test_exact_duplicate_by_md5(tmp_path):
