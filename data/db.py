@@ -93,6 +93,25 @@ CREATE TABLE IF NOT EXISTS documents (
     updated_at          TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS bundles (
+    bundle_id    TEXT PRIMARY KEY,
+    project_id   TEXT NOT NULL REFERENCES projects(project_id),
+    label        TEXT NOT NULL,
+    qr_value     TEXT NOT NULL UNIQUE,
+    status       TEXT NOT NULL DEFAULT 'received',
+    created_at   TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS custody_events (
+    event_id     TEXT PRIMARY KEY,
+    bundle_id    TEXT NOT NULL REFERENCES bundles(bundle_id),
+    batch_id     TEXT,
+    stage        TEXT NOT NULL,
+    operator     TEXT,
+    timestamp    TEXT NOT NULL,
+    detail       TEXT NOT NULL DEFAULT '{}'
+);
+
 CREATE TABLE IF NOT EXISTS users (
     user_id       TEXT PRIMARY KEY,
     username      TEXT NOT NULL UNIQUE,
@@ -126,6 +145,7 @@ CREATE INDEX IF NOT EXISTS idx_documents_batch ON documents(batch_id);
 CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(validation_status);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_audit_doc ON audit_log(document_id);
+CREATE INDEX IF NOT EXISTS idx_custody_bundle ON custody_events(bundle_id);
 """
 
 _DOC_JSON_FIELDS = {"extracted_fields", "qc_detail", "delivery_detail", "audit_trail"}
@@ -298,6 +318,58 @@ class Database:
             if v:
                 values.add(str(v))
         return values
+
+    # -- custody (HLD enhancement §3.2) ------------------------------------
+    def insert_bundle(self, bundle_id: str, project_id: str, label: str,
+                      qr_value: str) -> None:
+        with self._lock, self.conn:
+            self.conn.execute(
+                "INSERT INTO bundles (bundle_id, project_id, label, "
+                "qr_value, status, created_at) VALUES (?,?,?,?,?,?)",
+                (bundle_id, project_id, label, qr_value, "received", _now()))
+
+    def get_bundle(self, bundle_id: str) -> sqlite3.Row | None:
+        with self._lock:
+            return self.conn.execute(
+                "SELECT * FROM bundles WHERE bundle_id=?",
+                (bundle_id,)).fetchone()
+
+    def get_bundle_by_qr(self, qr_value: str) -> sqlite3.Row | None:
+        with self._lock:
+            return self.conn.execute(
+                "SELECT * FROM bundles WHERE qr_value=?",
+                (qr_value,)).fetchone()
+
+    def list_bundles(self, project_id: str | None = None) -> list[sqlite3.Row]:
+        q = "SELECT * FROM bundles"
+        args: tuple = ()
+        if project_id:
+            q += " WHERE project_id=?"
+            args = (project_id,)
+        with self._lock:
+            return self.conn.execute(q + " ORDER BY created_at", args).fetchall()
+
+    def update_bundle_status(self, bundle_id: str, status: str) -> None:
+        with self._lock, self.conn:
+            self.conn.execute(
+                "UPDATE bundles SET status=? WHERE bundle_id=?",
+                (status, bundle_id))
+
+    def insert_custody_event(self, event_id: str, bundle_id: str, stage: str,
+                             operator: str | None, batch_id: str | None = None,
+                             detail: dict | None = None) -> None:
+        with self._lock, self.conn:
+            self.conn.execute(
+                "INSERT INTO custody_events (event_id, bundle_id, batch_id, "
+                "stage, operator, timestamp, detail) VALUES (?,?,?,?,?,?,?)",
+                (event_id, bundle_id, batch_id, stage, operator, _now(),
+                 json.dumps(detail or {})))
+
+    def list_custody_events(self, bundle_id: str) -> list[sqlite3.Row]:
+        with self._lock:
+            return self.conn.execute(
+                "SELECT * FROM custody_events WHERE bundle_id=? "
+                "ORDER BY timestamp", (bundle_id,)).fetchall()
 
     # -- users ------------------------------------------------------------
     def insert_user(self, user_id: str, username: str, password_hash: str,
