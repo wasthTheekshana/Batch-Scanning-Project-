@@ -138,6 +138,13 @@ class MainWindow(QMainWindow):
             self.tabs.addTab(self.admin_panel, icon("fa5s.user-shield"),
                              "Admin")
 
+        # Custody tab - custody.manage (admin, operator, qc_officer)
+        if user is not None and user.can("custody.manage"):
+            from ui.custody_panel import CustodyPanel
+            self.custody_panel = CustodyPanel(db, audit, user)
+            self.tabs.addTab(self.custody_panel, icon("fa5s.boxes"),
+                             "Custody")
+
         bus.qc_ready.connect(lambda _doc_id: self.qc_panel.refresh())
         self.statusBar().showMessage(
             f"Signed in as {user.username} "
@@ -163,6 +170,8 @@ class MainWindow(QMainWindow):
             # zones may have been edited in the designer since startup
             self.index_editor.set_zones(self._active_zones())
             self.index_editor.refresh()
+        elif widget is getattr(self, "custody_panel", None):
+            self.custody_panel.refresh()
 
     def sign_out(self) -> None:
         Session.logout(self.db)
