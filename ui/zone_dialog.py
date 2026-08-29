@@ -35,9 +35,11 @@ def suggest_label_regex(raw_text: str) -> str | None:
 
 
 class ZoneDialog(QDialog):
-    def __init__(self, zone: dict | None = None, parent=None):
+    def __init__(self, zone: dict | None = None, parent=None,
+                full_page: bool = False):
         super().__init__(parent)
-        self.setWindowTitle("Index zone")
+        self.full_page = full_page
+        self.setWindowTitle("Index zone" + (" (full-page)" if full_page else ""))
         self.resize(900, 720)
         self._sample: np.ndarray | None = None
         self._ref = ((zone.get("ref_w"), zone.get("ref_h"))
@@ -70,6 +72,16 @@ class ZoneDialog(QDialog):
         form.addRow("Region (px)", coords)
         layout.addLayout(form)
 
+        if full_page:
+            for sb in (self.x, self.y, self.w, self.h):
+                sb.setEnabled(False)
+            self.hint_full_page = QLabel(
+                "Full-page mode: no region needed. The regex is matched "
+                "against the whole page's OCR text — write it with a "
+                "label anchor, e.g. r\"Invoice No:\\s*(\\S+)\".")
+            self.hint_full_page.setWordWrap(True)
+            layout.addWidget(self.hint_full_page)
+
         btn_row = QHBoxLayout()
         load_btn = QPushButton("Load sample page…")
         load_btn.clicked.connect(self.load_sample)
@@ -83,6 +95,11 @@ class ZoneDialog(QDialog):
             "Reads the region and, if it looks like “Label : value”, "
             "fills in a regex that strips the label.")
         self.suggest_btn.clicked.connect(self.suggest_regex)
+        if full_page:
+            self.suggest_btn.setEnabled(False)
+            self.suggest_btn.setToolTip(
+                "Not available in full-page mode — its \"Label : value\" "
+                "heuristic assumes a tight crop around one field.")
         btn_row.addWidget(self.suggest_btn)
         btn_row.addStretch(1)
         layout.addLayout(btn_row)
@@ -179,20 +196,24 @@ class ZoneDialog(QDialog):
 
     # -- live testing ------------------------------------------------------------
     def _read_region(self):
-        """Run real OCR on the configured region of the loaded sample.
-        Returns None (and sets self.result with why) on any failure."""
+        """Run real OCR on the configured region of the loaded sample
+        (or the whole sample, in full-page mode). Returns None (and sets
+        self.result with why) on any failure."""
         if self._sample is None:
             self.result.setText("Load a sample page first.")
             return None
-        if not self.w.value() or not self.h.value():
-            self.result.setText("Drag a region on the sample first.")
-            return None
-        h, w = self._sample.shape[:2]
-        x0 = max(0, min(self.x.value(), w - 1))
-        y0 = max(0, min(self.y.value(), h - 1))
-        x1 = max(x0 + 1, min(x0 + self.w.value(), w))
-        y1 = max(y0 + 1, min(y0 + self.h.value(), h))
-        region = self._sample[y0:y1, x0:x1]
+        if self.full_page:
+            region = self._sample
+        else:
+            if not self.w.value() or not self.h.value():
+                self.result.setText("Drag a region on the sample first.")
+                return None
+            h, w = self._sample.shape[:2]
+            x0 = max(0, min(self.x.value(), w - 1))
+            y0 = max(0, min(self.y.value(), h - 1))
+            x1 = max(x0 + 1, min(x0 + self.w.value(), w))
+            y1 = max(y0 + 1, min(y0 + self.h.value(), h))
+            region = self._sample[y0:y1, x0:x1]
         try:
             from ocr.tesseract_engine import TesseractNotFound, ocr_page
             return ocr_page(region)
@@ -254,7 +275,14 @@ class ZoneDialog(QDialog):
 
     def build_zone(self) -> dict | None:
         name = self.name.text().strip()
-        if not name or self.w.value() == 0 or self.h.value() == 0:
+        if not name:
+            return None
+        if self.full_page:
+            zone = {"name": name}
+            if self.regex.text().strip():
+                zone["regex"] = self.regex.text().strip()
+            return zone
+        if self.w.value() == 0 or self.h.value() == 0:
             return None
         zone = {"name": name, "x": self.x.value(), "y": self.y.value(),
                 "w": self.w.value(), "h": self.h.value()}
