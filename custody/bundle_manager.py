@@ -93,3 +93,40 @@ def generate_label_sheet(bundle: dict, out_path: str | Path) -> Path:
     c.drawCentredString(page_w / 2, 434, f"QR: {bundle['qr_value']}")
     c.save()
     return out_path
+
+
+_ESCALATION_STAGES = {"damaged", "missing", "compromised"}
+
+
+def reconciliation_summary(db, project_id: str | None = None) -> list[dict]:
+    """One row per bundle: how many times each key stage was logged,
+    and a mismatch flag - True when the bundle was received but never
+    scanned, or was ever escalated (damaged/missing/compromised) and
+    hasn't since been returned. This is deliberately a simple per-bundle
+    reconciliation (each stage should happen once per bundle in the
+    normal flow); a bundle that legitimately went through a stage more
+    than once (e.g. rescanned) will show a count > 1, which is still
+    correct information for a reviewer even though this function does
+    not itself decide whether that's expected."""
+    rows = []
+    for bundle in db.list_bundles(project_id):
+        events = db.list_custody_events(bundle["bundle_id"])
+        counts = {"received": 0, "scanned": 0, "qc": 0, "storage": 0,
+                  "returned": 0}
+        stage_to_count_key = {"receipt": "received", "scanning": "scanned",
+                              "qc": "qc", "storage": "storage",
+                              "return": "returned"}
+        escalated = False
+        for e in events:
+            key = stage_to_count_key.get(e["stage"])
+            if key:
+                counts[key] += 1
+            if e["stage"] in _ESCALATION_STAGES:
+                escalated = True
+        mismatch = (counts["received"] > 0 and counts["scanned"] == 0) or \
+                   (escalated and counts["returned"] == 0)
+        rows.append({"bundle_id": bundle["bundle_id"],
+                     "label": bundle["label"],
+                     "status": bundle["status"],
+                     "mismatch": mismatch, **counts})
+    return rows

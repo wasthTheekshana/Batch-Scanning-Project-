@@ -139,3 +139,45 @@ def test_generate_label_sheet_creates_pdf_with_qr_and_text(tmp_path):
     assert out.stat().st_size > 0
     # a real PDF starts with the %PDF- magic bytes
     assert out.read_bytes()[:5] == b"%PDF-"
+
+
+def test_reconciliation_summary_counts_stages_per_bundle(db):
+    from custody.bundle_manager import reconciliation_summary, record_checkpoint
+    bundle = create_bundle(db, "proj-1", "Box 42")
+    record_checkpoint(db, bundle["bundle_id"], "scanning", "system")
+    record_checkpoint(db, bundle["bundle_id"], "qc", "alice")
+    rows = reconciliation_summary(db, "proj-1")
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["bundle_id"] == bundle["bundle_id"]
+    assert row["received"] == 1
+    assert row["scanned"] == 1
+    assert row["qc"] == 1
+    assert row["returned"] == 0
+
+
+def test_reconciliation_flags_mismatch_when_not_scanned(db):
+    from custody.bundle_manager import reconciliation_summary
+    create_bundle(db, "proj-1", "Box 42")  # receipt only, never scanned
+    rows = reconciliation_summary(db, "proj-1")
+    assert rows[0]["mismatch"] is True
+
+
+def test_reconciliation_flags_mismatch_for_damaged_or_missing_status(db):
+    from custody.bundle_manager import (reconciliation_summary,
+                                        record_checkpoint)
+    bundle = create_bundle(db, "proj-1", "Box 42")
+    record_checkpoint(db, bundle["bundle_id"], "scanning", "system")
+    record_checkpoint(db, bundle["bundle_id"], "missing", "alice")
+    rows = reconciliation_summary(db, "proj-1")
+    assert rows[0]["mismatch"] is True
+
+
+def test_reconciliation_no_mismatch_when_fully_returned(db):
+    from custody.bundle_manager import (reconciliation_summary,
+                                        record_checkpoint)
+    bundle = create_bundle(db, "proj-1", "Box 42")
+    for stage in ("scanning", "qc", "storage", "return"):
+        record_checkpoint(db, bundle["bundle_id"], stage, "alice")
+    rows = reconciliation_summary(db, "proj-1")
+    assert rows[0]["mismatch"] is False
