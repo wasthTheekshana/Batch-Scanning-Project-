@@ -81,7 +81,7 @@ def extract_fields_from_text(text: str, confidence: float,
     for zone in zones:
         pattern = zone.get("regex")
         if not pattern:
-            log.warning("zone %r has no regex; skipped in full-page mode", zone["name"])
+            log.warning("zone %r has no regex; skipped in full-page mode", zone.get("name"))
             continue
         value = _extract_match_value(pattern, text)
         if value is not None:

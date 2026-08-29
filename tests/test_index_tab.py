@@ -88,6 +88,28 @@ def test_auto_extract_fills_fields(qtbot, env, monkeypatch):
     assert editor._inputs["invoice_no"].text() == "INV-4242"
 
 
+FULL_PAGE_ZONES = [{"name": "invoice_no", "regex": r"Invoice No:\s*(\S+)"}]
+
+
+def test_auto_extract_full_page_mode_uses_extract_fields_from_text(
+        qtbot, env, monkeypatch):
+    """Full-page mode zones have no x/y/w/h — extract_fields (the
+    zone-cropping path) would skip them entirely. auto_extract() must
+    route to extract_fields_from_text via one whole-page OCR call
+    instead."""
+    db, audit, _tmp = env
+    editor = IndexEditor(db, FULL_PAGE_ZONES, audit, ADMIN, full_page=True)
+    qtbot.addWidget(editor)
+    editor.doc_list.setCurrentRow(0)
+    monkeypatch.setattr(
+        "ocr.tesseract_engine.ocr_page",
+        lambda img, lang="eng": OCRResult(
+            text="Header stuff\nInvoice No: INV-4242\nfooter",
+            confidence=0.9))
+    editor.auto_extract()
+    assert editor._inputs["invoice_no"].text() == "INV-4242"
+
+
 def test_no_zones_shows_guidance(qtbot, env):
     db, audit, _tmp = env
     editor = IndexEditor(db, [], audit, ADMIN)
@@ -301,6 +323,20 @@ def test_zone_dialog_full_page_build_zone_without_region(qtbot):
     dlg.regex.setText(r"Invoice No:\s*(\S+)")
     zone = dlg.build_zone()
     assert zone == {"name": "invoice_no", "regex": r"Invoice No:\s*(\S+)"}
+
+
+def test_zone_dialog_full_page_requires_regex(qtbot):
+    """A full-page zone with no regex could never produce a value
+    (extract_fields_from_text skips it silently) — build_zone() must
+    refuse to save it, the same way it refuses a nameless zone."""
+    from ui.zone_dialog import ZoneDialog
+    dlg = ZoneDialog(full_page=True)
+    qtbot.addWidget(dlg)
+    dlg.name.setText("invoice_no")
+    assert dlg.build_zone() is None
+    dlg.regex.setText(r"Invoice No:\s*(\S+)")
+    assert dlg.build_zone() == {"name": "invoice_no",
+                                "regex": r"Invoice No:\s*(\S+)"}
 
 
 def test_zone_dialog_full_page_disables_region_controls(qtbot):

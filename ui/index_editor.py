@@ -24,12 +24,13 @@ class IndexEditor(QWidget):
     fields_saved = pyqtSignal(str, dict)  # document_id, fields
 
     def __init__(self, db, zones: list[dict], audit=None,
-                 current_user=None, parent=None):
+                 current_user=None, parent=None, full_page: bool = False):
         super().__init__(parent)
         self.db = db
         self.audit = audit
         self.current_user = current_user
         self.zones = list(zones or [])
+        self.full_page = full_page
         self.document_id: str | None = None
         self._inputs: dict[str, QLineEdit] = {}
 
@@ -85,9 +86,13 @@ class IndexEditor(QWidget):
         self.refresh()
 
     # -- configuration ---------------------------------------------------------
-    def set_zones(self, zones: list[dict]) -> None:
-        """Rebuild the field form from the project's index zones."""
+    def set_zones(self, zones: list[dict], full_page: bool | None = None) -> None:
+        """Rebuild the field form from the project's index zones.
+        full_page=None keeps the current mode (e.g. an initial call from
+        __init__ already passed it in); pass explicitly to change it."""
         self.zones = list(zones or [])
+        if full_page is not None:
+            self.full_page = full_page
         while self.form.rowCount():
             self.form.removeRow(0)
         self._inputs.clear()
@@ -194,13 +199,20 @@ class IndexEditor(QWidget):
         try:
             import cv2
 
-            from ocr.tesseract_engine import TesseractNotFound
-            from ocr.zone_extractor import extract_fields
+            from ocr.tesseract_engine import TesseractNotFound, ocr_page
+            from ocr.zone_extractor import (extract_fields,
+                                            extract_fields_from_text)
             for page_no, path in page_paths:
                 image = cv2.imread(path, cv2.IMREAD_UNCHANGED)
                 if image is None:
                     continue
-                for name, fv in extract_fields(image, self.zones).items():
+                if self.full_page:
+                    result = ocr_page(image)
+                    fields = extract_fields_from_text(
+                        result.text, result.confidence, self.zones)
+                else:
+                    fields = extract_fields(image, self.zones)
+                for name, fv in fields.items():
                     if fv.value and name not in best:
                         best[name] = (fv.value, fv.confidence, page_no)
                 if len(best) == len(self.zones):

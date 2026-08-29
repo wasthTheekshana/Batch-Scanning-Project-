@@ -51,7 +51,9 @@ class ZoneDialog(QDialog):
         self.name.setPlaceholderText("e.g. invoice_no")
         form.addRow("Field name", self.name)
         self.regex = QLineEdit(zone.get("regex", "") if zone else "")
-        self.regex.setPlaceholderText(r"optional, e.g. (INV-\d+)")
+        self.regex.setPlaceholderText(
+            r"required in full-page mode, e.g. Invoice No:\s*(\S+)" if full_page
+            else r"optional, e.g. (INV-\d+)")
         form.addRow("Clean-up regex", self.regex)
         coords = QHBoxLayout()
         self.x = QSpinBox(); self.y = QSpinBox()
@@ -76,9 +78,11 @@ class ZoneDialog(QDialog):
             for sb in (self.x, self.y, self.w, self.h):
                 sb.setEnabled(False)
             self.hint_full_page = QLabel(
-                "Full-page mode: no region needed. The regex is matched "
-                "against the whole page's OCR text — write it with a "
-                "label anchor, e.g. r\"Invoice No:\\s*(\\S+)\".")
+                "Full-page mode: no region needed, but the regex is "
+                "REQUIRED — it's matched against the whole page's OCR "
+                "text, so without it there's nothing to anchor this "
+                "field to. Write it with a label anchor, e.g. "
+                "r\"Invoice No:\\s*(\\S+)\".")
             self.hint_full_page.setWordWrap(True)
             layout.addWidget(self.hint_full_page)
 
@@ -106,8 +110,9 @@ class ZoneDialog(QDialog):
 
         self.hint = QLabel(
             "IMPORTANT: use a page from a real scan of this project so "
-            "the zone position matches production pages. Drag the "
-            "rectangle where the field appears, then Test.")
+            "the zone position matches production pages."
+            + ("" if full_page else " Drag the "
+               "rectangle where the field appears, then Test."))
         mark(self.hint, "muted")
         self.hint.setWordWrap(True)
         layout.addWidget(self.hint)
@@ -145,8 +150,12 @@ class ZoneDialog(QDialog):
             self._sample = img
             self.view.show_array(img)
             self._sync_overlay()
-            self.hint.setText("Drag the region where the field appears, "
-                              "then click Test zone.")
+            if self.full_page:
+                self.hint.setText("Sample loaded. Click Test zone to run "
+                                  "OCR on the whole page.")
+            else:
+                self.hint.setText("Drag the region where the field appears, "
+                                  "then click Test zone.")
 
     def _load_pdf_page(self, path: str):
         """Rasterise a PDF page at 300 DPI — identical to how the import
@@ -278,10 +287,15 @@ class ZoneDialog(QDialog):
         if not name:
             return None
         if self.full_page:
-            zone = {"name": name}
-            if self.regex.text().strip():
-                zone["regex"] = self.regex.text().strip()
-            return zone
+            # unlike zone mode, full-page extraction has nothing else to
+            # anchor a field to — a regex-less zone would never produce a
+            # value (extract_fields_from_text skips it silently), so the
+            # regex is required here even though the field is optional
+            # in zone mode.
+            pattern = self.regex.text().strip()
+            if not pattern:
+                return None
+            return {"name": name, "regex": pattern}
         if self.w.value() == 0 or self.h.value() == 0:
             return None
         zone = {"name": name, "x": self.x.value(), "y": self.y.value(),

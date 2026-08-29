@@ -310,6 +310,7 @@ class WorkflowDesigner(QWidget):
         self.ocr_mode.addItems(["Zone-based (draw regions)",
                                 "Full-page (label-anchored regex)"])
         self.ocr_mode.setEnabled(self.can_edit)
+        self.ocr_mode.currentIndexChanged.connect(self._relabel_zones)
         mode_row.addWidget(self.ocr_mode)
         mode_row.addStretch(1)
         z_layout.addLayout(mode_row)
@@ -545,6 +546,20 @@ class WorkflowDesigner(QWidget):
         item = QListWidgetItem(self._zone_label(zone, self._is_full_page_mode()))
         item.setData(Qt.ItemDataRole.UserRole, zone)
         self.zone_list.addItem(item)
+
+    def _relabel_zones(self) -> None:
+        """Flipping the extraction-mode combo changes what each already-
+        listed zone's label should say (e.g. "(x, y) w×h" vs "full-page")
+        even though the underlying zone dicts haven't changed — rewrite
+        every item's text to match. _bind_config() blocks ocr_mode's
+        signals while it sets the mode and separately repopulates
+        zone_list from scratch, so this never runs during that initial
+        load."""
+        full_page = self._is_full_page_mode()
+        for i in range(self.zone_list.count()):
+            item = self.zone_list.item(i)
+            zone = item.data(Qt.ItemDataRole.UserRole)
+            item.setText(self._zone_label(zone, full_page))
 
     def add_zone(self) -> None:
         from ui.zone_dialog import ZoneDialog

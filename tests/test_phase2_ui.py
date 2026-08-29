@@ -384,6 +384,23 @@ def test_zone_label_shows_real_geometry(designer):
     assert "56×78" in label
 
 
+def test_flipping_ocr_mode_relabels_existing_zones(designer):
+    """Flipping the Extraction mode combo must update already-listed
+    zones' labels immediately, not just after save/reload — otherwise a
+    zone keeps showing stale "(x, y) w×h" or "not yet positioned" text
+    that no longer matches the newly-selected mode."""
+    designer._append_zone({"name": "invoice_no", "x": 12, "y": 34,
+                           "w": 56, "h": 78, "regex": r"(INV-\d+)"})
+    item = designer.zone_list.item(0)
+    assert "(12, 34)" in item.text()
+    designer.ocr_mode.setCurrentText("Full-page (label-anchored regex)")
+    assert "full-page" in item.text()
+    assert "(12, 34)" not in item.text()
+    designer.ocr_mode.setCurrentText("Zone-based (draw regions)")
+    assert "(12, 34)" in item.text()
+    assert "full-page" not in item.text()
+
+
 def test_save_as_template_captures_current_config(designer, monkeypatch):
     designer.dpi.setValue(600)  # scanner.dpi must NOT appear in the template
     calls = iter([("My Template", True), ("Custom Category", True)])
