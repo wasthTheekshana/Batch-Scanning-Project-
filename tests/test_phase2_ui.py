@@ -237,3 +237,23 @@ def test_new_from_template_no_templates_shows_message(designer, monkeypatch):
         staticmethod(lambda *a, **k: shown.append(True)))
     designer.new_from_template()  # no templates saved in this fixture's db
     assert shown
+
+
+def test_zone_label_defaults_missing_geometry(designer):
+    # a template-derived zone may carry only name/regex - the label must
+    # not raise, and should show a 0-valued placeholder region.
+    label = designer._zone_label({"name": "invoice_no", "regex": r"(INV-\d+)"})
+    assert "invoice_no" in label
+    assert "(0, 0)" in label
+    assert "0×0" in label
+    assert "/(INV-\\d+)/" in label
+
+
+def test_zone_label_shows_real_geometry(designer):
+    # a fully-geometried zone must display its real values, not the
+    # geometry-less fallback.
+    label = designer._zone_label(
+        {"name": "invoice_no", "x": 12, "y": 34, "w": 56, "h": 78,
+         "regex": r"(INV-\d+)"})
+    assert "(12, 34)" in label
+    assert "56×78" in label

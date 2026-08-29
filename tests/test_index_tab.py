@@ -293,6 +293,31 @@ def test_zone_dialog_builds_zone(qtbot):
     assert dlg.build_zone() is None
 
 
+def test_zone_dialog_opens_on_geometry_less_zone(qtbot):
+    # a template-derived zone may define only name/regex (coordinates are
+    # page-layout specific and don't transfer across projects) - opening
+    # Edit… on it must not crash, and should default the region to 0.
+    from ui.zone_dialog import ZoneDialog
+    zone = {"name": "invoice_no", "regex": r"(INV-\d+)"}
+    dlg = ZoneDialog(zone)
+    qtbot.addWidget(dlg)
+    assert dlg.x.value() == 0 and dlg.y.value() == 0
+    assert dlg.w.value() == 0 and dlg.h.value() == 0
+    assert dlg.name.text() == "invoice_no"
+
+
+def test_zone_dialog_shows_real_geometry(qtbot):
+    # a zone that DOES carry a captured region must still display its real
+    # values, not the geometry-less fallback.
+    from ui.zone_dialog import ZoneDialog
+    zone = {"name": "invoice_no", "x": 12, "y": 34, "w": 56, "h": 78,
+           "regex": r"(INV-\d+)"}
+    dlg = ZoneDialog(zone)
+    qtbot.addWidget(dlg)
+    assert (dlg.x.value(), dlg.y.value(), dlg.w.value(), dlg.h.value()) == \
+        (12, 34, 56, 78)
+
+
 def test_designer_zones_round_trip(qtbot, tmp_path):
     from core.profile_manager import ProfileManager
     from ui.workflow_designer import WorkflowDesigner

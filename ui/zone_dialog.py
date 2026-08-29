@@ -61,8 +61,12 @@ class ZoneDialog(QDialog):
             coords.addWidget(QLabel(label))
             coords.addWidget(sb)
         if zone:
-            self.x.setValue(zone["x"]); self.y.setValue(zone["y"])
-            self.w.setValue(zone["w"]); self.h.setValue(zone["h"])
+            # a template-derived zone may define only name/regex, with no
+            # captured pixel region yet - default missing geometry to 0
+            # instead of crashing, so the admin can open Edit… and drag a
+            # real region in.
+            self.x.setValue(zone.get("x", 0)); self.y.setValue(zone.get("y", 0))
+            self.w.setValue(zone.get("w", 0)); self.h.setValue(zone.get("h", 0))
         form.addRow("Region (px)", coords)
         layout.addLayout(form)
 
