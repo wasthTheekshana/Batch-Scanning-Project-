@@ -84,13 +84,16 @@ def test_extract_fields_from_text_no_match_yields_zero_confidence():
     assert fields["invoice_no"].confidence == 0.0
 
 
-def test_extract_fields_from_text_skips_zone_without_regex():
+def test_extract_fields_from_text_skips_zone_without_regex(caplog):
+    import logging
     from ocr.zone_extractor import extract_fields_from_text
+    caplog.set_level(logging.WARNING)
     zones = [{"name": "unanchored"},
              {"name": "invoice_no", "regex": r"Invoice No:\s*(\S+)"}]
     fields = extract_fields_from_text("Invoice No: INV-1", 0.9, zones)
     assert "unanchored" not in fields
     assert fields["invoice_no"].value == "INV-1"
+    assert "unanchored" in caplog.text
 
 
 # ---- duplicate detection --------------------------------------------------------
