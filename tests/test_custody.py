@@ -2,6 +2,7 @@
 import pytest
 
 from data.db import Database
+from custody.bundle_manager import create_bundle, record_checkpoint, VALID_STAGES
 
 
 @pytest.fixture()
@@ -49,3 +50,42 @@ def test_insert_and_list_custody_events(db):
     events = db.list_custody_events("b1")
     assert [e["stage"] for e in events] == ["receipt", "scanning"]
     assert events[1]["batch_id"] == "batch-1"
+
+
+def test_create_bundle_assigns_qr_value_and_logs_receipt(db):
+    bundle = create_bundle(db, "proj-1", "Box 42")
+    assert bundle["label"] == "Box 42"
+    assert bundle["qr_value"]  # non-empty, unique per bundle
+    events = db.list_custody_events(bundle["bundle_id"])
+    assert [e["stage"] for e in events] == ["receipt"]
+
+
+def test_create_bundle_qr_values_are_unique(db):
+    b1 = create_bundle(db, "proj-1", "Box A")
+    b2 = create_bundle(db, "proj-1", "Box B")
+    assert b1["qr_value"] != b2["qr_value"]
+
+
+def test_record_checkpoint_updates_status_and_logs_event(db):
+    bundle = create_bundle(db, "proj-1", "Box 42")
+    record_checkpoint(db, bundle["bundle_id"], "prep", "alice")
+    assert db.get_bundle(bundle["bundle_id"])["status"] == "prep"
+    events = db.list_custody_events(bundle["bundle_id"])
+    assert [e["stage"] for e in events] == ["receipt", "prep"]
+
+
+def test_record_checkpoint_rejects_unknown_stage(db):
+    bundle = create_bundle(db, "proj-1", "Box 42")
+    with pytest.raises(ValueError, match="unknown stage"):
+        record_checkpoint(db, bundle["bundle_id"], "not_a_real_stage", "alice")
+
+
+def test_record_checkpoint_writes_audit_entry(db, tmp_path):
+    from data.audit import AuditLogger
+    audit = AuditLogger(db, tmp_path / "logs")
+    bundle = create_bundle(db, "proj-1", "Box 42", audit=audit)
+    record_checkpoint(db, bundle["bundle_id"], "storage", "bob", audit=audit)
+    rows = db.conn.execute(
+        "SELECT * FROM audit_log WHERE action='custody_checkpoint'").fetchall()
+    assert len(rows) == 2
+    audit.close()
