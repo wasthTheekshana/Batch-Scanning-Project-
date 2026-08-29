@@ -179,6 +179,54 @@ def test_batch_statistics(report_db):
     assert stats["delivered"] == 1
 
 
+def test_batch_statistics_distinguishes_rejection_from_rescan(report_db):
+    """Both 'reject' and 'rescan' QC decisions collapse to the same
+    validation_status='rejected' (ui/qc_review.py), but the original
+    decision survives in the audit log's detail.decision -
+    rejection_rate/rescan_rate must be computed from that, not from
+    validation_status alone."""
+    from export.qc_report import batch_statistics
+    db, _tmp = report_db
+    db.insert_document("d3", "b1", "p1", page_range="4-4", qc_score=40,
+                       validation_status="rejected")
+    db.insert_document("d4", "b1", "p1", page_range="5-5", qc_score=45,
+                       validation_status="rejected")
+    db.append_audit("d3", "qc_officer", "qc_review", {"decision": "reject"})
+    db.append_audit("d4", "qc_officer", "qc_review", {"decision": "rescan"})
+    stats = batch_statistics(db, "b1")
+    assert stats["documents"] == 4
+    assert stats["rejected_count"] == 1
+    assert stats["rescanned_count"] == 1
+    assert stats["rejection_rate"] == 25.0   # 1 of 4 documents
+    assert stats["rescan_rate"] == 25.0
+
+
+def test_batch_statistics_uses_latest_qc_decision_per_document(report_db):
+    """A document reviewed more than once (e.g. flagged for rescan, then
+    rejected outright after the rescan came back bad) counts under its
+    LATEST decision, not the first one and not both."""
+    from export.qc_report import batch_statistics
+    db, _tmp = report_db
+    db.insert_document("d3", "b1", "p1", page_range="4-4", qc_score=40,
+                       validation_status="rejected")
+    db.append_audit("d3", "qc_officer", "qc_review", {"decision": "rescan"})
+    db.append_audit("d3", "qc_officer", "qc_review", {"decision": "reject"})
+    stats = batch_statistics(db, "b1")
+    assert stats["rejected_count"] == 1
+    assert stats["rescanned_count"] == 0
+
+
+def test_batch_statistics_zero_documents_has_zero_rates(tmp_path):
+    from export.qc_report import batch_statistics
+    db = Database(tmp_path / "empty.db")
+    db.insert_project("p1", "P", {})
+    db.insert_batch("b1", "p1", "op1")
+    stats = batch_statistics(db, "b1")
+    assert stats["rejection_rate"] == 0.0
+    assert stats["rescan_rate"] == 0.0
+    db.close()
+
+
 def test_write_qc_report_pdf(report_db):
     from export.qc_report import write_qc_report
     db, tmp = report_db
@@ -195,6 +243,8 @@ def test_reports_panel_and_role_gating(qtbot, report_db):
     assert panel.batch_list.count() == 1
     assert panel.table.rowCount() == 2
     assert "2 documents" in panel.summary.text()
+    assert "rejection rate" in panel.summary.text()
+    assert "rescan rate" in panel.summary.text()
     assert panel.export_btn.isEnabled()      # viewer can export reports
 
     qc_panel = ReportsPanel(db, QC_OFFICER)  # report.view but not export

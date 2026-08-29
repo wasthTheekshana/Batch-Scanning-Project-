@@ -77,6 +77,8 @@ class ReportsPanel(QWidget):
             f"avg score {stats['avg_score']} · min {stats['min_score']} · "
             f"{stats['delivered']} delivered · "
             f"{stats['duplicates']} duplicates · "
+            f"rejection rate {stats['rejection_rate']}% · "
+            f"rescan rate {stats['rescan_rate']}% · "
             + ", ".join(f"{k}: {v}" for k, v in
                         sorted(stats["by_status"].items())))
         from PyQt6.QtGui import QBrush, QColor

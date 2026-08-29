@@ -77,6 +77,17 @@ Tesseract 5 must be on PATH for OCR features (bundled in the packaged EXE).
   (`docs/DOK_Scanner_Enhancement_Plan (1).docx` §4.3 — the "sample QC
   report format" half of this item is already satisfied by the existing
   Reports tab's per-document QC score/status export).
+- **Reporting: rejection/rescan rate** — complete: explicit rejection-rate
+  and rescan-rate summary metrics on the Reports tab and in the QC
+  report PDF, not just derivable from raw data. Notably, "reject" and
+  "rescan" QC decisions both collapse to the same `validation_status`
+  value (`rejected`) — the rates are computed from the original decision
+  preserved in the audit log, per document's *latest* review
+  (`docs/DOK_Scanner_Enhancement_Plan (1).docx` §4.6 — the "location/site
+  as a report dimension" half of this item is deferred along with
+  Multi-Site Consolidation §3.3: a location field with no multi-site
+  aggregation behind it would be a hollow label in a single-site
+  deployment, so it's tied to that work rather than added standalone).
 - **Remaining before go-live** — bundle `tesseract.exe`/`tessdata`/
   `libzbar-64.dll` into the release build (blocked on binaries), vendor
   SDK `acquire()` bodies for Kodak/Alaris/CZUR/Viisan (blocked on vendor

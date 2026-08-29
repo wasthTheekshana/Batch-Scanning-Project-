@@ -23,10 +23,42 @@ def batch_statistics(db, batch_id: str) -> dict:
             by_status.get(d["validation_status"], 0) + 1
     delivered = sum(1 for d in docs if d["delivery_status"] != "pending")
     duplicates = sum(1 for d in docs if d["duplicate_of"])
-    return {"documents": len(docs), "by_status": by_status,
+
+    # "reject" and "rescan" both collapse to validation_status="rejected"
+    # (ui/qc_review.py), so rejection-rate vs rescan-rate must come from
+    # the original decision, which survives in the audit log's
+    # detail.decision - ordered by log_id so a document reviewed more
+    # than once counts under its latest decision, not its first.
+    rejected_count = rescanned_count = 0
+    doc_ids = [d["document_id"] for d in docs]
+    if doc_ids:
+        placeholders = ",".join("?" * len(doc_ids))
+        rows = db.conn.execute(
+            f"SELECT document_id, detail FROM audit_log "
+            f"WHERE action='qc_review' AND document_id IN ({placeholders}) "
+            f"ORDER BY log_id", tuple(doc_ids)).fetchall()
+        latest_decision: dict[str, str] = {}
+        for row in rows:
+            decision = json.loads(row["detail"] or "{}").get("decision")
+            if decision in ("reject", "rescan"):
+                latest_decision[row["document_id"]] = decision
+        rejected_count = sum(1 for v in latest_decision.values()
+                             if v == "reject")
+        rescanned_count = sum(1 for v in latest_decision.values()
+                              if v == "rescan")
+
+    total = len(docs)
+    return {"documents": total, "by_status": by_status,
             "avg_score": round(sum(scores) / len(scores), 1) if scores else None,
             "min_score": min(scores) if scores else None,
-            "delivered": delivered, "duplicates": duplicates, "docs": docs}
+            "delivered": delivered, "duplicates": duplicates,
+            "rejected_count": rejected_count,
+            "rescanned_count": rescanned_count,
+            "rejection_rate": round(rejected_count / total * 100, 1)
+            if total else 0.0,
+            "rescan_rate": round(rescanned_count / total * 100, 1)
+            if total else 0.0,
+            "docs": docs}
 
 
 def write_qc_report(db, batch_id: str, out_path: str | Path,
@@ -48,9 +80,11 @@ def write_qc_report(db, batch_id: str, out_path: str | Path,
     story.append(Spacer(1, 6 * mm))
 
     summary = [["Documents", "Avg score", "Min score", "Delivered",
-                "Duplicates", "Status counts"],
+                "Duplicates", "Rejection rate", "Rescan rate",
+                "Status counts"],
                [stats["documents"], stats["avg_score"], stats["min_score"],
                 stats["delivered"], stats["duplicates"],
+                f"{stats['rejection_rate']}%", f"{stats['rescan_rate']}%",
                 ", ".join(f"{k}: {v}" for k, v in
                           sorted(stats["by_status"].items())) or "—"]]
     t = Table(summary, hAlign="LEFT")
