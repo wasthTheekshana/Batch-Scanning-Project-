@@ -348,13 +348,27 @@ def test_new_from_template_no_templates_shows_message(designer, monkeypatch):
     assert shown
 
 
-def test_zone_label_defaults_missing_geometry(designer):
-    # a template-derived (or full-page-mode) zone may carry only
-    # name/regex, without a captured pixel region - the label must not
-    # raise, and should not show a meaningless (0, 0) 0x0 placeholder.
-    label = designer._zone_label({"name": "invoice_no", "regex": r"(INV-\d+)"})
+def test_zone_label_defaults_missing_geometry_full_page_mode(designer):
+    # a full-page-mode zone has no captured pixel region by design -
+    # the label must not raise, and should show the full-page style.
+    label = designer._zone_label(
+        {"name": "invoice_no", "regex": r"(INV-\d+)"}, full_page=True)
     assert "invoice_no" in label
     assert "full-page" in label
+    assert "(0, 0)" not in label
+    assert "0×0" not in label
+    assert "/(INV-\\d+)/" in label
+
+
+def test_zone_label_defaults_missing_geometry_zone_mode(designer):
+    # a template-derived zone in a zone-mode project may carry only
+    # name/regex before its first Edit... - the label must not raise
+    # or claim "full-page" (the project's mode is "zone"), and should
+    # not show a meaningless (0, 0) 0x0 placeholder either.
+    label = designer._zone_label(
+        {"name": "invoice_no", "regex": r"(INV-\d+)"}, full_page=False)
+    assert "invoice_no" in label
+    assert "full-page" not in label
     assert "(0, 0)" not in label
     assert "0×0" not in label
     assert "/(INV-\\d+)/" in label
@@ -365,7 +379,7 @@ def test_zone_label_shows_real_geometry(designer):
     # geometry-less fallback.
     label = designer._zone_label(
         {"name": "invoice_no", "x": 12, "y": 34, "w": 56, "h": 78,
-         "regex": r"(INV-\d+)"})
+         "regex": r"(INV-\d+)"}, full_page=False)
     assert "(12, 34)" in label
     assert "56×78" in label
 

@@ -507,9 +507,7 @@ class WorkflowDesigner(QWidget):
             "key_file": self.sftp_key_file.text().strip(),
             "remote_path": self.sftp_remote_path.text().strip(),
         })
-        cfg["ocr"]["mode"] = ("full_page"
-                              if self.ocr_mode.currentText().startswith("Full-page")
-                              else "zone")
+        cfg["ocr"]["mode"] = "full_page" if self._is_full_page_mode() else "zone"
         cfg["ocr"]["zones"] = [
             self.zone_list.item(i).data(Qt.ItemDataRole.UserRole)
             for i in range(self.zone_list.count())]
@@ -519,13 +517,23 @@ class WorkflowDesigner(QWidget):
         return cfg
 
     # -- index zones ---------------------------------------------------------
+    def _is_full_page_mode(self) -> bool:
+        return self.ocr_mode.currentText().startswith("Full-page")
+
     @staticmethod
-    def _zone_label(zone: dict) -> str:
-        # a full-page-mode zone (or a template-seeded zone before its
-        # first Edit…) has no captured pixel region — coordinates are
-        # page-layout specific and don't transfer across projects.
-        if "x" not in zone:
+    def _zone_label(zone: dict, full_page: bool) -> str:
+        # the project's extraction mode (not the zone dict's shape)
+        # decides the label: a template-seeded zone before its first
+        # Edit… may have no captured pixel region in either mode, and
+        # showing "full-page" for a zone-mode project would be
+        # misleading — those coordinates are page-layout specific and
+        # don't transfer across projects, but the zone is still a
+        # regular region zone once positioned.
+        if full_page:
             return (f"{zone['name']} — full-page"
+                    + (f" · /{zone['regex']}/" if zone.get("regex") else ""))
+        if "x" not in zone:
+            return (f"{zone['name']} — not yet positioned"
                     + (f" · /{zone['regex']}/" if zone.get("regex") else ""))
         return (
             f"{zone['name']} — "
@@ -534,15 +542,13 @@ class WorkflowDesigner(QWidget):
             + (f" · /{zone['regex']}/" if zone.get("regex") else ""))
 
     def _append_zone(self, zone: dict) -> None:
-        item = QListWidgetItem(self._zone_label(zone))
+        item = QListWidgetItem(self._zone_label(zone, self._is_full_page_mode()))
         item.setData(Qt.ItemDataRole.UserRole, zone)
         self.zone_list.addItem(item)
 
     def add_zone(self) -> None:
         from ui.zone_dialog import ZoneDialog
-        dlg = ZoneDialog(
-            parent=self,
-            full_page=self.ocr_mode.currentText().startswith("Full-page"))
+        dlg = ZoneDialog(parent=self, full_page=self._is_full_page_mode())
         if dlg.exec() == QDialog.DialogCode.Accepted:
             zone = dlg.build_zone()
             if zone:
@@ -555,12 +561,12 @@ class WorkflowDesigner(QWidget):
         from ui.zone_dialog import ZoneDialog
         dlg = ZoneDialog(
             item.data(Qt.ItemDataRole.UserRole), parent=self,
-            full_page=self.ocr_mode.currentText().startswith("Full-page"))
+            full_page=self._is_full_page_mode())
         if dlg.exec() == QDialog.DialogCode.Accepted:
             zone = dlg.build_zone()
             if zone:
                 item.setData(Qt.ItemDataRole.UserRole, zone)
-                item.setText(self._zone_label(zone))
+                item.setText(self._zone_label(zone, self._is_full_page_mode()))
 
     def save(self) -> None:
         try:
