@@ -46,6 +46,24 @@ def test_extract_fields_without_regex_keeps_text(text_page):
     assert extract_fields(text_page, zones, ocr_fn=fake)["vendor"].value == "ACME Corp"
 
 
+def test_extract_fields_skips_zone_missing_geometry():
+    """A template-seeded zone (name+regex, no x/y/w/h yet) must be
+    silently skipped, not crash extraction."""
+    from ocr.zone_extractor import extract_fields
+    import numpy as np
+    img = np.zeros((100, 100, 3), dtype=np.uint8)
+    zones = [{"name": "unpositioned", "regex": r"(\S+)"},
+             {"name": "positioned", "x": 0, "y": 0, "w": 50, "h": 50}]
+
+    def fake_ocr(region):
+        from ocr.tesseract_engine import OCRResult
+        return OCRResult(text="VALUE", confidence=0.9)
+
+    fields = extract_fields(img, zones, ocr_fn=fake_ocr)
+    assert "unpositioned" not in fields
+    assert fields["positioned"].value == "VALUE"
+
+
 # ---- duplicate detection --------------------------------------------------------
 
 def test_exact_duplicate_by_md5(tmp_path):

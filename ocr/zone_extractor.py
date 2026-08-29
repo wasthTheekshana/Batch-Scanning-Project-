@@ -43,6 +43,8 @@ def extract_fields(img: np.ndarray, zones: list[dict], lang: str = "eng",
     h, w = img.shape[:2]
     fields: dict[str, FieldValue] = {}
     for zone in zones:
+        if not all(k in zone for k in ("x", "y", "w", "h")):
+            continue  # not yet positioned (e.g. a fresh template zone)
         zx, zy, zw, zh = scaled_rect(zone, w, h)
         x0 = max(0, min(zx, w - 1))
         y0 = max(0, min(zy, h - 1))
