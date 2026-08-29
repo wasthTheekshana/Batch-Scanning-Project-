@@ -195,3 +195,45 @@ def test_vendor_sources_degrade_without_dll(cls):
 def test_source_registry_complete():
     assert set(SOURCE_REGISTRY) == {"twain", "wia", "kodak", "alaris",
                                     "czur", "viisan"}
+
+
+# ---- new from template --------------------------------------------------------------
+
+def test_new_from_template_creates_project(designer, monkeypatch):
+    from core.template_manager import TemplateManager
+    tm = TemplateManager(designer.db)
+    template = tm.save_as_template(
+        {"ocr": {"zones": [{"name": "invoice_no", "regex": r"(INV-\d+)"}],
+                "lang": "eng", "confidence_threshold": 0.75}},
+        "Invoice Starter", "Invoices")
+
+    monkeypatch.setattr(
+        "ui.workflow_designer.QInputDialog.getItem",
+        staticmethod(lambda *a, **k: (
+            f"{template['category']} — {template['name']}", True)))
+    monkeypatch.setattr(
+        "ui.workflow_designer.QInputDialog.getText",
+        staticmethod(lambda *a, **k: ("New Client Project", True)))
+
+    before = {p["project_id"] for p in designer.db.list_projects()}
+    designer.new_from_template()
+    after = {p["project_id"] for p in designer.db.list_projects()}
+    new_ids = after - before
+    assert len(new_ids) == 1
+    new_project = designer.pm.load(new_ids.pop())
+    assert new_project["name"] == "New Client Project"
+    assert new_project["ocr"]["zones"][0]["name"] == "invoice_no"
+    # schema-required keys present even though the template didn't carry them
+    assert "output_path" in new_project["export"]
+    # the designer switches to showing the newly created project
+    assert designer.project_combo.currentData() in new_ids or \
+        designer.config["project_id"] == new_project["project_id"]
+
+
+def test_new_from_template_no_templates_shows_message(designer, monkeypatch):
+    shown = []
+    monkeypatch.setattr(
+        "ui.workflow_designer.QMessageBox.information",
+        staticmethod(lambda *a, **k: shown.append(True)))
+    designer.new_from_template()  # no templates saved in this fixture's db
+    assert shown

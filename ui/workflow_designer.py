@@ -168,13 +168,16 @@ class WorkflowDesigner(QWidget):
         top.addWidget(self.project_combo, stretch=1)
         self.clone_btn = QPushButton("Clone…")
         self.clone_btn.clicked.connect(self.clone_project)
+        self.new_from_template_btn = QPushButton("New from template…")
+        self.new_from_template_btn.clicked.connect(self.new_from_template)
         self.rollback_btn = QPushButton("Version history…")
         self.rollback_btn.clicked.connect(self.rollback_dialog)
         self.save_btn = QPushButton("Save (new version)")
         self.save_btn.clicked.connect(self.save)
         from ui.theme import mark
         mark(self.save_btn, "primary")
-        for b in (self.clone_btn, self.rollback_btn, self.save_btn):
+        for b in (self.new_from_template_btn, self.clone_btn,
+                  self.rollback_btn, self.save_btn):
             b.setEnabled(self.can_edit)
             top.addWidget(b)
         outer.addLayout(top)
@@ -441,11 +444,19 @@ class WorkflowDesigner(QWidget):
         return cfg
 
     # -- index zones ---------------------------------------------------------
-    def _append_zone(self, zone: dict) -> None:
-        item = QListWidgetItem(
-            f"{zone['name']} — ({zone['x']}, {zone['y']}) "
-            f"{zone['w']}×{zone['h']}"
+    @staticmethod
+    def _zone_label(zone: dict) -> str:
+        # templates may define a zone by name/regex only, without a
+        # captured pixel region (coordinates are page-layout specific
+        # and don't transfer across projects) - default those to 0.
+        return (
+            f"{zone['name']} — "
+            f"({zone.get('x', 0)}, {zone.get('y', 0)}) "
+            f"{zone.get('w', 0)}×{zone.get('h', 0)}"
             + (f" · /{zone['regex']}/" if zone.get("regex") else ""))
+
+    def _append_zone(self, zone: dict) -> None:
+        item = QListWidgetItem(self._zone_label(zone))
         item.setData(Qt.ItemDataRole.UserRole, zone)
         self.zone_list.addItem(item)
 
@@ -467,10 +478,7 @@ class WorkflowDesigner(QWidget):
             zone = dlg.build_zone()
             if zone:
                 item.setData(Qt.ItemDataRole.UserRole, zone)
-                item.setText(
-                    f"{zone['name']} — ({zone['x']}, {zone['y']}) "
-                    f"{zone['w']}×{zone['h']}"
-                    + (f" · /{zone['regex']}/" if zone.get("regex") else ""))
+                item.setText(self._zone_label(zone))
 
     def save(self) -> None:
         try:
@@ -499,6 +507,34 @@ class WorkflowDesigner(QWidget):
         if ok and name.strip():
             self.pm.clone(self.config["project_id"], name.strip())
             self.refresh_projects()
+
+    def new_from_template(self) -> None:
+        from core.template_manager import TemplateManager
+        tm = TemplateManager(self.db)
+        templates = tm.list_templates()
+        if not templates:
+            QMessageBox.information(self, "No templates",
+                                    "No project templates available yet. "
+                                    "Save a configured project as a "
+                                    "template first, or check that "
+                                    "built-in templates seeded correctly.")
+            return
+        labels = [f"{t['category']} — {t['name']}" for t in templates]
+        label, ok = QInputDialog.getItem(
+            self, "New from template", "Template:", labels, 0, False)
+        if not ok:
+            return
+        template = templates[labels.index(label)]
+        name, ok = QInputDialog.getText(self, "New project",
+                                        "New project name:")
+        if not (ok and name.strip()):
+            return
+        cfg = tm.build_project_config(template["template_id"])
+        new_cfg = self.pm.create(name.strip(), config=cfg)
+        self.refresh_projects()
+        idx = self.project_combo.findData(new_cfg["project_id"])
+        if idx >= 0:
+            self.project_combo.setCurrentIndex(idx)
 
     def rollback_dialog(self) -> None:
         if self.config is None:
