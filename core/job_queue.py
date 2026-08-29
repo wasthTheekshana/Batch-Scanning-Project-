@@ -245,17 +245,26 @@ class Pipeline:
     def _extract_zone_fields(self, record: PageRecord, image) -> None:
         """Auto-index: extract configured OCR zones into page fields
         (HLD §4 Layer 5). Values below the confidence threshold are kept
-        but flagged so the operator can correct them in the index editor."""
+        but flagged so the operator can correct them in the index editor.
+        ocr.mode selects zone-based extraction (fixed pixel regions,
+        cropped and re-OCR'd) or full-page extraction (label-anchored
+        regex against the page text already OCR'd for record.ocr_text)."""
         ocr_cfg = self.profile.get("ocr", {})
         zones = ocr_cfg.get("zones", [])
         if not zones or not self.profile.get("features", {}).get("auto_index"):
             return
-        from ocr.zone_extractor import extract_fields
         threshold = float(ocr_cfg.get("confidence_threshold", 0.75))
+        mode = ocr_cfg.get("mode", "zone")
         try:
-            fields = extract_fields(image, zones,
-                                    lang=ocr_cfg.get("lang", "eng"),
-                                    ocr_fn=self.ocr_fn)
+            if mode == "full_page":
+                from ocr.zone_extractor import extract_fields_from_text
+                fields = extract_fields_from_text(
+                    record.ocr_text, record.ocr_confidence, zones)
+            else:
+                from ocr.zone_extractor import extract_fields
+                fields = extract_fields(image, zones,
+                                        lang=ocr_cfg.get("lang", "eng"),
+                                        ocr_fn=self.ocr_fn)
         except Exception as e:
             log.warning("zone extraction failed for page %s: %s",
                         record.job.page_no, e)
