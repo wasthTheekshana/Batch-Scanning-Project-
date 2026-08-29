@@ -28,6 +28,18 @@ ACTIONS = ["set_folder", "set_filename", "set_validation_status",
            "skip_stage"]
 EXPORT_FORMATS = ["searchable_pdf", "image_pdf", "pdf_a", "tiff"]
 
+# QC strictness presets (Enhancement Plan §4.3) - one-click threshold sets
+# for document sensitivity (e.g. legal/financial vs routine correspondence).
+# "Standard" matches DEFAULT_PROJECT's own qc defaults exactly.
+QC_PRESETS = {
+    "Strict": {"pass_score": 90, "blur_warn_threshold": 100,
+              "blur_fail_threshold": 50, "dpi_warn": 250, "dpi_fail": 200},
+    "Standard": {"pass_score": 80, "blur_warn_threshold": 80,
+                "blur_fail_threshold": 30, "dpi_warn": 200, "dpi_fail": 150},
+    "Lenient": {"pass_score": 65, "blur_warn_threshold": 60,
+               "blur_fail_threshold": 15, "dpi_warn": 150, "dpi_fail": 100},
+}
+
 
 class RuleDialog(QDialog):
     """Build one rule: N condition checks joined by AND/OR + N actions."""
@@ -226,6 +238,11 @@ class WorkflowDesigner(QWidget):
         # QC config
         qc_box = QGroupBox("QC pipeline")
         q_layout = QFormLayout(qc_box)
+        self.qc_preset = QComboBox()
+        self.qc_preset.addItems(["Custom", *QC_PRESETS.keys()])
+        self.qc_preset.setEnabled(self.can_edit)
+        self.qc_preset.currentTextChanged.connect(self._apply_qc_preset)
+        q_layout.addRow("Strictness preset", self.qc_preset)
         self.qc_enabled = QCheckBox("QC enabled")
         self.qc_enabled.setEnabled(self.can_edit)
         q_layout.addRow(self.qc_enabled)
@@ -241,11 +258,18 @@ class WorkflowDesigner(QWidget):
         self.blur_warn.setRange(0, 10000)
         self.blur_fail = QSpinBox()
         self.blur_fail.setRange(0, 10000)
-        for w in (self.pass_score, self.blur_warn, self.blur_fail):
+        self.dpi_warn = QSpinBox()
+        self.dpi_warn.setRange(0, 2400)
+        self.dpi_fail = QSpinBox()
+        self.dpi_fail.setRange(0, 2400)
+        for w in (self.pass_score, self.blur_warn, self.blur_fail,
+                  self.dpi_warn, self.dpi_fail):
             w.setEnabled(self.can_edit)
         q_layout.addRow("Pass score ≥", self.pass_score)
         q_layout.addRow("Blur WARN threshold", self.blur_warn)
         q_layout.addRow("Blur FAIL threshold", self.blur_fail)
+        q_layout.addRow("DPI WARN threshold", self.dpi_warn)
+        q_layout.addRow("DPI FAIL threshold", self.dpi_fail)
         layout.addWidget(qc_box)
 
         # scanner + export
@@ -360,6 +384,20 @@ class WorkflowDesigner(QWidget):
         self.config = self.pm.load(project_id)
         self._bind_config()
 
+    def _apply_qc_preset(self, text: str) -> None:
+        """Fill all five QC threshold fields at once from a named
+        strictness preset. "Custom" has no preset dict, so it's a no-op -
+        it only ever appears when the current values don't match any
+        preset (see _bind_config), never something to "apply"."""
+        preset = QC_PRESETS.get(text)
+        if preset is None:
+            return
+        self.pass_score.setValue(preset["pass_score"])
+        self.blur_warn.setValue(preset["blur_warn_threshold"])
+        self.blur_fail.setValue(preset["blur_fail_threshold"])
+        self.dpi_warn.setValue(preset["dpi_warn"])
+        self.dpi_fail.setValue(preset["dpi_fail"])
+
     def _bind_config(self) -> None:
         cfg = self.config
         self.version_label.setText(
@@ -378,6 +416,19 @@ class WorkflowDesigner(QWidget):
         self.pass_score.setValue(qc.get("pass_score", 80))
         self.blur_warn.setValue(int(qc.get("blur_warn_threshold", 80)))
         self.blur_fail.setValue(int(qc.get("blur_fail_threshold", 30)))
+        self.dpi_warn.setValue(int(qc.get("dpi_warn", 200)))
+        self.dpi_fail.setValue(int(qc.get("dpi_fail", 150)))
+        current_thresholds = {
+            "pass_score": self.pass_score.value(),
+            "blur_warn_threshold": self.blur_warn.value(),
+            "blur_fail_threshold": self.blur_fail.value(),
+            "dpi_warn": self.dpi_warn.value(), "dpi_fail": self.dpi_fail.value()}
+        matched_preset = next(
+            (name for name, preset in QC_PRESETS.items()
+             if preset == current_thresholds), "Custom")
+        self.qc_preset.blockSignals(True)
+        self.qc_preset.setCurrentText(matched_preset)
+        self.qc_preset.blockSignals(False)
         self.dpi.setValue(cfg["scanner"]["dpi"])
         self.color.setCurrentText(cfg["scanner"]["color"])
         self.export_format.setCurrentText(cfg["export"]["format"])
@@ -420,6 +471,8 @@ class WorkflowDesigner(QWidget):
         cfg["qc"]["pass_score"] = self.pass_score.value()
         cfg["qc"]["blur_warn_threshold"] = self.blur_warn.value()
         cfg["qc"]["blur_fail_threshold"] = self.blur_fail.value()
+        cfg["qc"]["dpi_warn"] = self.dpi_warn.value()
+        cfg["qc"]["dpi_fail"] = self.dpi_fail.value()
         cfg["scanner"]["dpi"] = self.dpi.value()
         cfg["scanner"]["color"] = self.color.currentText()
         cfg["export"]["format"] = self.export_format.currentText()

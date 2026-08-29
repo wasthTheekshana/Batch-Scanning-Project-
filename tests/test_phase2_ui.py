@@ -67,6 +67,56 @@ def test_designer_loads_project(designer):
     assert designer.config is not None
     assert designer.qc_enabled.isChecked()
     assert designer.pass_score.value() == 80
+    assert designer.dpi_warn.value() == 200
+    assert designer.dpi_fail.value() == 150
+
+
+def test_designer_dpi_thresholds_round_trip_to_saved_json(designer):
+    designer.dpi_warn.setValue(250)
+    designer.dpi_fail.setValue(180)
+    cfg = designer.collect_config()
+    saved = designer.pm.save(cfg)
+    assert saved["qc"]["dpi_warn"] == 250
+    assert saved["qc"]["dpi_fail"] == 180
+
+
+def test_qc_strictness_preset_sets_all_thresholds(designer):
+    designer.qc_preset.setCurrentText("Strict")
+    assert designer.pass_score.value() == 90
+    assert designer.blur_warn.value() == 100
+    assert designer.blur_fail.value() == 50
+    assert designer.dpi_warn.value() == 250
+    assert designer.dpi_fail.value() == 200
+
+    designer.qc_preset.setCurrentText("Lenient")
+    assert designer.pass_score.value() == 65
+    assert designer.blur_warn.value() == 60
+    assert designer.blur_fail.value() == 15
+    assert designer.dpi_warn.value() == 150
+    assert designer.dpi_fail.value() == 100
+
+    designer.qc_preset.setCurrentText("Standard")
+    assert designer.pass_score.value() == 80
+    assert designer.blur_warn.value() == 80
+    assert designer.blur_fail.value() == 30
+    assert designer.dpi_warn.value() == 200
+    assert designer.dpi_fail.value() == 150
+
+
+def test_qc_strictness_preset_starts_on_custom_for_nonstandard_project(qtbot, db, tmp_path):
+    """A project whose thresholds don't match any named preset (e.g. one
+    hand-tuned before this feature existed) must not silently get
+    relabeled - the preset combo should reflect reality, not force a
+    choice onto existing data."""
+    from core.profile_manager import ProfileManager
+    from ui.workflow_designer import WorkflowDesigner
+    pm = ProfileManager(tmp_path / "projects_custom", db)
+    cfg = pm.create("Custom QC Project")
+    cfg["qc"]["pass_score"] = 77
+    pm.save(cfg)
+    d = WorkflowDesigner(db, pm, ADMIN)
+    qtbot.addWidget(d)
+    assert d.qc_preset.currentText() == "Custom"
 
 
 def test_designer_edits_round_trip_to_saved_json(designer):

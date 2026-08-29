@@ -69,6 +69,14 @@ Tesseract 5 must be on PATH for OCR features (bundled in the packaged EXE).
   reusable starting point for the next one
   (`docs/DOK_Scanner_Enhancement_Plan (1).docx` §4.4, generalized beyond
   banking-only per project direction).
+- **QC strictness profiles** — complete: a one-click Strict/Standard/
+  Lenient preset in the Workflow Designer sets pass score, blur, and DPI
+  thresholds together for document sensitivity (e.g. legal/financial vs
+  routine correspondence); DPI WARN/FAIL thresholds are now editable in
+  the UI (previously only configurable via the raw project JSON)
+  (`docs/DOK_Scanner_Enhancement_Plan (1).docx` §4.3 — the "sample QC
+  report format" half of this item is already satisfied by the existing
+  Reports tab's per-document QC score/status export).
 - **Remaining before go-live** — bundle `tesseract.exe`/`tessdata`/
   `libzbar-64.dll` into the release build (blocked on binaries), vendor
   SDK `acquire()` bodies for Kodak/Alaris/CZUR/Viisan (blocked on vendor
