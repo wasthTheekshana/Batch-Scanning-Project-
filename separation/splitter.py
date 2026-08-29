@@ -37,6 +37,12 @@ def split_documents(pages: list[dict], separation_cfg: dict,
     docs: list[dict] = []
     current: list[dict] = []
     for page in pages:
+        if page.get("is_custody_label"):
+            if current:
+                docs.append(_doc(current))
+                current = []
+            continue  # custody QR label sheet, never document content
+
         if use_blank and page.get("is_blank"):
             if current:
                 docs.append(_doc(current))

@@ -17,6 +17,8 @@ from ui.theme import mark
 
 _CHECKPOINT_STAGES = ["prep", "scanning", "qc", "storage", "return"]
 _INCIDENT_STAGES = ["damaged", "missing", "compromised"]
+assert set(_CHECKPOINT_STAGES) | set(_INCIDENT_STAGES) | {"receipt"} == \
+    VALID_STAGES, "custody_panel's stage lists drifted from VALID_STAGES"
 
 
 class CustodyPanel(QWidget):
@@ -25,8 +27,10 @@ class CustodyPanel(QWidget):
         self.db = db
         self.audit = audit
         self.current_user = current_user
-        self.project_id = "proj-1"  # first/only active project by default;
-        # a multi-project selector is out of scope for this MVP panel
+        # first/only active project by default; a multi-project selector
+        # is out of scope for this MVP panel
+        projects = db.list_projects("active")
+        self.project_id = projects[0]["project_id"] if projects else None
 
         layout = QHBoxLayout(self)
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -57,6 +61,10 @@ class CustodyPanel(QWidget):
         mark(self.selected_label, "muted")
         rl.addWidget(self.selected_label)
 
+        self.hint = QLabel("")
+        mark(self.hint, "muted")
+        rl.addWidget(self.hint)
+
         self.print_label_btn = QPushButton("Print label sheet…")
         self.print_label_btn.clicked.connect(self.print_label_sheet)
         rl.addWidget(self.print_label_btn)
@@ -80,10 +88,10 @@ class CustodyPanel(QWidget):
         rl.addLayout(incident_row)
 
         rl.addWidget(QLabel("Reconciliation"))
-        self.recon_table = QTableWidget(0, 7)
+        self.recon_table = QTableWidget(0, 8)
         self.recon_table.setHorizontalHeaderLabels(
             ["Bundle", "Status", "Received", "Scanned", "QC", "Storage",
-             "Mismatch"])
+             "Returned", "Mismatch"])
         self.recon_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch)
         rl.addWidget(self.recon_table, stretch=1)
@@ -95,6 +103,12 @@ class CustodyPanel(QWidget):
     # -- data -----------------------------------------------------------------
     def refresh(self) -> None:
         self.bundle_list.clear()
+        if self.project_id is None:
+            self.recon_table.setRowCount(0)
+            self.hint.setText(
+                "No active project — create one first.")
+            return
+        self.hint.setText("")
         for row in self.db.list_bundles(self.project_id):
             item = QListWidgetItem(f"{row['label']} · {row['status']}")
             item.setData(Qt.ItemDataRole.UserRole, row["bundle_id"])
@@ -107,6 +121,7 @@ class CustodyPanel(QWidget):
         for r, row in enumerate(rows):
             values = [row["label"], row["status"], str(row["received"]),
                      str(row["scanned"]), str(row["qc"]), str(row["storage"]),
+                     str(row["returned"]),
                      "Yes" if row["mismatch"] else "No"]
             for c, value in enumerate(values):
                 self.recon_table.setItem(r, c, QTableWidgetItem(value))
@@ -128,6 +143,9 @@ class CustodyPanel(QWidget):
     def create_bundle(self) -> None:
         label = self.new_bundle_label.text().strip()
         if not label:
+            return
+        if self.project_id is None:
+            self.hint.setText("No active project — create one first.")
             return
         create_bundle(self.db, self.project_id, label, audit=self.audit)
         self.new_bundle_label.clear()

@@ -86,8 +86,11 @@ def generate_label_sheet(bundle: dict, out_path: str | Path) -> Path:
     qr_size = 200
     x = (page_w - qr_size) / 2
     c.drawImage(ImageReader(buf), x, 500, width=qr_size, height=qr_size)
+    label_text = bundle["label"]
+    if len(label_text) > 40:
+        label_text = label_text[:37] + "..."
     c.setFont("Helvetica-Bold", 16)
-    c.drawCentredString(page_w / 2, 470, bundle["label"])
+    c.drawCentredString(page_w / 2, 470, label_text)
     c.setFont("Helvetica", 11)
     c.drawCentredString(page_w / 2, 450, f"Bundle ID: {bundle['bundle_id']}")
     c.drawCentredString(page_w / 2, 434, f"QR: {bundle['qr_value']}")

@@ -199,17 +199,30 @@ class Pipeline:
             sep_cfg = self.profile.get("separation", {})
             record.is_blank = is_blank(
                 image, sep_cfg.get("blank_threshold", 0.02))
+            # NOTE: the automatic custody "scanning" checkpoint (below) only
+            # fires when barcode decoding runs, which requires "barcode" in
+            # this project's separation.strategy. A project using only
+            # blank_page/fixed_pages separation will not auto-log scanning
+            # checkpoints for custody bundles even if bundles exist for it.
             if "barcode" in sep_cfg.get("strategy", []):
                 record.barcodes = decode_barcodes(image)
                 if record.barcodes:
                     from custody.bundle_manager import (
                         record_checkpoint_from_barcode)
-                    operator = self._batches.get(job.batch_id, {}).get(
-                        "operator", "system")
+                    with self._lock:
+                        operator = self._batches.get(job.batch_id, {}).get(
+                            "operator", "system")
                     for bc in record.barcodes:
-                        record_checkpoint_from_barcode(
-                            self.db, bc["value"], "scanning", operator,
-                            batch_id=job.batch_id, audit=self.audit)
+                        try:
+                            matched = record_checkpoint_from_barcode(
+                                self.db, bc["value"], "scanning", operator,
+                                batch_id=job.batch_id, audit=self.audit)
+                            if matched:
+                                record.is_custody_label = True
+                        except Exception:
+                            log.exception(
+                                "custody checkpoint failed for barcode %s on "
+                                "job %s", bc.get("value"), job.job_id)
             self._emit("ingest", "done", job_id=job.job_id,
                        batch_id=job.batch_id, page_no=job.page_no)
             self.ocr_q.put(record)
@@ -322,6 +335,7 @@ class Pipeline:
 
         page_dicts = [{"page_no": r.job.page_no, "image": None,
                        "is_blank": r.is_blank, "barcodes": r.barcodes,
+                       "is_custody_label": r.is_custody_label,
                        "record": r} for r in pages]
         docs = split_documents(page_dicts, self.profile.get("separation", {}))
         self.db.update_batch_status(batch_id, "qc_pending", len(pages))

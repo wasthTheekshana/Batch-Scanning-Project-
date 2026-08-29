@@ -209,3 +209,36 @@ def test_scanning_a_bundle_qr_sheet_auto_logs_custody_checkpoint(tmp_path, db):
 
     events = db.list_custody_events(bundle["bundle_id"])
     assert [e["stage"] for e in events] == ["receipt", "scanning"]
+
+
+def test_bundle_qr_sheet_is_dropped_from_the_exported_document(tmp_path, db):
+    from custody.bundle_manager import create_bundle
+    db.insert_project("proj-1", "Test Project", {})
+    bundle = create_bundle(db, "proj-1", "Box 42")
+
+    def fake_decode(image):
+        return [{"type": "QRCODE", "value": bundle["qr_value"],
+                 "rect": (0, 0, 10, 10)}]
+
+    profile = make_profile(tmp_path)
+    profile["separation"]["strategy"] = ["barcode"]
+    pipeline = build_pipeline(tmp_path, db, profile)
+    import core.job_queue as jq
+    original = jq.decode_barcodes
+    jq.decode_barcodes = fake_decode
+    try:
+        pipeline.start()
+        jobs = write_pages(tmp_path, ["text"])
+        for j in jobs:
+            j.batch_id = "batch-1"
+        pipeline.submit_batch("batch-1", jobs)
+        assert wait_for(lambda: len(db.list_custody_events(bundle["bundle_id"])) >= 2)
+    finally:
+        jq.decode_barcodes = original
+        pipeline.shutdown()
+
+    # the QR-labeled page should never have become a document - with only
+    # one page in the batch and that page being the custody label, zero
+    # documents should be produced
+    docs = db.list_documents("batch-1")
+    assert len(docs) == 0

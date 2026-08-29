@@ -35,6 +35,7 @@ class PageRecord:
     ocr_confidence: float = 0.0
     barcodes: list = field(default_factory=list)
     is_blank: bool = False
+    is_custody_label: bool = False
     qc_score: int | None = None
     qc_grade: str = ""                   # PASS / WARN / FAIL
     qc_detail: dict = field(default_factory=dict)

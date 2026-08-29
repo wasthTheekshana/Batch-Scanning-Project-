@@ -1,6 +1,7 @@
 """Tests for the chain-of-custody module (DOK_Scanner_Enhancement_Plan §3.2)."""
 import pytest
 
+from core.models import new_id
 from data.db import Database
 from custody.bundle_manager import create_bundle, record_checkpoint, VALID_STAGES
 
@@ -276,3 +277,69 @@ def test_custody_panel_shows_reconciliation_mismatch(qtbot, custody_env):
     mismatch_item = panel.recon_table.item(0, panel.recon_table.columnCount() - 1)
     assert mismatch_item is not None
     assert mismatch_item.text() in ("Yes", "True", "MISMATCH", "⚠")
+
+
+def test_custody_panel_shows_returned_column(qtbot, custody_env):
+    from custody.bundle_manager import create_bundle, record_checkpoint
+    from ui.custody_panel import CustodyPanel
+    db, audit, user, _tmp = custody_env
+    bundle = create_bundle(db, "proj-1", "Box 42")
+    record_checkpoint(db, bundle["bundle_id"], "return", "alice")
+    panel = CustodyPanel(db, audit, user)
+    qtbot.addWidget(panel)
+    assert panel.recon_table.horizontalHeaderItem(6).text() == "Returned"
+    # column index 6 = "Returned" in the 8-column layout: Bundle=0,
+    # Status=1, Received=2, Scanned=3, QC=4, Storage=5, Returned=6,
+    # Mismatch=7
+    assert panel.recon_table.item(0, 6).text() == "1"
+
+
+@pytest.fixture()
+def custody_env_uuid_project(tmp_path):
+    from data.audit import AuditLogger
+    from core.rbac import User
+    project_id = new_id()
+    db = Database(tmp_path / "custody_ui2.db")
+    db.insert_project(project_id, "Real Project", {})
+    audit = AuditLogger(db, tmp_path / "logs")
+    yield db, audit, User("u1", "alice", "admin"), project_id
+    audit.close()
+    db.close()
+
+
+def test_custody_panel_works_with_real_uuid_project_id(qtbot, custody_env_uuid_project):
+    from ui.custody_panel import CustodyPanel
+    db, audit, user, project_id = custody_env_uuid_project
+    panel = CustodyPanel(db, audit, user)
+    qtbot.addWidget(panel)
+    assert panel.project_id == project_id
+    panel.new_bundle_label.setText("Box 1")
+    panel.create_bundle_btn.click()  # must not raise
+    assert panel.bundle_list.count() == 1
+    assert len(db.list_bundles(project_id)) == 1
+
+
+def test_custody_panel_handles_no_active_project(qtbot, tmp_path):
+    from data.audit import AuditLogger
+    from core.rbac import User
+    from ui.custody_panel import CustodyPanel
+    db = Database(tmp_path / "custody_empty.db")
+    audit = AuditLogger(db, tmp_path / "logs")
+    user = User("u1", "alice", "admin")
+    panel = CustodyPanel(db, audit, user)  # must not raise
+    qtbot.addWidget(panel)
+    assert panel.project_id is None
+    panel.new_bundle_label.setText("Box 1")
+    panel.create_bundle_btn.click()  # must not raise
+    assert panel.bundle_list.count() == 0
+    audit.close()
+    db.close()
+
+
+def test_generate_label_sheet_truncates_long_label(tmp_path):
+    from custody.bundle_manager import generate_label_sheet
+    bundle = {"bundle_id": "b1", "label": "A" * 100,
+              "qr_value": "DOK-BUNDLE-ABC123456789"}
+    out = generate_label_sheet(bundle, tmp_path / "label.pdf")
+    assert out.exists()
+    assert out.read_bytes()[:5] == b"%PDF-"

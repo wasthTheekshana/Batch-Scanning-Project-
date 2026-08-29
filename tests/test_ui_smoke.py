@@ -152,3 +152,27 @@ def test_main_window_role_gating(qtbot, db, tmp_path):
     qtbot.addWidget(win2)
     tab_names = [win2.tabs.tabText(i) for i in range(win2.tabs.count())]
     assert "Projects" in tab_names
+
+
+def test_custody_tab_gated_by_role(qtbot, db, tmp_path):
+    pm = ProfileManager(tmp_path / "projects", db)
+    pm.create("Default Project")
+    bus = EventBus()
+
+    # operator has custody.manage -> Custody tab present
+    login_as(db, "operator")
+    win = MainWindow(db, pm, bus, staging_dir=tmp_path / "staging")
+    qtbot.addWidget(win)
+    tab_names = [win.tabs.tabText(i) for i in range(win.tabs.count())]
+    assert "Custody" in tab_names
+    assert hasattr(win, "custody_panel")
+    Session.logout()
+
+    # viewer lacks custody.manage -> no Custody tab
+    login_as(db, "viewer")
+    win2 = MainWindow(db, pm, bus, staging_dir=tmp_path / "staging")
+    qtbot.addWidget(win2)
+    tab_names2 = [win2.tabs.tabText(i) for i in range(win2.tabs.count())]
+    assert "Custody" not in tab_names2
+    assert not hasattr(win2, "custody_panel")
+    Session.logout()
