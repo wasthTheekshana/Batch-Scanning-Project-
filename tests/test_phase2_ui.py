@@ -71,6 +71,13 @@ def test_designer_loads_project(designer):
     assert designer.dpi_fail.value() == 150
 
 
+def test_designer_ocr_mode_roundtrip(designer):
+    assert designer.ocr_mode.currentText() == "Zone-based (draw regions)"
+    designer.ocr_mode.setCurrentText("Full-page (label-anchored regex)")
+    cfg = designer.collect_config()
+    assert cfg["ocr"]["mode"] == "full_page"
+
+
 def test_designer_dpi_thresholds_round_trip_to_saved_json(designer):
     designer.dpi_warn.setValue(250)
     designer.dpi_fail.setValue(180)
@@ -342,12 +349,14 @@ def test_new_from_template_no_templates_shows_message(designer, monkeypatch):
 
 
 def test_zone_label_defaults_missing_geometry(designer):
-    # a template-derived zone may carry only name/regex - the label must
-    # not raise, and should show a 0-valued placeholder region.
+    # a template-derived (or full-page-mode) zone may carry only
+    # name/regex, without a captured pixel region - the label must not
+    # raise, and should not show a meaningless (0, 0) 0x0 placeholder.
     label = designer._zone_label({"name": "invoice_no", "regex": r"(INV-\d+)"})
     assert "invoice_no" in label
-    assert "(0, 0)" in label
-    assert "0×0" in label
+    assert "full-page" in label
+    assert "(0, 0)" not in label
+    assert "0×0" not in label
     assert "/(INV-\\d+)/" in label
 
 

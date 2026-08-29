@@ -300,8 +300,19 @@ class WorkflowDesigner(QWidget):
         zone_box = QGroupBox("Index zones (auto-index fields)")
         z_layout = QVBoxLayout(zone_box)
         z_layout.addWidget(QLabel(
-            "Each zone reads one field from a region of the page. "
-            "Add a zone, load a sample page, and drag the region."))
+            "Each zone reads one field from the page. Zone-based: drag a "
+            "fixed region per field. Full-page: OCR the whole page and "
+            "match each field by a label-anchored regex — use this when "
+            "field position varies between documents in this project."))
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("Extraction mode"))
+        self.ocr_mode = QComboBox()
+        self.ocr_mode.addItems(["Zone-based (draw regions)",
+                                "Full-page (label-anchored regex)"])
+        self.ocr_mode.setEnabled(self.can_edit)
+        mode_row.addWidget(self.ocr_mode)
+        mode_row.addStretch(1)
+        z_layout.addLayout(mode_row)
         self.zone_list = QListWidget()
         z_layout.addWidget(self.zone_list)
         zone_btns = QHBoxLayout()
@@ -436,6 +447,12 @@ class WorkflowDesigner(QWidget):
         self.output_path.setText(cfg["export"]["output_path"])
         self.delivery_path.setText(
             cfg["delivery"]["local_folder"].get("path", ""))
+        self.ocr_mode.blockSignals(True)
+        self.ocr_mode.setCurrentText(
+            "Full-page (label-anchored regex)"
+            if cfg.get("ocr", {}).get("mode") == "full_page"
+            else "Zone-based (draw regions)")
+        self.ocr_mode.blockSignals(False)
         self.zone_list.clear()
         for zone in cfg.get("ocr", {}).get("zones", []):
             self._append_zone(zone)
@@ -490,6 +507,9 @@ class WorkflowDesigner(QWidget):
             "key_file": self.sftp_key_file.text().strip(),
             "remote_path": self.sftp_remote_path.text().strip(),
         })
+        cfg["ocr"]["mode"] = ("full_page"
+                              if self.ocr_mode.currentText().startswith("Full-page")
+                              else "zone")
         cfg["ocr"]["zones"] = [
             self.zone_list.item(i).data(Qt.ItemDataRole.UserRole)
             for i in range(self.zone_list.count())]
@@ -501,9 +521,12 @@ class WorkflowDesigner(QWidget):
     # -- index zones ---------------------------------------------------------
     @staticmethod
     def _zone_label(zone: dict) -> str:
-        # templates may define a zone by name/regex only, without a
-        # captured pixel region (coordinates are page-layout specific
-        # and don't transfer across projects) - default those to 0.
+        # a full-page-mode zone (or a template-seeded zone before its
+        # first Edit…) has no captured pixel region — coordinates are
+        # page-layout specific and don't transfer across projects.
+        if "x" not in zone:
+            return (f"{zone['name']} — full-page"
+                    + (f" · /{zone['regex']}/" if zone.get("regex") else ""))
         return (
             f"{zone['name']} — "
             f"({zone.get('x', 0)}, {zone.get('y', 0)}) "
@@ -517,7 +540,9 @@ class WorkflowDesigner(QWidget):
 
     def add_zone(self) -> None:
         from ui.zone_dialog import ZoneDialog
-        dlg = ZoneDialog(parent=self)
+        dlg = ZoneDialog(
+            parent=self,
+            full_page=self.ocr_mode.currentText().startswith("Full-page"))
         if dlg.exec() == QDialog.DialogCode.Accepted:
             zone = dlg.build_zone()
             if zone:
@@ -528,7 +553,9 @@ class WorkflowDesigner(QWidget):
         if item is None:
             return
         from ui.zone_dialog import ZoneDialog
-        dlg = ZoneDialog(item.data(Qt.ItemDataRole.UserRole), parent=self)
+        dlg = ZoneDialog(
+            item.data(Qt.ItemDataRole.UserRole), parent=self,
+            full_page=self.ocr_mode.currentText().startswith("Full-page"))
         if dlg.exec() == QDialog.DialogCode.Accepted:
             zone = dlg.build_zone()
             if zone:
