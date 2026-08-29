@@ -181,3 +181,21 @@ def test_reconciliation_no_mismatch_when_fully_returned(db):
         record_checkpoint(db, bundle["bundle_id"], stage, "alice")
     rows = reconciliation_summary(db, "proj-1")
     assert rows[0]["mismatch"] is False
+
+
+def test_flag_incident_records_escalation_checkpoint(db):
+    from custody.bundle_manager import create_bundle, flag_incident
+    bundle = create_bundle(db, "proj-1", "Box 42")
+    flag_incident(db, bundle["bundle_id"], "damaged", "alice",
+                  note="Water damage on outer flap")
+    assert db.get_bundle(bundle["bundle_id"])["status"] == "damaged"
+    events = db.list_custody_events(bundle["bundle_id"])
+    assert events[-1]["stage"] == "damaged"
+    assert "Water damage" in events[-1]["detail"]
+
+
+def test_flag_incident_rejects_unknown_kind(db):
+    from custody.bundle_manager import create_bundle, flag_incident
+    bundle = create_bundle(db, "proj-1", "Box 42")
+    with pytest.raises(ValueError, match="unknown stage"):
+        flag_incident(db, bundle["bundle_id"], "on_fire", "alice")

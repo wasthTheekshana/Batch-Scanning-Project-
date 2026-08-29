@@ -130,3 +130,15 @@ def reconciliation_summary(db, project_id: str | None = None) -> list[dict]:
                      "status": bundle["status"],
                      "mismatch": mismatch, **counts})
     return rows
+
+
+def flag_incident(db, bundle_id: str, kind: str, operator: str,
+                  note: str = "", audit=None) -> None:
+    """Escalate a bundle as damaged/missing/compromised. This is the
+    minimal hook the full Incident & Insurance-Linked workflow
+    (Enhancement Plan §3.6, a separate later plan) will build on - it
+    reuses record_checkpoint so the escalation shows up in the same
+    custody_events trail and reconciliation_summary (Task 5) picks it
+    up automatically via _ESCALATION_STAGES."""
+    record_checkpoint(db, bundle_id, kind, operator, detail={"note": note},
+                      audit=audit)
