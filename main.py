@@ -17,6 +17,7 @@ from core.event_bus import EventBus
 from core.job_queue import Pipeline
 from core.profile_manager import ProfileManager
 from core.rbac import Session
+from core.template_manager import TemplateManager
 from data.audit import AuditLogger
 from data.backup import BackupService
 from data.db import Database, is_encrypted, migrate_to_encrypted
@@ -77,6 +78,7 @@ def main() -> int:
     db = open_database(root, key)
     audit = AuditLogger(db, root / "logs")
     pm = ProfileManager(root / "projects", db)
+    TemplateManager(db).seed_built_ins()
     backup_service = BackupService(
         db, sources=[root / "projects", root / "delivered"],
         dest_dir=root / "backups", master_key=key, interval_hours=24)
