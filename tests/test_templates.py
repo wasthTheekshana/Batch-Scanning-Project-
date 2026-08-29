@@ -45,3 +45,124 @@ def test_update_template_config(db):
 
 def test_get_template_missing_returns_none(db):
     assert db.get_template("no-such-id") is None
+
+
+from core.template_manager import TemplateManager
+
+
+def test_save_as_template_strips_live_only_fields(db):
+    project_config = {
+        "project_id": "p1", "name": "Real Project", "version": 1,
+        "status": "active", "created": "2026-08-29", "cloned_from": None,
+        "scanner": {"dpi": 300}, "export": {"output_path": "/tmp/out"},
+        "delivery": {"local_folder": {"path": "/tmp/deliver"}},
+        "ocr": {"zones": [{"name": "invoice_no", "regex": r"(INV-\d+)"}]},
+        "separation": {"strategy": ["blank_page"]},
+        "qc": {"enabled": True, "stages": []},
+        "enhancement_profile": {"deskew": True},
+        "features": {"auto_index": True},
+        "rules": {"rule_set_id": "r1", "version": 1, "rules": []},
+    }
+    tm = TemplateManager(db)
+    saved = tm.save_as_template(project_config, "My Bank Template", "Banking")
+    assert saved["name"] == "My Bank Template"
+    assert saved["category"] == "Banking"
+    assert saved["built_in"] is False
+    cfg = saved["config"]
+    for live_only in ("project_id", "name", "version", "status", "created",
+                      "cloned_from", "scanner", "export", "delivery"):
+        assert live_only not in cfg
+    assert cfg["ocr"]["zones"][0]["name"] == "invoice_no"
+
+
+def test_build_project_config_merges_onto_default(db):
+    tm = TemplateManager(db)
+    template = tm.save_as_template(
+        {"ocr": {"zones": [{"name": "claim_no", "regex": r"(\S+)"}],
+                "lang": "eng", "confidence_threshold": 0.75},
+         "qc": {"enabled": True, "stages": ["margin"], "pass_score": 90,
+               "blur_warn_threshold": 80, "blur_fail_threshold": 30}},
+        "Insurance Starter", "Insurance")
+    cfg = tm.build_project_config(template["template_id"])
+    # schema-required keys absent from the template must come from DEFAULT_PROJECT
+    assert "output_path" in cfg["export"]
+    assert "local_folder" in cfg["delivery"]
+    # template's own fields override the defaults
+    assert cfg["ocr"]["zones"][0]["name"] == "claim_no"
+    assert cfg["qc"]["pass_score"] == 90
+
+
+def test_list_templates_returns_parsed_config(db):
+    tm = TemplateManager(db)
+    tm.save_as_template({"ocr": {"zones": []}}, "T", "Cat")
+    templates = tm.list_templates()
+    assert len(templates) == 1
+    assert templates[0]["config"] == {"ocr": {"zones": []}}
+
+
+def test_seed_built_ins_inserts_new_templates(db, tmp_path):
+    templates_dir = tmp_path / "seed"
+    templates_dir.mkdir()
+    (templates_dir / "banking.json").write_text(json.dumps({
+        "name": "Banking", "category": "Banking",
+        "config": {"ocr": {"zones": []}},
+    }), encoding="utf-8")
+    tm = TemplateManager(db)
+    tm.seed_built_ins(templates_dir)
+    templates = tm.list_templates()
+    assert len(templates) == 1
+    assert templates[0]["name"] == "Banking"
+    assert templates[0]["built_in"] is True
+
+
+def test_seed_built_ins_updates_changed_built_in_in_place(db, tmp_path):
+    templates_dir = tmp_path / "seed"
+    templates_dir.mkdir()
+    path = templates_dir / "banking.json"
+    path.write_text(json.dumps({
+        "name": "Banking", "category": "Banking",
+        "config": {"ocr": {"zones": []}}}), encoding="utf-8")
+    tm = TemplateManager(db)
+    tm.seed_built_ins(templates_dir)
+    first_id = tm.list_templates()[0]["template_id"]
+
+    path.write_text(json.dumps({
+        "name": "Banking", "category": "Banking",
+        "config": {"ocr": {"zones": [{"name": "new_field"}]}}}),
+        encoding="utf-8")
+    tm.seed_built_ins(templates_dir)
+    templates = tm.list_templates()
+    assert len(templates) == 1  # updated in place, not duplicated
+    assert templates[0]["template_id"] == first_id
+    assert templates[0]["config"]["ocr"]["zones"][0]["name"] == "new_field"
+
+
+def test_seed_built_ins_never_touches_admin_saved_template_of_same_name(db, tmp_path):
+    tm = TemplateManager(db)
+    tm.save_as_template({"ocr": {"zones": [{"name": "custom"}]}},
+                        "Banking", "Banking")  # admin-saved, same name
+    templates_dir = tmp_path / "seed"
+    templates_dir.mkdir()
+    (templates_dir / "banking.json").write_text(json.dumps({
+        "name": "Banking", "category": "Banking",
+        "config": {"ocr": {"zones": []}}}), encoding="utf-8")
+    tm.seed_built_ins(templates_dir)
+    templates = tm.list_templates()
+    assert len(templates) == 2  # admin's + the newly-seeded built-in
+    admin_one = next(t for t in templates if not t["built_in"])
+    assert admin_one["config"]["ocr"]["zones"][0]["name"] == "custom"
+
+
+def test_seed_built_ins_skips_malformed_json_without_raising(db, tmp_path, caplog):
+    templates_dir = tmp_path / "seed"
+    templates_dir.mkdir()
+    (templates_dir / "broken.json").write_text("{not valid json", encoding="utf-8")
+    tm = TemplateManager(db)
+    tm.seed_built_ins(templates_dir)  # must not raise
+    assert tm.list_templates() == []
+
+
+def test_seed_built_ins_missing_directory_is_a_noop(db, tmp_path):
+    tm = TemplateManager(db)
+    tm.seed_built_ins(tmp_path / "does-not-exist")  # must not raise
+    assert tm.list_templates() == []
