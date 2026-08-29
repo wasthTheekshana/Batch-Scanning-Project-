@@ -15,7 +15,7 @@ PHASH_MAX_DISTANCE = 5
 def fingerprint(img_path: str | Path) -> tuple[str, str]:
     """(md5_hex, phash_hex) of an image file."""
     data = Path(img_path).read_bytes()
-    md5 = hashlib.md5(data).hexdigest()
+    md5 = hashlib.md5(data, usedforsecurity=False).hexdigest()
     with Image.open(img_path) as im:
         phash = str(imagehash.phash(im))
     return md5, phash
