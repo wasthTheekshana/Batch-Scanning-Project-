@@ -11,6 +11,13 @@ later stage.
 from __future__ import annotations
 
 import uuid
+from io import BytesIO
+from pathlib import Path
+
+import qrcode
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfgen import canvas
 
 from core.models import new_id
 
@@ -42,3 +49,30 @@ def record_checkpoint(db, bundle_id: str, stage: str, operator: str | None,
     if audit:
         audit.log("custody_checkpoint", operator or "system",
                   bundle_id=bundle_id, stage=stage, batch_id=batch_id)
+
+
+def generate_label_sheet(bundle: dict, out_path: str | Path) -> Path:
+    """A one-page PDF separator sheet: a QR code encoding the bundle's
+    qr_value plus human-readable bundle_id/label text underneath. This
+    sheet is printed and placed as the first page of the physical
+    bundle when it goes to the scanner - scanning it is what lets
+    record_checkpoint_from_barcode (Task 4) auto-log the "scanning"
+    checkpoint without any extra operator action."""
+    out_path = Path(out_path)
+    qr_img = qrcode.make(bundle["qr_value"])
+    buf = BytesIO()
+    qr_img.save(buf, format="PNG")
+    buf.seek(0)
+
+    c = canvas.Canvas(str(out_path), pagesize=letter)
+    page_w, _ = letter
+    qr_size = 200
+    x = (page_w - qr_size) / 2
+    c.drawImage(ImageReader(buf), x, 500, width=qr_size, height=qr_size)
+    c.setFont("Helvetica-Bold", 16)
+    c.drawCentredString(page_w / 2, 470, bundle["label"])
+    c.setFont("Helvetica", 11)
+    c.drawCentredString(page_w / 2, 450, f"Bundle ID: {bundle['bundle_id']}")
+    c.drawCentredString(page_w / 2, 434, f"QR: {bundle['qr_value']}")
+    c.save()
+    return out_path

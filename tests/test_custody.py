@@ -89,3 +89,14 @@ def test_record_checkpoint_writes_audit_entry(db, tmp_path):
         "SELECT * FROM audit_log WHERE action='custody_checkpoint'").fetchall()
     assert len(rows) == 2
     audit.close()
+
+
+def test_generate_label_sheet_creates_pdf_with_qr_and_text(tmp_path):
+    from custody.bundle_manager import generate_label_sheet
+    bundle = {"bundle_id": "b1", "label": "Box 42",
+              "qr_value": "DOK-BUNDLE-ABC123456789"}
+    out = generate_label_sheet(bundle, tmp_path / "label.pdf")
+    assert out.exists()
+    assert out.stat().st_size > 0
+    # a real PDF starts with the %PDF- magic bytes
+    assert out.read_bytes()[:5] == b"%PDF-"
