@@ -440,7 +440,9 @@ git commit -m "feat(custody): generate a printable QR label/separator sheet"
 
 **Interfaces:**
 - Consumes: `Database.get_bundle_by_qr` (Task 1), `record_checkpoint` (Task 2).
-- Produces: `record_checkpoint_from_barcode(db, barcode_value, stage, operator, batch_id=None) -> bool`.
+- Produces: `record_checkpoint_from_barcode(db, barcode_value, stage, operator, batch_id=None, audit=None) -> bool`.
+
+**Ruling (pre-flight scan):** the plan's Global Constraints require every custody action to produce an audit trail entry via the existing `AuditLogger`. The original draft of this task's interface omitted an `audit` parameter on `record_checkpoint_from_barcode`, so the automatic pipeline-triggered "scanning" checkpoint would silently skip the audit log while every manual checkpoint (via the UI, Task 8) logs it — inconsistent with the constraint and with how every other pipeline stage already behaves (`core/job_queue.py`'s rule/export/deliver stages all do `if self.audit: self.audit.log(...)`, confirmed present via `Pipeline.__init__`'s existing `self.audit` attribute at `core/job_queue.py:69`). Fixed below: `record_checkpoint_from_barcode` takes `audit=None` and forwards it to `record_checkpoint`; the pipeline hook in Step 7 passes `self.audit`. Cost if this ruling is wrong: one extra unused parameter — negligible either way.
 
 - [ ] **Step 1: Write the failing unit test**
 
@@ -464,6 +466,26 @@ def test_record_checkpoint_from_barcode_ignores_unrelated_barcode(db):
     matched = record_checkpoint_from_barcode(
         db, "SOME-OTHER-DOCUMENT-SEPARATOR", "scanning", "system")
     assert matched is False
+
+
+def test_record_checkpoint_from_barcode_forwards_audit(db, tmp_path):
+    """Global Constraint: every custody action produces an audit trail
+    entry - including the automatic pipeline-triggered checkpoint, not
+    just the manual UI ones (Task 2's test_record_checkpoint_writes_audit_entry
+    already covers those). create_bundle's own "receipt" checkpoint also
+    logs via audit when given one, so two rows are expected here, not one
+    - this test's own audit instance starts fresh in tmp_path so there's
+    no cross-test contamination to account for."""
+    from data.audit import AuditLogger
+    from custody.bundle_manager import create_bundle, record_checkpoint_from_barcode
+    audit = AuditLogger(db, tmp_path / "logs")
+    bundle = create_bundle(db, "proj-1", "Box 42", audit=audit)
+    record_checkpoint_from_barcode(db, bundle["qr_value"], "scanning",
+                                   "system", batch_id="batch-1", audit=audit)
+    rows = db.conn.execute(
+        "SELECT * FROM audit_log WHERE action='custody_checkpoint'").fetchall()
+    assert len(rows) == 2  # receipt (from create_bundle) + scanning
+    audit.close()
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -478,7 +500,8 @@ Add to `custody/bundle_manager.py`:
 ```python
 def record_checkpoint_from_barcode(db, barcode_value: str, stage: str,
                                    operator: str | None,
-                                   batch_id: str | None = None) -> bool:
+                                   batch_id: str | None = None,
+                                   audit=None) -> bool:
     """Look up a decoded barcode value against known bundle QR values and
     log a checkpoint if it matches. Returns False (no-op) for any
     barcode that isn't a custody label - e.g. a document-separator
@@ -488,7 +511,7 @@ def record_checkpoint_from_barcode(db, barcode_value: str, stage: str,
     if bundle is None:
         return False
     record_checkpoint(db, bundle["bundle_id"], stage, operator,
-                      batch_id=batch_id)
+                      batch_id=batch_id, audit=audit)
     return True
 ```
 
@@ -557,7 +580,7 @@ In `core/job_queue.py`, in `_ingest_worker`'s `handle()`, right after the existi
                     for bc in record.barcodes:
                         record_checkpoint_from_barcode(
                             self.db, bc["value"], "scanning", operator,
-                            batch_id=job.batch_id)
+                            batch_id=job.batch_id, audit=self.audit)
 ```
 
 (This replaces just the `record.barcodes = decode_barcodes(image)` line — keep everything else in `handle()` unchanged.)
