@@ -39,8 +39,10 @@ class TemplateManager:
     def list_templates(self) -> list[dict]:
         return [self._to_dict(row) for row in self.db.list_templates()]
 
-    def get(self, template_id: str) -> dict:
+    def get(self, template_id: str) -> dict | None:
         row = self.db.get_template(template_id)
+        if row is None:
+            return None
         return self._to_dict(row)
 
     def save_as_template(self, project_config: dict, name: str,
@@ -56,12 +58,18 @@ class TemplateManager:
 
     def build_project_config(self, template_id: str) -> dict:
         """A ready-to-create project config: the template's fields
-        override DEFAULT_PROJECT's, so every schema-required key
-        (export.output_path, delivery, scanner, ...) is present even
-        though the template itself never stores them."""
+        override DEFAULT_PROJECT's, one level deep, so a template that
+        only specifies e.g. separation.strategy doesn't wipe out
+        separation.barcode_types/fixed_pages/zones - every
+        schema-required key (export.output_path, delivery, scanner, ...)
+        is present even though the template itself never stores them."""
         template = self.get(template_id)
         cfg = copy.deepcopy(DEFAULT_PROJECT)
-        cfg.update(template["config"])
+        for key, value in template["config"].items():
+            if isinstance(value, dict) and isinstance(cfg.get(key), dict):
+                cfg[key] = {**cfg[key], **value}
+            else:
+                cfg[key] = value
         return cfg
 
     def seed_built_ins(self, templates_dir: Path | None = None) -> None:
@@ -76,16 +84,20 @@ class TemplateManager:
         for path in sorted(templates_dir.glob("*.json")):
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError) as e:
+                name = data["name"]
+                category = data["category"]
+                config = data["config"]
+            except (json.JSONDecodeError, OSError, KeyError, TypeError) as e:
                 log.warning("skipping malformed built-in template %s: %s",
                            path, e)
                 continue
-            name = data["name"]
-            category = data["category"]
-            config = data["config"]
             current = existing_built_ins.get(name)
             if current is None:
-                self.db.insert_template(new_id(), name, category, config,
+                template_id = new_id()
+                self.db.insert_template(template_id, name, category, config,
                                         built_in=True)
+                existing_built_ins[name] = {"template_id": template_id,
+                                            "config": config}
             elif current["config"] != config:
                 self.db.update_template_config(current["template_id"], config)
+                existing_built_ins[name]["config"] = config

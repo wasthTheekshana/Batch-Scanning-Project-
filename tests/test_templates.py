@@ -3,6 +3,7 @@ import json
 
 import pytest
 
+from core.template_manager import TemplateManager
 from data.db import Database
 
 
@@ -45,9 +46,6 @@ def test_update_template_config(db):
 
 def test_get_template_missing_returns_none(db):
     assert db.get_template("no-such-id") is None
-
-
-from core.template_manager import TemplateManager
 
 
 def test_save_as_template_strips_live_only_fields(db):
@@ -153,7 +151,7 @@ def test_seed_built_ins_never_touches_admin_saved_template_of_same_name(db, tmp_
     assert admin_one["config"]["ocr"]["zones"][0]["name"] == "custom"
 
 
-def test_seed_built_ins_skips_malformed_json_without_raising(db, tmp_path, caplog):
+def test_seed_built_ins_skips_malformed_json_without_raising(db, tmp_path):
     templates_dir = tmp_path / "seed"
     templates_dir.mkdir()
     (templates_dir / "broken.json").write_text("{not valid json", encoding="utf-8")
@@ -183,6 +181,52 @@ def test_all_five_built_in_templates_load_and_seed(db):
         for zone in t["config"]["ocr"]["zones"]:
             assert "x" not in zone and "y" not in zone  # unpositioned
             assert zone["name"] and zone["regex"]
+
+
+def test_seed_built_ins_skips_structurally_invalid_json_without_raising(db, tmp_path):
+    """Valid JSON, but missing a required key - must not crash startup,
+    same guarantee as syntactically-invalid JSON."""
+    templates_dir = tmp_path / "seed"
+    templates_dir.mkdir()
+    (templates_dir / "incomplete.json").write_text(
+        json.dumps({"name": "Incomplete"}),  # missing category/config
+        encoding="utf-8")
+    tm = TemplateManager(db)
+    tm.seed_built_ins(templates_dir)  # must not raise
+    assert tm.list_templates() == []
+
+
+def test_seed_built_ins_never_duplicates_two_files_sharing_a_name(db, tmp_path):
+    templates_dir = tmp_path / "seed"
+    templates_dir.mkdir()
+    (templates_dir / "a.json").write_text(json.dumps({
+        "name": "Dup", "category": "Cat", "config": {"a": 1}}), encoding="utf-8")
+    (templates_dir / "b.json").write_text(json.dumps({
+        "name": "Dup", "category": "Cat", "config": {"a": 2}}), encoding="utf-8")
+    tm = TemplateManager(db)
+    tm.seed_built_ins(templates_dir)
+    templates = tm.list_templates()
+    assert len(templates) == 1  # not 2 - the second file updates, doesn't duplicate
+    assert templates[0]["config"] == {"a": 2}  # b.json sorts after a.json alphabetically
+
+
+def test_build_project_config_preserves_unspecified_nested_defaults(db):
+    """A template that only sets separation.strategy must not wipe out
+    separation.barcode_types/fixed_pages/zones from DEFAULT_PROJECT -
+    this is the deep-merge guarantee, not a shallow block replace."""
+    tm = TemplateManager(db)
+    template = tm.save_as_template(
+        {"separation": {"strategy": ["blank_page"], "blank_threshold": 0.02}},
+        "Minimal Separation Template", "Test")
+    cfg = tm.build_project_config(template["template_id"])
+    assert cfg["separation"]["strategy"] == ["blank_page"]  # template's value
+    assert "barcode_types" in cfg["separation"]   # DEFAULT_PROJECT's, preserved
+    assert "fixed_pages" in cfg["separation"]     # DEFAULT_PROJECT's, preserved
+    assert "zones" in cfg["separation"]           # DEFAULT_PROJECT's, preserved
+
+
+def test_get_unknown_template_id_returns_none(db):
+    assert TemplateManager(db).get("no-such-id") is None
 
 
 def test_every_built_in_template_config_produces_a_valid_project(db):

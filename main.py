@@ -78,7 +78,11 @@ def main() -> int:
     db = open_database(root, key)
     audit = AuditLogger(db, root / "logs")
     pm = ProfileManager(root / "projects", db)
-    TemplateManager(db).seed_built_ins()
+    try:
+        TemplateManager(db).seed_built_ins()
+    except Exception:
+        logging.exception("failed to seed built-in templates; continuing "
+                          "without them")
     backup_service = BackupService(
         db, sources=[root / "projects", root / "delivered"],
         dest_dir=root / "backups", master_key=key, interval_hours=24)

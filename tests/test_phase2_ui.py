@@ -142,6 +142,58 @@ def test_designer_sftp_fields_round_trip(designer):
     assert saved["delivery"]["sftp"]["host"] == "192.168.1.50"
 
 
+def test_new_from_template_zone_can_be_positioned_and_saved(designer, monkeypatch):
+    """The exact end-to-end sequence Task 6's fix round was about: create a
+    project from a template (zones have no geometry yet), confirm the
+    designer's zone list renders them without crashing, open one in
+    ZoneDialog (must not crash - this is what broke before the fix round),
+    simulate the admin positioning it, and confirm the position survives
+    a real save."""
+    from core.template_manager import TemplateManager
+    from PyQt6.QtCore import Qt
+    from ui.zone_dialog import ZoneDialog
+
+    tm = TemplateManager(designer.db)
+    template = tm.save_as_template(
+        {"ocr": {"zones": [{"name": "invoice_no", "regex": r"(INV-\d+)"}],
+                "lang": "eng", "confidence_threshold": 0.75}},
+        "Invoice Starter", "Invoices")
+
+    monkeypatch.setattr(
+        "ui.workflow_designer.QInputDialog.getItem",
+        staticmethod(lambda *a, **k: (
+            f"{template['category']} — {template['name']}", True)))
+    monkeypatch.setattr(
+        "ui.workflow_designer.QInputDialog.getText",
+        staticmethod(lambda *a, **k: ("New Client Project", True)))
+    designer.new_from_template()
+
+    # zone list must render the unpositioned zone without crashing
+    assert designer.zone_list.count() == 1
+    item = designer.zone_list.item(0)
+    zone = item.data(Qt.ItemDataRole.UserRole)
+    assert zone["name"] == "invoice_no"
+    assert "x" not in zone
+
+    # opening Edit... on it must not crash - this is exactly what Task 6's
+    # fix round fixed; confirm the fix actually holds through this real path
+    dlg = ZoneDialog(zone)
+    assert dlg.x.value() == 0  # defaulted, not crashed
+
+    # simulate the admin dragging a region and saving
+    dlg.name.setText("invoice_no")
+    dlg.x.setValue(10); dlg.y.setValue(20)
+    dlg.w.setValue(100); dlg.h.setValue(50)
+    positioned = dlg.build_zone()
+    assert positioned is not None
+    item.setData(Qt.ItemDataRole.UserRole, positioned)
+
+    cfg = designer.collect_config()
+    saved = designer.pm.save(cfg)
+    assert saved["ocr"]["zones"][0]["x"] == 10
+    assert saved["ocr"]["zones"][0]["name"] == "invoice_no"
+
+
 def test_admin_burn_tab(qtbot, db, tmp_path):
     import sys
     from delivery.cddvd_channel import CDDVDChannel
