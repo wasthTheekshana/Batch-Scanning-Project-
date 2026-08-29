@@ -61,3 +61,10 @@ def test_inactive_user_rejected(db):
     db.conn.commit()
     with pytest.raises(AuthError):
         Session.login("gone", "pw", db)
+
+
+def test_custody_manage_permission_granted_to_admin_operator_qc():
+    from core.rbac import User
+    for role in ("admin", "operator", "qc_officer"):
+        assert User("u", "u", role).can("custody.manage"), role
+    assert not User("u", "u", "viewer").can("custody.manage")

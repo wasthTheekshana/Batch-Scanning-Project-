@@ -16,13 +16,14 @@ import bcrypt as _bcrypt
 ALL_PERMISSIONS = {
     "scan.run", "batch.view_own", "batch.view_all", "qc.review",
     "project.edit", "user.manage", "report.view", "report.export",
-    "config.backup",
+    "config.backup", "custody.manage",
 }
 
 ROLE_PERMISSIONS: dict[str, set[str]] = {
     "admin": set(ALL_PERMISSIONS),
-    "operator": {"scan.run", "batch.view_own"},
-    "qc_officer": {"qc.review", "batch.view_all", "report.view"},
+    "operator": {"scan.run", "batch.view_own", "custody.manage"},
+    "qc_officer": {"qc.review", "batch.view_all", "report.view",
+                  "custody.manage"},
     "viewer": {"batch.view_all", "report.view", "report.export"},
 }
 
