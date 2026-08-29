@@ -58,3 +58,23 @@ def extract_fields(img: np.ndarray, zones: list[dict], lang: str = "eng",
         fields[zone["name"]] = FieldValue(value=value,
                                           confidence=result.confidence)
     return fields
+
+
+def extract_fields_from_text(text: str, confidence: float,
+                             zones: list[dict]) -> dict[str, FieldValue]:
+    """Full-page mode: locate each field's value in already-OCR'd page
+    text via its label-anchored regex, instead of cropping a fixed zone.
+    A zone with no regex is skipped — unanchored, page-wide matching has
+    no way to know which part of the page belongs to it."""
+    fields: dict[str, FieldValue] = {}
+    for zone in zones:
+        pattern = zone.get("regex")
+        if not pattern:
+            continue
+        m = re.search(pattern, text)
+        if m:
+            value = m.group(1) if m.lastindex else m.group(0)
+            fields[zone["name"]] = FieldValue(value=value, confidence=confidence)
+        else:
+            fields[zone["name"]] = FieldValue(value="", confidence=0.0)
+    return fields
