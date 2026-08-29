@@ -35,6 +35,7 @@ Tesseract 5 must be on PATH for OCR features (bundled in the packaged EXE).
 | `export/` | PDF/TIFF writers, filename templates, batch exporter |
 | `delivery/` | local folder channel + SFTP/CD-DVD stubs (Phase 3) |
 | `ui/` | PyQt6 panels: scan wizard, viewer, QC review, index editor, job monitor |
+| `custody/` | bundle/box chain-of-custody tracking (Enhancement Plan §3.2) |
 
 ## Phase status
 
@@ -57,6 +58,11 @@ Tesseract 5 must be on PATH for OCR features (bundled in the packaged EXE).
 - **QC & reporting** — complete: manual page editor (rotate/crop/whiteout/
   enhance, audit-logged), QC review "All documents" filter, reports tab
   with QC report PDF export.
+- **Chain-of-custody tracking** — complete: QR-coded bundle label
+  sheets, auto-logged scanning checkpoint on scan, manual receipt/prep/
+  QC/storage/return checkpoints, reconciliation view with mismatch
+  flagging, and an escalation hook for damaged/missing/compromised
+  bundles (`docs/DOK_Scanner_Enhancement_Plan (1).docx` §3.2).
 - **Remaining before go-live** — bundle `tesseract.exe`/`tessdata`/
   `libzbar-64.dll` into the release build (blocked on binaries), vendor
   SDK `acquire()` bodies for Kodak/Alaris/CZUR/Viisan (blocked on vendor
