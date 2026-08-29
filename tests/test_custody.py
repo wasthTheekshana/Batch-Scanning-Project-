@@ -199,3 +199,80 @@ def test_flag_incident_rejects_unknown_kind(db):
     bundle = create_bundle(db, "proj-1", "Box 42")
     with pytest.raises(ValueError, match="unknown stage"):
         flag_incident(db, bundle["bundle_id"], "on_fire", "alice")
+
+
+from PyQt6.QtCore import Qt
+
+
+@pytest.fixture()
+def custody_env(tmp_path):
+    from data.audit import AuditLogger
+    from core.rbac import User
+    db = Database(tmp_path / "custody_ui.db")
+    db.insert_project("proj-1", "Test Project", {})
+    audit = AuditLogger(db, tmp_path / "logs")
+    yield db, audit, User("u1", "alice", "admin"), tmp_path
+    audit.close()
+    db.close()
+
+
+def test_custody_panel_lists_bundles(qtbot, custody_env):
+    from custody.bundle_manager import create_bundle
+    from ui.custody_panel import CustodyPanel
+    db, audit, user, _tmp = custody_env
+    create_bundle(db, "proj-1", "Box 42")
+    panel = CustodyPanel(db, audit, user)
+    qtbot.addWidget(panel)
+    assert panel.bundle_list.count() == 1
+    assert "Box 42" in panel.bundle_list.item(0).text()
+
+
+def test_custody_panel_creates_bundle(qtbot, custody_env):
+    from ui.custody_panel import CustodyPanel
+    db, audit, user, _tmp = custody_env
+    panel = CustodyPanel(db, audit, user)
+    qtbot.addWidget(panel)
+    panel.new_bundle_label.setText("Box 99")
+    panel.create_bundle_btn.click()
+    assert panel.bundle_list.count() == 1
+    assert len(db.list_bundles("proj-1")) == 1
+
+
+def test_custody_panel_records_checkpoint(qtbot, custody_env):
+    from custody.bundle_manager import create_bundle
+    from ui.custody_panel import CustodyPanel
+    db, audit, user, _tmp = custody_env
+    bundle = create_bundle(db, "proj-1", "Box 42")
+    panel = CustodyPanel(db, audit, user)
+    qtbot.addWidget(panel)
+    panel.bundle_list.setCurrentRow(0)
+    panel.stage_combo.setCurrentText("storage")
+    panel.record_checkpoint_btn.click()
+    assert db.get_bundle(bundle["bundle_id"])["status"] == "storage"
+
+
+def test_custody_panel_flags_incident(qtbot, custody_env):
+    from custody.bundle_manager import create_bundle
+    from ui.custody_panel import CustodyPanel
+    db, audit, user, _tmp = custody_env
+    bundle = create_bundle(db, "proj-1", "Box 42")
+    panel = CustodyPanel(db, audit, user)
+    qtbot.addWidget(panel)
+    panel.bundle_list.setCurrentRow(0)
+    panel.incident_combo.setCurrentText("missing")
+    panel.flag_incident_btn.click()
+    assert db.get_bundle(bundle["bundle_id"])["status"] == "missing"
+
+
+def test_custody_panel_shows_reconciliation_mismatch(qtbot, custody_env):
+    from custody.bundle_manager import create_bundle
+    from ui.custody_panel import CustodyPanel
+    db, audit, user, _tmp = custody_env
+    create_bundle(db, "proj-1", "Box 42")  # receipt only -> mismatch
+    panel = CustodyPanel(db, audit, user)
+    qtbot.addWidget(panel)
+    assert panel.recon_table.rowCount() == 1
+    # mismatch column (last column) should show something truthy/visible
+    mismatch_item = panel.recon_table.item(0, panel.recon_table.columnCount() - 1)
+    assert mismatch_item is not None
+    assert mismatch_item.text() in ("Yes", "True", "MISMATCH", "⚠")
