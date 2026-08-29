@@ -201,6 +201,15 @@ class Pipeline:
                 image, sep_cfg.get("blank_threshold", 0.02))
             if "barcode" in sep_cfg.get("strategy", []):
                 record.barcodes = decode_barcodes(image)
+                if record.barcodes:
+                    from custody.bundle_manager import (
+                        record_checkpoint_from_barcode)
+                    operator = self._batches.get(job.batch_id, {}).get(
+                        "operator", "system")
+                    for bc in record.barcodes:
+                        record_checkpoint_from_barcode(
+                            self.db, bc["value"], "scanning", operator,
+                            batch_id=job.batch_id, audit=self.audit)
             self._emit("ingest", "done", job_id=job.job_id,
                        batch_id=job.batch_id, page_no=job.page_no)
             self.ocr_q.put(record)

@@ -91,6 +91,45 @@ def test_record_checkpoint_writes_audit_entry(db, tmp_path):
     audit.close()
 
 
+def test_record_checkpoint_from_barcode_matches_known_bundle(db):
+    from custody.bundle_manager import (create_bundle,
+                                        record_checkpoint_from_barcode)
+    bundle = create_bundle(db, "proj-1", "Box 42")
+    matched = record_checkpoint_from_barcode(
+        db, bundle["qr_value"], "scanning", "system", batch_id="batch-1")
+    assert matched is True
+    events = db.list_custody_events(bundle["bundle_id"])
+    assert events[-1]["stage"] == "scanning"
+    assert events[-1]["batch_id"] == "batch-1"
+
+
+def test_record_checkpoint_from_barcode_ignores_unrelated_barcode(db):
+    from custody.bundle_manager import record_checkpoint_from_barcode
+    matched = record_checkpoint_from_barcode(
+        db, "SOME-OTHER-DOCUMENT-SEPARATOR", "scanning", "system")
+    assert matched is False
+
+
+def test_record_checkpoint_from_barcode_forwards_audit(db, tmp_path):
+    """Global Constraint: every custody action produces an audit trail
+    entry - including the automatic pipeline-triggered checkpoint, not
+    just the manual UI ones (Task 2's test_record_checkpoint_writes_audit_entry
+    already covers those). create_bundle's own "receipt" checkpoint also
+    logs via audit when given one, so two rows are expected here, not one
+    - this test's own audit instance starts fresh in tmp_path so there's
+    no cross-test contamination to account for."""
+    from data.audit import AuditLogger
+    from custody.bundle_manager import create_bundle, record_checkpoint_from_barcode
+    audit = AuditLogger(db, tmp_path / "logs")
+    bundle = create_bundle(db, "proj-1", "Box 42", audit=audit)
+    record_checkpoint_from_barcode(db, bundle["qr_value"], "scanning",
+                                   "system", batch_id="batch-1", audit=audit)
+    rows = db.conn.execute(
+        "SELECT * FROM audit_log WHERE action='custody_checkpoint'").fetchall()
+    assert len(rows) == 2  # receipt (from create_bundle) + scanning
+    audit.close()
+
+
 def test_generate_label_sheet_creates_pdf_with_qr_and_text(tmp_path):
     from custody.bundle_manager import generate_label_sheet
     bundle = {"bundle_id": "b1", "label": "Box 42",

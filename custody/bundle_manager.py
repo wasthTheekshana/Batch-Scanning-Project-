@@ -51,6 +51,23 @@ def record_checkpoint(db, bundle_id: str, stage: str, operator: str | None,
                   bundle_id=bundle_id, stage=stage, batch_id=batch_id)
 
 
+def record_checkpoint_from_barcode(db, barcode_value: str, stage: str,
+                                   operator: str | None,
+                                   batch_id: str | None = None,
+                                   audit=None) -> bool:
+    """Look up a decoded barcode value against known bundle QR values and
+    log a checkpoint if it matches. Returns False (no-op) for any
+    barcode that isn't a custody label - e.g. a document-separator
+    barcode from separation/barcode.py's existing document-splitting
+    use - so this never interferes with non-custody scanning."""
+    bundle = db.get_bundle_by_qr(barcode_value)
+    if bundle is None:
+        return False
+    record_checkpoint(db, bundle["bundle_id"], stage, operator,
+                      batch_id=batch_id, audit=audit)
+    return True
+
+
 def generate_label_sheet(bundle: dict, out_path: str | Path) -> Path:
     """A one-page PDF separator sheet: a QR code encoding the bundle's
     qr_value plus human-readable bundle_id/label text underneath. This
