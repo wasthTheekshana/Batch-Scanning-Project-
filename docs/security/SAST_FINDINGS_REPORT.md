@@ -2,18 +2,30 @@
 
 **Tool:** Bandit 1.9.4 (Python static analysis security scanner)
 **Scope:** entire application source (`core/`, `data/`, `delivery/`, `export/`,
-`imaging/`, `ocr/`, `qc/`, `scanning/`, `separation/`, `ui/`) — 6,959 lines.
-Excluded: `.venv/`, `tests/`, `.claude/`, `dist/`, `build/` (dependencies, test
-code, and build artifacts are not in scope for this scan).
-**Date:** 2026-08-29
+`imaging/`, `ocr/`, `qc/`, `scanning/`, `separation/`, `ui/`) — 7,101 lines as
+of the most recent scan. Excluded: `.venv/`, `tests/`, `.claude/`, `dist/`,
+`build/` (dependencies, test code, and build artifacts are not in scope for
+this scan).
+**Original scan date:** 2026-08-29
+**Re-scan date:** 2026-08-30 — re-run after a full-page OCR extraction-mode
+feature (`ocr.mode=full_page`, spanning `ocr/`, `ui/zone_dialog.py`,
+`ui/index_editor.py`, `ui/workflow_designer.py`) merged from a separate
+branch/session. **Result: identical finding set** — same 16 findings, same
+files, same line numbers as the original scan (confirmed by diffing the
+`Location:` lines between runs, not just the summary counts). The new
+feature introduced zero new SAST findings.
 **Raw output:** `docs/security/sast_bandit_report.json` (machine-readable),
-`docs/security/sast_bandit_report.txt` (human-readable, full detail)
+`docs/security/sast_bandit_report.txt` (human-readable, full detail) — both
+reflect the most recent (2026-08-30) run.
 
 This satisfies Enhancement Plan §7's "Static Application Security Testing
 (SAST)" line item: *"An actual scan run against the codebase ... with a
 findings report and remediation status."* Per the plan's own caution, this
 report states only what has actually been run and found — not a claim of a
-mature security program.
+mature security program. It also stands as the first evidence toward
+§7.1's *"repeat SAST/DAST/infra assessments on the cadence agreed with the
+Bank"* — this re-scan is that repetition happening in practice, triggered by
+new code landing, not yet on a fixed calendar cadence.
 
 ## Summary
 
