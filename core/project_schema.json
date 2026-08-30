@@ -69,6 +69,7 @@
       "required": ["lang"],
       "properties": {
         "lang": {"type": "string"},
+        "mode": {"type": "string", "enum": ["zone", "full_page"]},
         "zones": {"type": "array"},
         "confidence_threshold": {"type": "number", "minimum": 0, "maximum": 1}
       }

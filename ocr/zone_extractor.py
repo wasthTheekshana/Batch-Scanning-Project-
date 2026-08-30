@@ -6,6 +6,7 @@ whole match) and returned with the OCR confidence.
 """
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Callable
@@ -14,11 +15,21 @@ import numpy as np
 
 from ocr.tesseract_engine import OCRResult, ocr_page
 
+log = logging.getLogger(__name__)
+
 
 @dataclass
 class FieldValue:
     value: str
     confidence: float
+
+
+def _extract_match_value(pattern: str, text: str) -> str | None:
+    """Extract value from regex match: first capture group if present,
+    otherwise the entire match. Returns None if no match, or the extracted
+    string (possibly empty for matched-but-empty captures)."""
+    m = re.search(pattern, text)
+    return (m.group(1) if m.lastindex else m.group(0)) if m else None
 
 
 def scaled_rect(zone: dict, img_w: int, img_h: int) -> tuple[int, int, int, int]:
@@ -53,8 +64,28 @@ def extract_fields(img: np.ndarray, zones: list[dict], lang: str = "eng",
         result = run_ocr(img[y0:y1, x0:x1])
         value = result.text.strip()
         if zone.get("regex"):
-            m = re.search(zone["regex"], value)
-            value = (m.group(1) if m.lastindex else m.group(0)) if m else ""
+            extracted = _extract_match_value(zone["regex"], value)
+            value = extracted if extracted is not None else ""
         fields[zone["name"]] = FieldValue(value=value,
                                           confidence=result.confidence)
+    return fields
+
+
+def extract_fields_from_text(text: str, confidence: float,
+                             zones: list[dict]) -> dict[str, FieldValue]:
+    """Full-page mode: locate each field's value in already-OCR'd page
+    text via its label-anchored regex, instead of cropping a fixed zone.
+    A zone with no regex is skipped — unanchored, page-wide matching has
+    no way to know which part of the page belongs to it."""
+    fields: dict[str, FieldValue] = {}
+    for zone in zones:
+        pattern = zone.get("regex")
+        if not pattern:
+            log.warning("zone %r has no regex; skipped in full-page mode", zone.get("name"))
+            continue
+        value = _extract_match_value(pattern, text)
+        if value is not None:
+            fields[zone["name"]] = FieldValue(value=value, confidence=confidence)
+        else:
+            fields[zone["name"]] = FieldValue(value="", confidence=0.0)
     return fields

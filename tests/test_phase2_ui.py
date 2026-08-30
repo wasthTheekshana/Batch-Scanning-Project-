@@ -71,6 +71,13 @@ def test_designer_loads_project(designer):
     assert designer.dpi_fail.value() == 150
 
 
+def test_designer_ocr_mode_roundtrip(designer):
+    assert designer.ocr_mode.currentText() == "Zone-based (draw regions)"
+    designer.ocr_mode.setCurrentText("Full-page (label-anchored regex)")
+    cfg = designer.collect_config()
+    assert cfg["ocr"]["mode"] == "full_page"
+
+
 def test_designer_dpi_thresholds_round_trip_to_saved_json(designer):
     designer.dpi_warn.setValue(250)
     designer.dpi_fail.setValue(180)
@@ -341,13 +348,29 @@ def test_new_from_template_no_templates_shows_message(designer, monkeypatch):
     assert shown
 
 
-def test_zone_label_defaults_missing_geometry(designer):
-    # a template-derived zone may carry only name/regex - the label must
-    # not raise, and should show a 0-valued placeholder region.
-    label = designer._zone_label({"name": "invoice_no", "regex": r"(INV-\d+)"})
+def test_zone_label_defaults_missing_geometry_full_page_mode(designer):
+    # a full-page-mode zone has no captured pixel region by design -
+    # the label must not raise, and should show the full-page style.
+    label = designer._zone_label(
+        {"name": "invoice_no", "regex": r"(INV-\d+)"}, full_page=True)
     assert "invoice_no" in label
-    assert "(0, 0)" in label
-    assert "0×0" in label
+    assert "full-page" in label
+    assert "(0, 0)" not in label
+    assert "0×0" not in label
+    assert "/(INV-\\d+)/" in label
+
+
+def test_zone_label_defaults_missing_geometry_zone_mode(designer):
+    # a template-derived zone in a zone-mode project may carry only
+    # name/regex before its first Edit... - the label must not raise
+    # or claim "full-page" (the project's mode is "zone"), and should
+    # not show a meaningless (0, 0) 0x0 placeholder either.
+    label = designer._zone_label(
+        {"name": "invoice_no", "regex": r"(INV-\d+)"}, full_page=False)
+    assert "invoice_no" in label
+    assert "full-page" not in label
+    assert "(0, 0)" not in label
+    assert "0×0" not in label
     assert "/(INV-\\d+)/" in label
 
 
@@ -356,9 +379,26 @@ def test_zone_label_shows_real_geometry(designer):
     # geometry-less fallback.
     label = designer._zone_label(
         {"name": "invoice_no", "x": 12, "y": 34, "w": 56, "h": 78,
-         "regex": r"(INV-\d+)"})
+         "regex": r"(INV-\d+)"}, full_page=False)
     assert "(12, 34)" in label
     assert "56×78" in label
+
+
+def test_flipping_ocr_mode_relabels_existing_zones(designer):
+    """Flipping the Extraction mode combo must update already-listed
+    zones' labels immediately, not just after save/reload — otherwise a
+    zone keeps showing stale "(x, y) w×h" or "not yet positioned" text
+    that no longer matches the newly-selected mode."""
+    designer._append_zone({"name": "invoice_no", "x": 12, "y": 34,
+                           "w": 56, "h": 78, "regex": r"(INV-\d+)"})
+    item = designer.zone_list.item(0)
+    assert "(12, 34)" in item.text()
+    designer.ocr_mode.setCurrentText("Full-page (label-anchored regex)")
+    assert "full-page" in item.text()
+    assert "(12, 34)" not in item.text()
+    designer.ocr_mode.setCurrentText("Zone-based (draw regions)")
+    assert "(12, 34)" in item.text()
+    assert "full-page" not in item.text()
 
 
 def test_save_as_template_captures_current_config(designer, monkeypatch):

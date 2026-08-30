@@ -64,6 +64,46 @@ def test_extract_fields_skips_zone_missing_geometry():
     assert fields["positioned"].value == "VALUE"
 
 
+def test_extract_fields_from_text_matches_label_anchor():
+    from ocr.zone_extractor import extract_fields_from_text
+    text = "Some header text\nInvoice No: INV-7777\nVendor: ACME Corp\nfooter"
+    zones = [{"name": "invoice_no", "regex": r"Invoice No:\s*(\S+)"},
+             {"name": "vendor", "regex": r"Vendor:\s*(.+)"}]
+    fields = extract_fields_from_text(text, 0.87, zones)
+    assert fields["invoice_no"].value == "INV-7777"
+    assert fields["invoice_no"].confidence == 0.87
+    assert fields["vendor"].value == "ACME Corp"
+    assert fields["vendor"].confidence == 0.87
+
+
+def test_extract_fields_from_text_no_match_yields_zero_confidence():
+    from ocr.zone_extractor import extract_fields_from_text
+    zones = [{"name": "invoice_no", "regex": r"Invoice No:\s*(\S+)"}]
+    fields = extract_fields_from_text("nothing relevant here", 0.9, zones)
+    assert fields["invoice_no"].value == ""
+    assert fields["invoice_no"].confidence == 0.0
+
+
+def test_extract_fields_from_text_skips_zone_without_regex(caplog):
+    import logging
+    from ocr.zone_extractor import extract_fields_from_text
+    caplog.set_level(logging.WARNING)
+    zones = [{"name": "unanchored"},
+             {"name": "invoice_no", "regex": r"Invoice No:\s*(\S+)"}]
+    fields = extract_fields_from_text("Invoice No: INV-1", 0.9, zones)
+    assert "unanchored" not in fields
+    assert fields["invoice_no"].value == "INV-1"
+    assert "unanchored" in caplog.text
+
+
+def test_extract_fields_from_text_matched_empty_capture_keeps_confidence():
+    from ocr.zone_extractor import extract_fields_from_text
+    zones = [{"name": "note", "regex": r"Note:\s*(\S*)"}]
+    fields = extract_fields_from_text("Note: ", 0.9, zones)
+    assert fields["note"].value == ""
+    assert fields["note"].confidence == 0.9  # matched, not "no match" (which would be 0.0)
+
+
 # ---- duplicate detection --------------------------------------------------------
 
 def test_exact_duplicate_by_md5(tmp_path):

@@ -78,6 +78,120 @@ def test_zone_fields_populate_extracted_fields(tmp_path, db):
     assert fields["invoice_no"] == "INV-7777"
 
 
+def fake_ocr_full_page(image):
+    """Whole-page OCR stand-in used by full-page-mode tests: returns a
+    fixed page of text regardless of the image, same shape (text,
+    confidence) as ocr/tesseract_engine.OCRResult."""
+    return OCRResult(
+        text="Header stuff\nInvoice No: INV-7777\nfooter",
+        confidence=0.88)
+
+
+def test_full_page_mode_populates_extracted_fields(tmp_path, db):
+    profile = make_profile(tmp_path)
+    profile["features"]["auto_index"] = True
+    profile["ocr"]["mode"] = "full_page"
+    profile["ocr"]["zones"] = [
+        {"name": "invoice_no", "regex": r"Invoice No:\s*(\S+)"}]
+    profile["ocr"]["confidence_threshold"] = 0.75
+    from core.job_queue import Pipeline
+    from delivery.local_folder import LocalFolderChannel
+    from export.batch_exporter import export_document
+    pipeline = Pipeline(
+        db, profile,
+        [LocalFolderChannel(profile["delivery"]["local_folder"])],
+        export_document, ocr_fn=fake_ocr_full_page,
+        working_dir=tmp_path / "staging")
+    pipeline.start()
+    try:
+        jobs = write_pages(tmp_path, ["text"])
+        for j in jobs:
+            j.batch_id = "batch-fp"
+        pipeline.submit_batch("batch-fp", jobs)
+        assert wait_for(lambda: len(db.list_documents("batch-fp")) >= 1
+                        and all(d["validation_status"] != "pending_qc"
+                                or d["qc_detail"]
+                                for d in db.list_documents("batch-fp")))
+    finally:
+        pipeline.shutdown()
+    docs = db.list_documents("batch-fp")
+    fields = json.loads(docs[0]["extracted_fields"])
+    assert fields["invoice_no"] == "INV-7777"
+
+
+def test_full_page_mode_low_confidence_flagged(tmp_path, db):
+    profile = make_profile(tmp_path)
+    profile["features"]["auto_index"] = True
+    profile["ocr"]["mode"] = "full_page"
+    profile["ocr"]["zones"] = [
+        {"name": "invoice_no", "regex": r"Invoice No:\s*(\S+)"}]
+    profile["ocr"]["confidence_threshold"] = 0.99  # above fake's 0.88
+    from core.job_queue import Pipeline
+    from delivery.local_folder import LocalFolderChannel
+    from export.batch_exporter import export_document
+    pipeline = Pipeline(
+        db, profile,
+        [LocalFolderChannel(profile["delivery"]["local_folder"])],
+        export_document, ocr_fn=fake_ocr_full_page,
+        working_dir=tmp_path / "staging")
+    pipeline.start()
+    try:
+        jobs = write_pages(tmp_path, ["text"])
+        for j in jobs:
+            j.batch_id = "batch-fp2"
+        pipeline.submit_batch("batch-fp2", jobs)
+        assert wait_for(lambda: len(db.list_documents("batch-fp2")) >= 1
+                        and all(d["validation_status"] != "pending_qc"
+                                or d["qc_detail"]
+                                for d in db.list_documents("batch-fp2")))
+    finally:
+        pipeline.shutdown()
+    docs = db.list_documents("batch-fp2")
+    detail = json.loads(docs[0]["qc_detail"])
+    assert "low_confidence_index" in detail["flags"]
+
+
+def test_full_page_mode_ocrs_each_page_exactly_once(tmp_path, db):
+    """The entire point of full-page mode is to avoid the 1+N OCR calls
+    zone mode makes (one page-level OCR, then one crop-OCR per zone).
+    With two zones configured, a per-zone OCR call would show up as 2
+    calls per page; full-page mode must make exactly 1."""
+    calls = {"n": 0}
+
+    def counting_ocr(image):
+        calls["n"] += 1
+        return fake_ocr_full_page(image)
+
+    profile = make_profile(tmp_path)
+    profile["features"]["auto_index"] = True
+    profile["ocr"]["mode"] = "full_page"
+    profile["ocr"]["zones"] = [
+        {"name": "invoice_no", "regex": r"Invoice No:\s*(\S+)"},
+        {"name": "unmatched", "regex": r"Nope:\s*(\S+)"}]
+    profile["ocr"]["confidence_threshold"] = 0.75
+    from core.job_queue import Pipeline
+    from delivery.local_folder import LocalFolderChannel
+    from export.batch_exporter import export_document
+    pipeline = Pipeline(
+        db, profile,
+        [LocalFolderChannel(profile["delivery"]["local_folder"])],
+        export_document, ocr_fn=counting_ocr,
+        working_dir=tmp_path / "staging")
+    pipeline.start()
+    try:
+        jobs = write_pages(tmp_path, ["text", "text"])
+        for j in jobs:
+            j.batch_id = "batch-fp-count"
+        pipeline.submit_batch("batch-fp-count", jobs)
+        assert wait_for(
+            lambda: len(db.list_documents("batch-fp-count")) >= 1
+            and all(d["validation_status"] != "pending_qc" or d["qc_detail"]
+                    for d in db.list_documents("batch-fp-count")))
+    finally:
+        pipeline.shutdown()
+    assert calls["n"] == 2  # one OCR call per page, not per page per zone
+
+
 def test_low_confidence_flagged(tmp_path, db):
     profile = indexed_profile(tmp_path)
     profile["ocr"]["confidence_threshold"] = 0.99  # above fake's 0.95

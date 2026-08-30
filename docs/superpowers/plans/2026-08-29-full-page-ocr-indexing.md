@@ -29,7 +29,7 @@
 - Consumes: nothing new — uses the existing `FieldValue` dataclass already defined in `ocr/zone_extractor.py`.
 - Produces: `extract_fields_from_text(text: str, confidence: float, zones: list[dict]) -> dict[str, FieldValue]` — called by Task 2.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `tests/test_ocr.py`, in the `# ---- zone extraction` section, right after `test_extract_fields_skips_zone_missing_geometry`:
 
@@ -63,12 +63,12 @@ def test_extract_fields_from_text_skips_zone_without_regex():
     assert fields["invoice_no"].value == "INV-1"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/test_ocr.py -k extract_fields_from_text -v`
 Expected: FAIL with `ImportError` / `AttributeError: module 'ocr.zone_extractor' has no attribute 'extract_fields_from_text'`
 
-- [ ] **Step 3: Implement `extract_fields_from_text`**
+- [x] **Step 3: Implement `extract_fields_from_text`**
 
 Add to `ocr/zone_extractor.py`, after `extract_fields()`:
 
@@ -95,17 +95,17 @@ def extract_fields_from_text(text: str, confidence: float,
 
 (`re` is already imported at the top of `ocr/zone_extractor.py`.)
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_ocr.py -k extract_fields_from_text -v`
 Expected: PASS (3 tests)
 
-- [ ] **Step 5: Run the full OCR test file to confirm no regressions**
+- [x] **Step 5: Run the full OCR test file to confirm no regressions**
 
 Run: `pytest tests/test_ocr.py -v`
 Expected: PASS (all tests, `test_ocr_page_reads_rendered_text` skipped if tesseract isn't on PATH)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add ocr/zone_extractor.py tests/test_ocr.py
@@ -125,7 +125,7 @@ git commit -m "feat(ocr): add extract_fields_from_text for full-page field match
 - Consumes: `extract_fields_from_text(text, confidence, zones)` from Task 1.
 - Produces: `_extract_zone_fields` now reads `ocr_cfg.get("mode", "zone")`; no change to its own signature or to what it writes onto `record` (`record.extracted_fields`, `record.low_conf_fields` — unchanged shape, consumed downstream unchanged).
 
-- [ ] **Step 1: Add `mode` to the OCR schema**
+- [x] **Step 1: Add `mode` to the OCR schema**
 
 In `core/project_schema.json`, find the `"ocr"` block (currently):
 
@@ -156,7 +156,7 @@ Change to:
     },
 ```
 
-- [ ] **Step 2: Write the failing pipeline test**
+- [x] **Step 2: Write the failing pipeline test**
 
 Add to `tests/test_auto_index.py`, after `test_zone_fields_populate_extracted_fields`:
 
@@ -234,12 +234,12 @@ def test_full_page_mode_low_confidence_flagged(tmp_path, db):
     assert "low_confidence_index" in detail["flags"]
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 Run: `pytest tests/test_auto_index.py -k full_page -v`
 Expected: FAIL — `test_full_page_mode_populates_extracted_fields` fails because `fields["invoice_no"]` isn't populated (mode isn't read yet, so `_extract_zone_fields` still runs zone-based `extract_fields` against zones that have no `x/y/w/h`, extracting nothing).
 
-- [ ] **Step 4: Implement the branch in `_extract_zone_fields`**
+- [x] **Step 4: Implement the branch in `_extract_zone_fields`**
 
 In `core/job_queue.py`, replace lines 245-262 (`_extract_zone_fields`, up through the `try:`/`except` block that calls `extract_fields`):
 
@@ -275,17 +275,17 @@ In `core/job_queue.py`, replace lines 245-262 (`_extract_zone_fields`, up throug
 
 (The `for name, fv in fields.items():` loop below, lines 263-269, is unchanged — leave it as-is.)
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `pytest tests/test_auto_index.py -v`
 Expected: PASS (all tests, including the 2 new full-page ones and all pre-existing zone-mode ones)
 
-- [ ] **Step 6: Run the schema-validating tests to confirm the new enum doesn't break existing configs**
+- [x] **Step 6: Run the schema-validating tests to confirm the new enum doesn't break existing configs**
 
 Run: `pytest tests/test_templates.py tests/test_pipeline.py -v`
 Expected: PASS
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add core/project_schema.json core/job_queue.py tests/test_auto_index.py
@@ -304,7 +304,7 @@ git commit -m "feat(ocr): route ocr.mode=full_page through label-anchored extrac
 - Consumes: `ocr_page` / `TesseractNotFound` from `ocr/tesseract_engine.py` (already imported in this file).
 - Produces: `ZoneDialog(zone: dict | None = None, parent=None, full_page: bool = False)`. `build_zone()` returns `{"name": ..., "regex": ...}` (no `x/y/w/h/ref_*`) when `full_page=True` and the name field is non-empty — this is what Task 4's Workflow Designer wiring appends to `cfg["ocr"]["zones"]`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `tests/test_index_tab.py`, near the other `ZoneDialog` tests (around line 282's `test_zone_dialog_builds_zone`). Each test imports `ZoneDialog` locally, matching this file's existing pattern:
 
@@ -334,12 +334,12 @@ def test_zone_dialog_zone_mode_still_requires_region(qtbot):
     assert dlg.build_zone() is None  # no region dragged, w/h are 0
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/test_index_tab.py -k full_page -v`
 Expected: FAIL — `TypeError: ZoneDialog.__init__() got an unexpected keyword argument 'full_page'`
 
-- [ ] **Step 3: Implement `full_page` support in `ZoneDialog`**
+- [x] **Step 3: Implement `full_page` support in `ZoneDialog`**
 
 In `ui/zone_dialog.py`, change the constructor signature (currently `def __init__(self, zone: dict | None = None, parent=None):`, line 38) to:
 
@@ -437,12 +437,12 @@ Finally, update `build_zone` (line 255) to skip the region requirement in full-p
         return zone
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_index_tab.py -v`
 Expected: PASS (all tests, including the 3 new ones and every pre-existing `ZoneDialog` test, which all use `full_page=False` by default)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add ui/zone_dialog.py tests/test_index_tab.py
@@ -461,7 +461,7 @@ git commit -m "feat(ui): ZoneDialog supports full-page editing (no region requir
 - Consumes: `ZoneDialog(zone, parent=self, full_page=bool)` from Task 3.
 - Produces: `cfg["ocr"]["mode"]` written by `collect_config()`, read by `_bind_config()` — this is what Task 2's pipeline reads at runtime once a project using this UI is saved.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_phase2_ui.py` already has a `designer` fixture (near line 57) that builds a real `WorkflowDesigner(db, pm, ADMIN)` bound to a freshly-created project — reuse it. Add this test in the `# ---- workflow designer` section, near `test_designer_loads_project`:
 
@@ -473,12 +473,12 @@ def test_designer_ocr_mode_roundtrip(designer):
     assert cfg["ocr"]["mode"] == "full_page"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_phase2_ui.py -k ocr_mode_roundtrip -v`
 Expected: FAIL — `AttributeError: 'WorkflowDesigner' object has no attribute 'ocr_mode'`
 
-- [ ] **Step 3: Add the mode combo box**
+- [x] **Step 3: Add the mode combo box**
 
 In `ui/workflow_designer.py`, in the zone box construction (currently lines 300-304):
 
@@ -513,7 +513,7 @@ change to:
         z_layout.addLayout(mode_row)
 ```
 
-- [ ] **Step 4: Bind mode to config on load and save**
+- [x] **Step 4: Bind mode to config on load and save**
 
 In `_bind_config` (`ui/workflow_designer.py`), find:
 
@@ -556,7 +556,7 @@ and change to:
             for i in range(self.zone_list.count())]
 ```
 
-- [ ] **Step 5: Wire the mode into `add_zone`/`edit_zone`**
+- [x] **Step 5: Wire the mode into `add_zone`/`edit_zone`**
 
 Replace `add_zone` (line 518-524):
 
@@ -590,7 +590,7 @@ Replace `edit_zone` (line 526-536):
                 item.setText(self._zone_label(zone))
 ```
 
-- [ ] **Step 6: Update `_zone_label` to not show a meaningless `(0, 0) 0×0` for full-page zones**
+- [x] **Step 6: Update `_zone_label` to not show a meaningless `(0, 0) 0×0` for full-page zones**
 
 Replace `_zone_label` (line 502-511):
 
@@ -610,17 +610,17 @@ Replace `_zone_label` (line 502-511):
             + (f" · /{zone['regex']}/" if zone.get("regex") else ""))
 ```
 
-- [ ] **Step 7: Run the test to verify it passes**
+- [x] **Step 7: Run the test to verify it passes**
 
 Run: `pytest tests/test_phase2_ui.py -k ocr_mode_roundtrip -v`
 Expected: PASS
 
-- [ ] **Step 8: Run the full UI test suite to confirm no regressions**
+- [x] **Step 8: Run the full UI test suite to confirm no regressions**
 
 Run: `pytest tests/test_phase2_ui.py tests/test_index_tab.py tests/test_templates.py -v`
 Expected: PASS
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add ui/workflow_designer.py tests/test_phase2_ui.py
@@ -633,7 +633,7 @@ git commit -m "feat(ui): Workflow Designer extraction-mode toggle (zone vs full-
 
 **Files:** none (verification only)
 
-- [ ] **Step 1: Run the complete test suite**
+- [x] **Step 1: Run the complete test suite**
 
 Run: `pytest -v`
 Expected: PASS (aside from any pre-existing `skipif`s, e.g. tests requiring a tesseract binary not on this machine's PATH)

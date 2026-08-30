@@ -105,12 +105,15 @@ class MainWindow(QMainWindow):
 
         # Index tab (zones from the first active project, if any)
         zones = []
+        ocr_mode = "zone"
         projects = [dict(p) for p in db.list_projects("active")]
         if projects:
             import json
             cfg = json.loads(projects[0]["config_json"])
             zones = cfg.get("ocr", {}).get("zones", [])
-        self.index_editor = IndexEditor(db, zones, audit, user)
+            ocr_mode = cfg.get("ocr", {}).get("mode", "zone")
+        self.index_editor = IndexEditor(
+            db, zones, audit, user, full_page=(ocr_mode == "full_page"))
         self.tabs.addTab(self.index_editor, icon("fa5s.tags"), "Index")
 
         # Job monitor tab
@@ -160,6 +163,19 @@ class MainWindow(QMainWindow):
                 return zones
         return []
 
+    def _active_ocr_mode(self) -> str:
+        """The first active project's ocr.mode ("zone" or "full_page"),
+        mirroring _active_zones()'s "first active project" logic — kept
+        as a separate lookup so the two can disagree on which project
+        each pulls from without changing _active_zones()'s return type."""
+        import json
+        for row in self.db.list_projects("active"):
+            cfg = json.loads(row["config_json"])
+            zones = cfg.get("ocr", {}).get("zones", [])
+            if zones:
+                return cfg.get("ocr", {}).get("mode", "zone")
+        return "zone"
+
     def _on_tab_changed(self, index: int) -> None:
         widget = self.tabs.widget(index)
         if widget is self.qc_panel:
@@ -167,8 +183,11 @@ class MainWindow(QMainWindow):
         elif widget is getattr(self, "reports_panel", None):
             self.reports_panel.refresh()
         elif widget is self.index_editor:
-            # zones may have been edited in the designer since startup
-            self.index_editor.set_zones(self._active_zones())
+            # zones (and mode) may have been edited in the designer since
+            # startup
+            self.index_editor.set_zones(
+                self._active_zones(),
+                full_page=(self._active_ocr_mode() == "full_page"))
             self.index_editor.refresh()
         elif widget is getattr(self, "custody_panel", None):
             self.custody_panel.refresh()
