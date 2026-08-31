@@ -7,16 +7,37 @@ of the most recent scan. Excluded: `.venv/`, `tests/`, `.claude/`, `dist/`,
 `build/` (dependencies, test code, and build artifacts are not in scope for
 this scan).
 **Original scan date:** 2026-08-29
-**Re-scan date:** 2026-08-30 — re-run after a full-page OCR extraction-mode
+**Re-scan #1 (2026-08-30):** re-run after a full-page OCR extraction-mode
 feature (`ocr.mode=full_page`, spanning `ocr/`, `ui/zone_dialog.py`,
 `ui/index_editor.py`, `ui/workflow_designer.py`) merged from a separate
-branch/session. **Result: identical finding set** — same 16 findings, same
-files, same line numbers as the original scan (confirmed by diffing the
-`Location:` lines between runs, not just the summary counts). The new
-feature introduced zero new SAST findings.
+branch/session. Identical finding set to the original scan — same 16
+findings, same files, same line numbers (confirmed by diffing the
+`Location:` lines, not just summary counts). The new feature introduced
+zero new SAST findings.
+**Re-scan #2 (2026-08-30):** re-run via the new `scripts/security_scan.py`
+runner (see "How to run this yourself" below). 2 new Low-severity findings
+appeared — both in the new runner script itself (`scripts/security_scan.py`
+uses `subprocess` to invoke Bandit). Triaged below alongside the other
+subprocess findings; same disposition, no code change needed.
 **Raw output:** `docs/security/sast_bandit_report.json` (machine-readable),
 `docs/security/sast_bandit_report.txt` (human-readable, full detail) — both
-reflect the most recent (2026-08-30) run.
+reflect the most recent (re-scan #2) run.
+
+## How to run this yourself
+
+```powershell
+.venv\Scripts\python.exe scripts\security_scan.py
+```
+
+This overwrites `docs/security/sast_bandit_report.json` and `.txt` with a
+fresh scan every time — it does not keep old copies around, so if you want
+to compare against a prior run, check it out from git history
+(`git log -- docs/security/sast_bandit_report.txt`) before re-running.
+After running, re-read this file (`SAST_FINDINGS_REPORT.md`) and check
+whether the finding set changed — the script prints a reminder to do this,
+but doesn't update this write-up automatically, since a human (or an
+assistant working with you) should look at any new finding and decide its
+disposition, not have it silently pre-classified.
 
 This satisfies Enhancement Plan §7's "Static Application Security Testing
 (SAST)" line item: *"An actual scan run against the codebase ... with a
@@ -29,11 +50,11 @@ new code landing, not yet on a fixed calendar cadence.
 
 ## Summary
 
-| Severity | Before remediation | After remediation |
+| Severity | Original scan (before remediation) | Current (re-scan #2) |
 |---|---|---|
 | High | 4 | **0** |
 | Medium | 3 | 3 |
-| Low | 13 | 13 |
+| Low | 13 | 15 (+2, both in the new scan-runner script itself) |
 
 One class of finding (weak-hash usage) was fixed during this pass. Every
 other finding is triaged below with a disposition — none are silently
@@ -99,9 +120,10 @@ the standard, necessary way to build a dynamic column list safely, provided
 (as here) the identifiers themselves never come from unvalidated external
 input.
 
-### Subprocess usage — 4 instances
+### Subprocess usage — 6 instances
 
-**Files:** `delivery/cddvd_channel.py:20,111`, `ui/admin_panel.py:10,36`
+**Files:** `delivery/cddvd_channel.py:20,111`, `ui/admin_panel.py:10,36`,
+`scripts/security_scan.py:13,23` (new in re-scan #2)
 **Bandit rules:** B404, B603, B607 (CWE-78), Severity Low / Confidence High
 
 **Disposition: reviewed, already mitigated, no further action.** These
@@ -119,6 +141,13 @@ invoked with a fixed argument list and no user-controlled command
 structure. B607 (partial executable path) is worth a one-line note: `icacls`
 is resolved via `PATH`, which is standard practice for a well-known Windows
 system utility, and not a call to an admin-configurable path.
+
+The two new findings are `scripts/security_scan.py` itself — the runner
+that produces this very report calls `subprocess.run([sys.executable, "-m",
+"bandit", ...])` to invoke Bandit. Same shape as the others: a fully
+hardcoded argument list (no string built from external input), no
+`shell=True`. Bandit flagging its own invocation wrapper is expected, not a
+defect.
 
 ### Bare `except: pass` on cleanup paths — 2 instances
 

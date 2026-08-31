@@ -1,4 +1,4 @@
-Run started:2026-08-30 06:01:55.876804+00:00
+Run started:2026-08-31 03:07:11.832094+00:00
 
 Test results:
 >> Issue: [B105:hardcoded_password_string] Possible hardcoded password: '80'
@@ -98,6 +98,29 @@ Test results:
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: .\scripts\security_scan.py:13:0
+12	
+13	import subprocess
+14	import sys
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: .\scripts\security_scan.py:23:4
+22	def run(fmt: str, out_name: str) -> None:
+23	    subprocess.run([
+24	        sys.executable, "-m", "bandit", "-r", ".",
+25	        "-x", EXCLUDE, "-f", fmt, "-o", str(REPORT_DIR / out_name),
+26	    ], cwd=ROOT, check=False)  # bandit exits non-zero when findings exist
+27	
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
    Location: .\ui\admin_panel.py:10:0
 9	import os
 10	import subprocess
@@ -186,19 +209,19 @@ Test results:
 --------------------------------------------------
 
 Code scanned:
-	Total lines of code: 7101
+	Total lines of code: 7135
 	Total lines skipped (#nosec): 0
 	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
 
 Run metrics:
 	Total issues (by severity):
 		Undefined: 0
-		Low: 13
+		Low: 15
 		Medium: 3
 		High: 0
 	Total issues (by confidence):
 		Undefined: 0
 		Low: 0
 		Medium: 8
-		High: 8
+		High: 10
 Files skipped (0):

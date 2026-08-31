@@ -1,6 +1,6 @@
 {
   "errors": [],
-  "generated_at": "2026-08-30T06:02:12Z",
+  "generated_at": "2026-08-31T03:07:09Z",
   "metrics": {
     ".\\core\\__init__.py": {
       "CONFIDENCE.HIGH": 0,
@@ -795,6 +795,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    ".\\scripts\\security_scan.py": {
+      "CONFIDENCE.HIGH": 2,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 2,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 34,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     ".\\separation\\__init__.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -1095,15 +1108,15 @@
       "skipped_tests": 0
     },
     "_totals": {
-      "CONFIDENCE.HIGH": 8,
+      "CONFIDENCE.HIGH": 10,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 8,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 13,
+      "SEVERITY.LOW": 15,
       "SEVERITY.MEDIUM": 3,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 7101,
+      "loc": 7135,
       "nosec": 0,
       "skipped_tests": 0
     }
@@ -1281,6 +1294,49 @@
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
       "test_name": "try_except_pass"
+    },
+    {
+      "code": "12 \n13 import subprocess\n14 import sys\n",
+      "col_offset": 0,
+      "end_col_offset": 17,
+      "filename": ".\\scripts\\security_scan.py",
+      "issue_confidence": "HIGH",
+      "issue_cwe": {
+        "id": 78,
+        "link": "https://cwe.mitre.org/data/definitions/78.html"
+      },
+      "issue_severity": "LOW",
+      "issue_text": "Consider possible security implications associated with the subprocess module.",
+      "line_number": 13,
+      "line_range": [
+        13
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess",
+      "test_id": "B404",
+      "test_name": "blacklist"
+    },
+    {
+      "code": "22 def run(fmt: str, out_name: str) -> None:\n23     subprocess.run([\n24         sys.executable, \"-m\", \"bandit\", \"-r\", \".\",\n25         \"-x\", EXCLUDE, \"-f\", fmt, \"-o\", str(REPORT_DIR / out_name),\n26     ], cwd=ROOT, check=False)  # bandit exits non-zero when findings exist\n27 \n",
+      "col_offset": 4,
+      "end_col_offset": 29,
+      "filename": ".\\scripts\\security_scan.py",
+      "issue_confidence": "HIGH",
+      "issue_cwe": {
+        "id": 78,
+        "link": "https://cwe.mitre.org/data/definitions/78.html"
+      },
+      "issue_severity": "LOW",
+      "issue_text": "subprocess call - check for execution of untrusted input.",
+      "line_number": 23,
+      "line_range": [
+        23,
+        24,
+        25,
+        26
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html",
+      "test_id": "B603",
+      "test_name": "subprocess_without_shell_equals_true"
     },
     {
       "code": "9 import os\n10 import subprocess\n11 \n",
