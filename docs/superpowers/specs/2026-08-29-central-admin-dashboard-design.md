@@ -173,12 +173,20 @@ when its turn comes)
   users. Deliberately last because it's the most security-sensitive
   change.
 
-## Open questions for the implementation plan (not blocking this spec)
+## Decisions resolved 2026-10-04 (supersedes the open questions)
 
-- Same repo (new top-level dir) vs. separate repo for `dokscanner-central`.
-- Exact admin-dashboard auth mechanism (session cookie vs JWT).
-- Config poll interval default and whether it should be admin-configurable
-  per PC.
-- Whether `POST /pcs/register` is triggered manually by an admin from the
-  installer/admin panel, or fully automatic on first run against a
-  known server URL.
+Confirmed requirement: more than one scanning PC at go-live, so this
+spec is now the active build.
+
+- **Repo:** same repo, new top-level `central/` directory (deployed
+  separately from DOKScanner.exe; shares the project config schema).
+- **Admin auth:** session cookie (HttpOnly, SameSite, CSRF-protected),
+  SPA served same-origin by the FastAPI app.
+- **PC registration:** admin-triggered. The admin creates the PC in the
+  dashboard and receives a short-lived one-time code; the installer /
+  Admin panel exchanges it at `POST /pcs/register` for the API key
+  (stored via DPAPI). No self-registration.
+- **Poll interval:** default 10 minutes, one global admin-configurable
+  value (per-PC override deferred until needed).
+- **Plan split:** three plans, built in order — (1) central backend API,
+  (2) sync client in DOKScanner.exe, (3) React admin dashboard.
