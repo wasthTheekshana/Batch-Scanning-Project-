@@ -218,3 +218,56 @@ def test_reports_panel_exports_batch_timeline(
     assert out.read_bytes().startswith(b"%PDF")
     assert db.conn.execute(
         "SELECT 1 FROM audit_log WHERE action='timeline_export'").fetchone()
+
+
+# ---- review fixes: authorization, markup/formula injection ------------------------
+
+def test_custody_export_requires_report_export_permission(
+        qtbot, db, audit, lifecycle):
+    from core.rbac import User
+    from ui.custody_panel import CustodyPanel
+    operator = CustodyPanel(db, audit, User("u2", "op", "operator"))
+    qtbot.addWidget(operator)
+    assert not operator.export_timeline_btn.isEnabled()  # custody.manage only
+    admin = CustodyPanel(db, audit, _panel_user())
+    qtbot.addWidget(admin)
+    assert admin.export_timeline_btn.isEnabled()
+
+
+def test_export_method_itself_refuses_without_permission(
+        qtbot, db, audit, lifecycle, tmp_path, monkeypatch):
+    from core.rbac import User
+    from ui.custody_panel import CustodyPanel
+    out = tmp_path / "x.csv"
+    monkeypatch.setattr(
+        "ui.custody_panel.QFileDialog.getSaveFileName",
+        staticmethod(lambda *a, **k: (str(out), "")))
+    panel = CustodyPanel(db, audit, User("u2", "op", "operator"))
+    qtbot.addWidget(panel)
+    panel.bundle_list.setCurrentRow(0)
+    panel.export_timeline()  # called directly, bypassing the disabled button
+    assert not out.exists()
+
+
+def test_pdf_survives_markup_in_title_and_detail(tmp_path):
+    # a user-typed bundle label / detail must not be parsed as ReportLab markup
+    entries = [{"timestamp": "2026-10-04T10:00:00.000+00:00",
+                "source": "audit", "action": "x", "user": "<b>u",
+                "bundle_id": None, "batch_id": None, "document_id": None,
+                "detail": '{"n": "a & b <i>unclosed ' + "&" * 300 + '"}'}]
+    out = write_timeline_pdf(entries, tmp_path / "m.pdf",
+                             title="Box <b>1 & <img src='x'/> </para>")
+    assert out.read_bytes().startswith(b"%PDF")
+
+
+def test_csv_neutralises_formula_cells(tmp_path):
+    entries = [{"timestamp": "2026-10-04T10:00:00.000+00:00",
+                "source": "audit", "action": "=HYPERLINK(\"http://x\")",
+                "user": "+cmd", "bundle_id": None, "batch_id": None,
+                "document_id": None, "detail": "@SUM(1)"}]
+    out = write_timeline_csv(entries, tmp_path / "f.csv")
+    with open(out, newline="", encoding="utf-8") as f:
+        row = next(csv.DictReader(f))
+    assert row["action"].startswith("'=")
+    assert row["user"].startswith("'+")
+    assert row["detail"].startswith("'@")

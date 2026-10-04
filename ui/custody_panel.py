@@ -107,6 +107,10 @@ class CustodyPanel(QWidget):
             QTableWidget.EditTrigger.NoEditTriggers)
         rl.addWidget(self.timeline_table, stretch=1)
         self.export_timeline_btn = QPushButton("Export timeline (CSV/PDF)…")
+        # exports leave the workstation: same permission as the Reports tab
+        self._can_export = current_user is not None and \
+            current_user.can("report.export")
+        self.export_timeline_btn.setEnabled(self._can_export)
         self.export_timeline_btn.clicked.connect(self.export_timeline)
         rl.addWidget(self.export_timeline_btn)
         splitter.addWidget(right)
@@ -203,6 +207,8 @@ class CustodyPanel(QWidget):
                                 "as the first page of this bundle.")
 
     def export_timeline(self) -> None:
+        if not self._can_export:
+            return
         bundle_id = self._selected_bundle_id()
         if bundle_id is None:
             return

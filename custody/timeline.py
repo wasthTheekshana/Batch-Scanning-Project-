@@ -139,8 +139,15 @@ def write_timeline_csv(entries: list[dict], out_path: str | Path) -> Path:
         w = csv.DictWriter(f, fieldnames=FIELDS, extrasaction="ignore")
         w.writeheader()
         for e in entries:
-            w.writerow({k: ("" if e.get(k) is None else e[k]) for k in FIELDS})
+            w.writerow({k: _csv_safe(e.get(k)) for k in FIELDS})
     return out_path
+
+
+def _csv_safe(value) -> str:
+    """Prefix cells a spreadsheet would execute as a formula (=, +, -, @,
+    tab, CR) so user-typed text in action/user/detail can't run in Excel."""
+    text = "" if value is None else str(value)
+    return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
 
 
 def write_timeline_pdf(entries: list[dict], out_path: str | Path,
@@ -151,7 +158,7 @@ def write_timeline_pdf(entries: list[dict], out_path: str | Path,
     cell = styles["BodyText"]
     cell.fontSize = 7
     cell.leading = 8.5
-    story = [Paragraph(f"DOK Scanner — Audit Timeline: {title}",
+    story = [Paragraph(f"DOK Scanner — Audit Timeline: {_esc(title)}",
                        styles["Title"]),
              Paragraph(f"{len(entries)} events", styles["Normal"]),
              Spacer(1, 4 * mm)]
@@ -161,7 +168,7 @@ def write_timeline_pdf(entries: list[dict], out_path: str | Path,
         rows.append([e["timestamp"][:19].replace("T", " "), e["source"],
                      e["action"], e["user"] or "", (e["bundle_id"] or "")[:8],
                      (e["batch_id"] or "")[:8], (e["document_id"] or "")[:8],
-                     Paragraph(_esc(e["detail"])[:200], cell)])
+                     Paragraph(_esc(str(e["detail"])[:200]), cell)])
     t = Table(rows, hAlign="LEFT", repeatRows=1,
               colWidths=[34 * mm, 18 * mm, 30 * mm, 24 * mm, 18 * mm,
                          18 * mm, 20 * mm, None])

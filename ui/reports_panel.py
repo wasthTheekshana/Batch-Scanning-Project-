@@ -49,6 +49,7 @@ class ReportsPanel(QWidget):
         right.addWidget(self.export_btn)
 
         self.timeline_btn = QPushButton("Export audit timeline (CSV/PDF)…")
+        self._can_export = can_export
         self.timeline_btn.setEnabled(can_export)
         self.timeline_btn.clicked.connect(self.export_audit_timeline)
         right.addWidget(self.timeline_btn)
@@ -106,6 +107,8 @@ class ReportsPanel(QWidget):
                 self.table.setItem(i, col, item)
 
     def export_audit_timeline(self) -> None:
+        if not self._can_export:
+            return
         batch_id = self.current_batch_id()
         if batch_id is None:
             return
