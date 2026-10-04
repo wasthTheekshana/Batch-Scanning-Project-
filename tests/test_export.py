@@ -82,6 +82,22 @@ def test_export_document_uses_template_and_format(page_files, tmp_path):
     assert out.name == "b1_0002.tif" and out.exists()
 
 
+def test_export_document_output_folder_is_subfolder_of_output_path(
+        page_files, tmp_path, monkeypatch):
+    # a rule's set_folder value is relative; it must nest under output_path,
+    # never resolve against the process working directory
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    cfg = {"format": "tiff", "filename_template": "{batch_id}_{counter:04d}",
+           "output_path": str(tmp_path / "exports")}
+    out = export_document(page_files, cfg, {"batch_id": "b1", "counter": 1,
+                                            "output_folder": "Routed"})
+    assert out == tmp_path / "exports" / "Routed" / "b1_0001.tif"
+    assert out.exists()
+    assert not (cwd / "Routed").exists()
+
+
 def test_batch_exporter_retries_then_succeeds(page_files, tmp_path):
     attempts = {"n": 0}
 

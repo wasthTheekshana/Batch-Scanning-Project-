@@ -21,3 +21,4 @@ logs/
 # SDD (subagent-driven-development) scratch: ledger, task briefs, review
 # packages — per-plan working state, not part of the shipped codebase.
 .superpowers/
+Routed/

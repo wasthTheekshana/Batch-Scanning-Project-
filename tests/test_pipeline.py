@@ -172,7 +172,11 @@ def test_crash_recovery_requeues_jobs(tmp_path, db):
     assert len(recovered) == 2
     pipeline.start()
     try:
-        assert wait_for(lambda: not db.get_incomplete_jobs())
+        # jobs are marked complete at the QC stage, before the rule stage
+        # inserts documents; wait for the document too, or shutdown()'s
+        # sentinel can overtake the rule queue under load
+        assert wait_for(lambda: not db.get_incomplete_jobs()
+                        and db.list_documents())
     finally:
         pipeline.shutdown()
     assert len(db.list_documents()) >= 1
