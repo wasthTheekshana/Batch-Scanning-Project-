@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (QComboBox, QFileDialog, QFormLayout,
 from custody.bundle_manager import (VALID_STAGES, create_bundle,
                                     flag_incident, generate_label_sheet,
                                     reconciliation_summary, record_checkpoint)
+from custody.timeline import bundle_timeline, export_timeline
 from ui.theme import mark
 
 _CHECKPOINT_STAGES = ["prep", "scanning", "qc", "storage", "return"]
@@ -95,6 +96,19 @@ class CustodyPanel(QWidget):
         self.recon_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch)
         rl.addWidget(self.recon_table, stretch=1)
+
+        rl.addWidget(QLabel("Timeline (custody + processing)"))
+        self.timeline_table = QTableWidget(0, 6)
+        self.timeline_table.setHorizontalHeaderLabels(
+            ["Time (UTC)", "Source", "Action", "User", "Batch", "Document"])
+        self.timeline_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch)
+        self.timeline_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers)
+        rl.addWidget(self.timeline_table, stretch=1)
+        self.export_timeline_btn = QPushButton("Export timeline (CSV/PDF)…")
+        self.export_timeline_btn.clicked.connect(self.export_timeline)
+        rl.addWidget(self.export_timeline_btn)
         splitter.addWidget(right)
         splitter.setSizes([280, 620])
 
@@ -129,11 +143,33 @@ class CustodyPanel(QWidget):
     def _on_select(self, current, _previous=None) -> None:
         if current is None:
             self.selected_label.setText("Select a bundle from the list.")
+            self.timeline_table.setRowCount(0)
             return
         bundle_id = current.data(Qt.ItemDataRole.UserRole)
         bundle = self.db.get_bundle(bundle_id)
         self.selected_label.setText(
             f"{bundle['label']} · status: {bundle['status']}")
+        self._refresh_timeline(bundle_id)
+
+    def _refresh_timeline(self, bundle_id: str) -> None:
+        entries = bundle_timeline(self.db, bundle_id)
+        self.timeline_table.setRowCount(len(entries))
+        for r, e in enumerate(entries):
+            values = [e["timestamp"][:19].replace("T", " "), e["source"],
+                      e["action"], e["user"] or "",
+                      (e["batch_id"] or "")[:8],
+                      (e["document_id"] or "")[:8]]
+            for c, value in enumerate(values):
+                self.timeline_table.setItem(r, c, QTableWidgetItem(value))
+
+    def _reselect(self, bundle_id: str) -> None:
+        """refresh() rebuilds the list; keep the same bundle selected so
+        its timeline stays visible after an action."""
+        for i in range(self.bundle_list.count()):
+            if self.bundle_list.item(i).data(
+                    Qt.ItemDataRole.UserRole) == bundle_id:
+                self.bundle_list.setCurrentRow(i)
+                return
 
     def _selected_bundle_id(self) -> str | None:
         item = self.bundle_list.currentItem()
@@ -166,6 +202,21 @@ class CustodyPanel(QWidget):
                                 f"Saved to {path}. Print it and place it "
                                 "as the first page of this bundle.")
 
+    def export_timeline(self) -> None:
+        bundle_id = self._selected_bundle_id()
+        if bundle_id is None:
+            return
+        bundle = self.db.get_bundle(bundle_id)
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export audit timeline", f"{bundle['label']}_timeline.pdf",
+            "PDF (*.pdf);;CSV (*.csv)")
+        if not path:
+            return
+        out = export_timeline(bundle_timeline(self.db, bundle_id), path,
+                              title=f"Bundle {bundle['label']}")
+        self.audit.log("timeline_export", self.current_user.username,
+                       bundle_id=bundle_id, path=str(out))
+
     def record_checkpoint(self) -> None:
         bundle_id = self._selected_bundle_id()
         if bundle_id is None:
@@ -174,6 +225,7 @@ class CustodyPanel(QWidget):
         record_checkpoint(self.db, bundle_id, stage,
                           self.current_user.username, audit=self.audit)
         self.refresh()
+        self._reselect(bundle_id)
 
     def flag_incident(self) -> None:
         bundle_id = self._selected_bundle_id()
@@ -183,3 +235,4 @@ class CustodyPanel(QWidget):
         flag_incident(self.db, bundle_id, kind, self.current_user.username,
                       audit=self.audit)
         self.refresh()
+        self._reselect(bundle_id)

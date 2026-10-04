@@ -1,7 +1,7 @@
 # Enhancement Plan Status
 
 Tracks implementation status against `docs/DOK_Scanner_Enhancement_Plan (1).docx`.
-Last updated: 2026-08-29.
+Last updated: 2026-10-04.
 
 ## Done (4 of 16 items)
 
@@ -54,5 +54,5 @@ Last updated: 2026-08-29.
 3. **Test suite has gotten slow and occasionally flaky.** Full runs now take 8-9 minutes (up from ~50s earlier) under load, and `test_crash_recovery_requeues_jobs` has intermittently failed under contention — a real timing fragility in the threaded-pipeline tests, not yet root-caused.
 4. **Recurring test-hygiene bug:** some test writes into the tracked file `Routed/batch-1_0001.pdf` instead of a tmp dir, dirtying the working tree on every full-suite run. Manually reverted each time rather than fixed at the source.
 5. **Client UAT hasn't happened.** Everything verified solo on one dev machine — no real scanner hardware, no real operator, no client sign-off yet.
-6. **The "unified audit trail" story has a gap.** Custody events and digital-processing events both log to `audit_log`, but nothing joins them into one queryable timeline — two trails sharing a table, not one.
+6. ~~**The "unified audit trail" story has a gap.**~~ **Resolved 2026-10-04:** `custody/timeline.py` merges custody checkpoints and processing audit rows into one chronological view per bundle/batch/document (Custody tab timeline + CSV/PDF export from Custody and Reports tabs). Read-only; no schema change.
 7. **`docs/SDLC.md` exists in the working tree but has not been authored or reviewed as part of this work** — if it's meant to answer §4.7's SDLC-policy ask, it needs a read before anyone relies on it.

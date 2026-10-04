@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QListWidget,
                              QListWidgetItem, QPushButton, QTableWidget,
                              QTableWidgetItem, QVBoxLayout, QWidget)
 
+from custody.timeline import batch_timeline, export_timeline
 from export.qc_report import batch_statistics, write_qc_report
 
 
@@ -46,6 +47,11 @@ class ReportsPanel(QWidget):
         self.export_btn.setEnabled(can_export)
         self.export_btn.clicked.connect(self.export_pdf)
         right.addWidget(self.export_btn)
+
+        self.timeline_btn = QPushButton("Export audit timeline (CSV/PDF)…")
+        self.timeline_btn.setEnabled(can_export)
+        self.timeline_btn.clicked.connect(self.export_audit_timeline)
+        right.addWidget(self.timeline_btn)
         layout.addLayout(right, stretch=3)
 
         self.refresh()
@@ -98,6 +104,23 @@ class ReportsPanel(QWidget):
                     if color:
                         item.setForeground(QBrush(QColor(color)))
                 self.table.setItem(i, col, item)
+
+    def export_audit_timeline(self) -> None:
+        batch_id = self.current_batch_id()
+        if batch_id is None:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export audit timeline", f"audit_timeline_{batch_id[:8]}.pdf",
+            "PDF (*.pdf);;CSV (*.csv)")
+        if not path:
+            return
+        out = export_timeline(batch_timeline(self.db, batch_id), path,
+                              title=f"Batch {batch_id[:8]}")
+        self.db.append_audit(None,
+                             self.user.username if self.user else "unknown",
+                             "timeline_export", {"batch_id": batch_id,
+                                                 "path": str(out)})
+        self.summary.setText(f"Timeline written: {out}")
 
     def export_pdf(self) -> None:
         batch_id = self.current_batch_id()
