@@ -46,7 +46,7 @@ def new_api_key() -> str:
 
 
 def hash_secret(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return hashlib.sha256(value.encode("utf-8", errors="surrogatepass")).hexdigest()
 
 
 def new_enrollment_code() -> str:

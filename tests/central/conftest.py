@@ -42,3 +42,14 @@ else:
         assert r.status_code == 200
         client.headers["X-CSRF-Token"] = r.json()["csrf_token"]
         return client
+
+    @pytest.fixture()
+    def enrolled(admin_client, app):
+        d = admin_client.post("/admin/pcs",
+                              json={"display_name": "PC-1"}).json()
+        pc_client = TestClient(app)  # not entered: no lifespan, no admin cookie
+        reg = pc_client.post("/pcs/register",
+                             json={"code": d["enrollment_code"]})
+        assert reg.status_code == 200
+        return {"pc_id": d["pc_id"], "api_key": reg.json()["api_key"],
+                "client": pc_client, "code": d["enrollment_code"]}

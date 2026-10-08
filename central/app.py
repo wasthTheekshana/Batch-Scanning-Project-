@@ -32,7 +32,13 @@ def create_app(settings: Settings) -> FastAPI:
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request, exc):
         """Global validation error handler: return only type, loc, msg (no input/ctx).
-        This prevents echoing back user-supplied values in error responses."""
+        This prevents echoing back user-supplied values in error responses.
+        For /pcs/register, return 400 with enrollment code error message instead of 422."""
+        if request.url.path == "/pcs/register":
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "invalid or expired enrollment code"}
+            )
         errors = []
         for error in exc.errors():
             # Extract only safe fields: type, loc, msg
@@ -47,9 +53,10 @@ def create_app(settings: Settings) -> FastAPI:
             content={"detail": errors}
         )
 
-    from central import routes_admin_auth, routes_admin_pcs
+    from central import routes_admin_auth, routes_admin_pcs, routes_pcs
     app.include_router(routes_admin_auth.router)
     app.include_router(routes_admin_pcs.router)
+    app.include_router(routes_pcs.router)
 
     @app.get("/healthz")
     def healthz():

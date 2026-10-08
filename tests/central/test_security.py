@@ -73,3 +73,17 @@ def test_lone_surrogates_do_not_crash_or_enumerate():
     assert sec.verify_password("\ud800", h) is True
     # Different lone surrogate must not match
     assert sec.verify_password("\ud801", h) is False
+
+
+def test_hash_secret_with_lone_surrogate_does_not_raise():
+    """hash_secret must handle lone surrogates (from json.loads) without raising."""
+    result = sec.hash_secret("\ud800")
+    assert result is not None
+    assert len(result) == 64  # SHA-256 hex is always 64 chars
+
+
+def test_hash_secret_lone_surrogates_differ():
+    """Different lone surrogates must produce different hashes."""
+    hash1 = sec.hash_secret("\ud800")
+    hash2 = sec.hash_secret("\ud801")
+    assert hash1 != hash2
