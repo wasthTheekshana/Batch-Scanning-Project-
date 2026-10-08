@@ -425,6 +425,15 @@ def test_password_roundtrip():
     assert not sec.verify_password("pw two", h)
 
 
+def test_long_and_multibyte_passwords_work_and_stay_significant():
+    long_pw = "a" * 150
+    h = sec.hash_password(long_pw)
+    assert sec.verify_password(long_pw, h)
+    assert not sec.verify_password("a" * 149 + "b", h)  # tail is not truncated
+    assert sec.verify_password("pässwörd-日本語-" * 10, sec.hash_password("pässwörd-日本語-" * 10))
+    assert sec.burn_password_check("z" * 200) is False  # must not raise
+
+
 def test_verify_password_with_garbage_hash_is_false_not_error():
     assert sec.verify_password("x", "not-a-bcrypt-hash") is False
 
@@ -482,19 +491,28 @@ high-entropy random values, so a plain SHA-256 at rest is sufficient and
 allows an indexed lookup."""
 from __future__ import annotations
 
+import base64
 import hashlib
 import secrets
 
 import bcrypt
 
 
+def _prehash(password: str) -> bytes:
+    """bcrypt 5 raises on inputs over 72 bytes (and older versions silently
+    truncate). Pre-hashing to a fixed 44-byte value makes any password
+    length safe and keeps every character significant."""
+    digest = hashlib.sha256(password.encode("utf-8")).digest()
+    return base64.b64encode(digest)
+
+
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode()
+    return bcrypt.hashpw(_prehash(password), bcrypt.gensalt()).decode()
 
 
 def verify_password(password: str, hashed: str) -> bool:
     try:
-        return bcrypt.checkpw(password.encode("utf-8"), hashed.encode())
+        return bcrypt.checkpw(_prehash(password), hashed.encode())
     except ValueError:
         return False
 
@@ -505,7 +523,7 @@ _DUMMY_HASH = hash_password("timing-equaliser")
 def burn_password_check(password: str) -> bool:
     """Spend the same time as a real check so an unknown username is not
     distinguishable from a wrong password by response time."""
-    bcrypt.checkpw(password.encode("utf-8"), _DUMMY_HASH.encode())
+    bcrypt.checkpw(_prehash(password), _DUMMY_HASH.encode())
     return False
 
 
@@ -547,7 +565,7 @@ def record(db, actor: str, action: str, detail: dict | None = None) -> None:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `$env:QT_QPA_PLATFORM='offscreen'; .\.venv\Scripts\python.exe -m pytest tests/central/test_security.py`
-Expected: 8 passed.
+Expected: 9 passed.
 
 - [ ] **Step 5: Commit**
 
