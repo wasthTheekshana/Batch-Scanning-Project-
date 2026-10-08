@@ -73,3 +73,8 @@ def create_app(settings: Settings) -> FastAPI:
         return {"status": "ok"}
 
     return app
+
+
+def create_app_from_env() -> FastAPI:
+    """uvicorn factory entry point (reads CENTRAL_* environment variables)."""
+    return create_app(Settings.from_env())

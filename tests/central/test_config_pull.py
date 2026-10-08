@@ -3,6 +3,7 @@ import json
 import uuid
 
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 
 from central.models import AuditEvent, Pc
 from tests.central.test_pcs import auth
@@ -161,3 +162,28 @@ def test_rejected_pulls_write_no_audit_and_do_not_touch_last_seen(
     assert _pull_audits(app) == []
     assert _last_seen(app, enrolled["pc_id"]) is None
     assert _last_seen(app, other["pc_id"]) is None
+
+
+def test_pull_orders_same_named_projects_by_id(enrolled, admin_client, project_config, app):
+    first_created = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    second_created = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    for p in (first_created, second_created):
+        assert admin_client.put(f"/admin/projects/{p}", json={
+            "name": "Same", "config": project_config}).status_code == 200
+        assert admin_client.post(f"/admin/projects/{p}/push", json={
+            "pc_ids": [enrolled["pc_id"]]}).status_code == 200
+    statements = []
+
+    def capture(conn, cursor, statement, *a):
+        statements.append(statement)
+
+    event.listen(app.state.engine, "before_cursor_execute", capture)
+    try:
+        ids = [x["project_id"] for x in _pull(enrolled).json()["projects"]]
+    finally:
+        event.remove(app.state.engine, "before_cursor_execute", capture)
+    assert ids == [second_created, first_created]
+    # SQLite happens to scan assignments in id order, so also pin the SQL:
+    # the tiebreaker must be explicit, not an accident of the planner.
+    order_by = [s for s in statements if "FROM projects" in s][0].split("ORDER BY")[1]
+    assert "projects.id" in order_by

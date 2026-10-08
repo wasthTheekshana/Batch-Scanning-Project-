@@ -68,7 +68,7 @@ def get_config(request: Request, pc: Pc = Depends(require_pc),
     projects = list(db.scalars(
         select(Project).join(PcAssignment,
                              PcAssignment.project_id == Project.id)
-        .where(PcAssignment.pc_id == pc.id).order_by(Project.name)))
+        .where(PcAssignment.pc_id == pc.id).order_by(Project.name, Project.id)))
     pc.last_seen_at = utcnow()
     record(db, f"pc:{pc.id}", "config_pull",
            {"operator": sanitize_log_value(x_operator_id),
