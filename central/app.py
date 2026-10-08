@@ -53,6 +53,14 @@ def create_app(settings: Settings) -> FastAPI:
             content={"detail": errors}
         )
 
+    @app.exception_handler(RecursionError)
+    async def recursion_error_handler(request, exc):
+        """Handle deeply nested JSON bodies that cause RecursionError during parsing."""
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "request body nested too deeply"}
+        )
+
     from central import (routes_admin_auth, routes_admin_config,
                          routes_admin_pcs, routes_pcs)
     app.include_router(routes_admin_auth.router)

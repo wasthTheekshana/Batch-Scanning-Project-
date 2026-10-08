@@ -179,3 +179,28 @@ def get_template(template_id: TemplateId, db: Session = Depends(get_db)):
     return {"id": t.id, "name": t.name, "category": t.category,
             "built_in": t.built_in, "version": t.current_version,
             "config": json.loads(t.config_json)}
+
+
+@router.get("/templates/{template_id}/versions")
+def template_versions(template_id: TemplateId, db: Session = Depends(get_db)):
+    t = db.get(Template, template_id)
+    if t is None:
+        raise HTTPException(404, "unknown template")
+    return [{"version": v.version, "created_by": v.created_by,
+             "created_at": v.created_at.isoformat() + "Z"}
+            for v in _history(db, "template", template_id)]
+
+
+@router.get("/templates/{template_id}/versions/{version}")
+def template_version(version: int, template_id: TemplateId,
+                    db: Session = Depends(get_db)):
+    t = db.get(Template, template_id)
+    if t is None:
+        raise HTTPException(404, "unknown template")
+    v = db.scalar(
+        select(ConfigVersion).where(ConfigVersion.kind == "template",
+                                    ConfigVersion.owner_id == template_id,
+                                    ConfigVersion.version == version))
+    if v is None:
+        raise HTTPException(404, "unknown version")
+    return {"version": v.version, "config": json.loads(v.config_json)}
