@@ -178,6 +178,60 @@ valid Python hygiene advice but doesn't change this: this codebase's build
 process (PyInstaller, see `docscanner.spec`) does not compile with `-O`, so
 the assertion is not silently removed in the shipped executable.
 
+## Central service (`central/`)
+
+**Re-scan #3 (2026-10-08):** re-run via `scripts/security_scan.py` after the
+new network-facing `central/` FastAPI service (Phase 1 of the central
+dashboard) landed. Unlike the desktop application, this component is
+reachable over the network, so it is also covered by a threat model:
+`docs/superpowers/specs/2026-10-04-central-api-threat-model.md` (SDLC A.6).
+
+**Scope:** all 17 files in `central/` (882 lines of code, as counted by
+Bandit's per-file metrics). The scan runs over the whole repository with the
+same exclusions as before (`tests/` is not scanned).
+
+**Result for `central/`: 0 findings** (High 0, Medium 0, Low 0, no `#nosec`
+suppressions). Every `central/` file reports zero issues in the per-file
+metrics of `sast_bandit_report.json`.
+
+| Severity | Findings in `central/` |
+|---|---|
+| High | 0 |
+| Medium | 0 |
+| Low | 0 |
+
+**Disposition: nothing to fix, nothing to accept.** Notes on why classes that
+Bandit commonly flags in web services are absent, so the clean result is not
+over-read:
+
+- *SQL injection (B608):* `central/` uses SQLAlchemy ORM / Core constructs
+  with bound parameters only; there are no hand-built SQL strings.
+- *Hardcoded passwords (B105/B106):* none. The one bcrypt "dummy hash" in
+  `security.py` is computed at import time from a fixed string and is used
+  only for timing equalisation; it is not a credential. Secrets
+  (`CENTRAL_SESSION_SECRET`, DB URL) are read from the environment and
+  `Settings.from_env` rejects a session secret under 32 characters.
+- *Weak hash (B324):* SHA-256 is used for API keys and enrollment codes,
+  which are 96-256 bit random values (an unsalted fast hash is appropriate
+  for high-entropy secrets and permits an indexed lookup). Passwords use
+  bcrypt over a SHA-256 pre-hash.
+- *Subprocess, `eval`, `pickle`, `yaml.load`, `assert`:* none used.
+
+**Limits of this evidence:** Bandit is a pattern scanner. It does not assess
+authentication logic, CSRF, session handling, race conditions or business
+rules; those are addressed by the threat model and the tests it cites. No
+DAST or infrastructure assessment of the running service has been done yet
+(the "DAST / infra" line in the sequencing checklist below remains open, and
+now has a network-facing component to apply to).
+
+**Outside `central/` (not triaged in this section):** the same re-scan also
+reports 3 new Medium B608 (string-built SQL) findings in
+`custody/timeline.py` (lines 42, 66, 86), from the custody-timeline feature
+merged since re-scan #2. They are out of scope for the central-service
+review and still need their own disposition entry; the repository-wide totals
+in the raw reports are now High 0 / Medium 6 / Low 15 (previously 0 / 3 / 15).
+The updated raw reports `sast_bandit_report.json` / `.txt` reflect this run.
+
 ## Recommended sequencing (per Enhancement Plan §7.1)
 
 - [x] Draft the SDLC policy document and security testing scope statement
