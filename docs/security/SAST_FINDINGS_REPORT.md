@@ -120,6 +120,24 @@ the standard, necessary way to build a dynamic column list safely, provided
 (as here) the identifiers themselves never come from unvalidated external
 input.
 
+### SQL built with string formatting in `custody/timeline.py` — 3 instances
+
+**File:** `custody/timeline.py:42`, `custody/timeline.py:66`, `custody/timeline.py:86`
+**Bandit rule:** B608 (CWE-89), Severity Medium / Confidence Medium
+(reported in re-scan #3; see the note under "Central service" below)
+
+**Disposition: reviewed, false positive, no action.** Only two kinds of text
+are ever interpolated into the SQL: (i) at line 42, the `where` fragment,
+which both callers pass as one of two internal literals (`"bundle_id=?"` or
+`"batch_id=?"`, `timeline.py:107` and `:116`) and never as caller- or
+user-supplied text; and (ii) at lines 66 and 86 (and the clause builders just
+above them), strings of `?` placeholders built from list lengths
+(`",".join("?" * len(ids))`) plus fixed clause literals. No user data
+appears in any SQL text; every actual value (bundle id, batch ids, document
+ids, the mirrored-action constant) is passed through the parameterized `?`
+binding. Same reasoning as the `data/db.py` / `export/qc_report.py` entry
+above. Code unchanged.
+
 ### Subprocess usage — 6 instances
 
 **Files:** `delivery/cddvd_channel.py:20,111`, `ui/admin_panel.py:10,36`,
@@ -228,7 +246,8 @@ now has a network-facing component to apply to).
 reports 3 new Medium B608 (string-built SQL) findings in
 `custody/timeline.py` (lines 42, 66, 86), from the custody-timeline feature
 merged since re-scan #2. They are out of scope for the central-service
-review and still need their own disposition entry; the repository-wide totals
+review; their disposition (false positive, no action) is recorded in the
+"SQL built with string formatting in `custody/timeline.py`" entry above. The repository-wide totals
 in the raw reports are now High 0 / Medium 6 / Low 15 (previously 0 / 3 / 15).
 The updated raw reports `sast_bandit_report.json` / `.txt` reflect this run.
 
