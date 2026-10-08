@@ -1,10 +1,13 @@
+import json
+import logging
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from central.app import create_app
 from central.manage import create_admin
-from central.models import AdminUser
+from central.models import AdminUser, AuditEvent
 
 PW = "correct horse battery"
 
@@ -293,3 +296,71 @@ def test_lockout_decision_uses_db_value_not_stale_cached_object(app):
             select(AdminUser).where(AdminUser.username == "testuser"))
         assert fresh.locked_until is not None
         assert fresh.failed_count == 0
+
+
+def _events(app, action):
+    with app.state.session_factory() as db:
+        return [(e.actor, json.loads(e.detail)) for e in db.scalars(
+            select(AuditEvent).where(AuditEvent.action == action)
+            .order_by(AuditEvent.id))]
+
+
+def test_login_success_is_audited(client, admin, app, caplog):
+    with caplog.at_level(logging.INFO, logger="dokscanner.central"):
+        assert _login(client).status_code == 200
+    assert _events(app, "admin_login") == [("admin:root", {"username": "root"})]
+    assert [r.levelno for r in caplog.records
+            if r.name == "dokscanner.central"] == [logging.INFO]
+
+
+def test_wrong_password_is_audited_with_username_and_one_warning(
+        client, admin, app, caplog):
+    with caplog.at_level(logging.INFO, logger="dokscanner.central"):
+        assert _login(client, "wrong password!").status_code == 401
+    events = _events(app, "admin_login_failed")
+    assert len(events) == 1
+    assert events[0][0] == "admin:root" and events[0][1]["username"] == "root"
+    warnings = [r for r in caplog.records
+                if r.name == "dokscanner.central"
+                and r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert all("wrong password!" not in r.getMessage() for r in caplog.records)
+
+
+def test_unknown_username_is_audited_without_any_username(
+        client, admin, app, caplog):
+    with caplog.at_level(logging.INFO, logger="dokscanner.central"):
+        r = _login(client, "whatever-pw", username="mallory-xyz")
+    assert r.status_code == 401
+    events = _events(app, "admin_login_failed")
+    assert len(events) == 1
+    assert "mallory-xyz" not in json.dumps(events[0])
+    assert events[0][1] == {}
+    assert all("mallory-xyz" not in r.getMessage() and
+               "whatever-pw" not in r.getMessage() for r in caplog.records)
+    assert [r.levelno for r in caplog.records
+            if r.name == "dokscanner.central"] == [logging.WARNING]
+
+
+def test_fifth_failure_writes_admin_locked(client, admin, app):
+    for _ in range(4):
+        _login(client, "wrong password!")
+    assert _events(app, "admin_locked") == []
+    _login(client, "wrong password!")
+    locked = _events(app, "admin_locked")
+    assert len(locked) == 1 and locked[0][0] == "admin:root"
+    assert locked[0][1]["username"] == "root"
+
+
+def test_logout_is_audited(client, admin, app):
+    token = _login(client).json()["csrf_token"]
+    assert client.post("/admin/logout",
+                       headers={"X-CSRF-Token": token}).status_code == 204
+    assert _events(app, "admin_logout") == [("admin:root", {"username": "root"})]
+
+
+def test_create_admin_is_audited_as_cli_without_password(app):
+    create_admin(app.state.session_factory, "newbie", PW, role="admin")
+    events = _events(app, "admin_created")
+    assert events == [("cli", {"username": "newbie", "role": "admin"})]
+    assert PW not in json.dumps(events)

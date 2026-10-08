@@ -2,16 +2,19 @@
 from __future__ import annotations
 
 import getpass
+import logging
 import sys
 
 from sqlalchemy import select
 
+from central.audit import record
 from central.db import make_engine, make_session_factory
 from central.models import AdminUser
 from central.security import hash_password
 from central.settings import Settings
 
 MIN_PASSWORD_LEN = 12
+log = logging.getLogger("dokscanner.central")
 
 
 def create_admin(session_factory, username: str, password: str,
@@ -24,7 +27,10 @@ def create_admin(session_factory, username: str, password: str,
             raise ValueError(f"admin {username!r} already exists")
         db.add(AdminUser(username=username,
                          password_hash=hash_password(password), role=role))
+        record(db, "cli", "admin_created",
+               {"username": username, "role": role})
         db.commit()
+    log.info("admin created: %s", username)
 
 
 def main(argv: list[str] | None = None) -> int:
