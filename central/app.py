@@ -47,8 +47,9 @@ def create_app(settings: Settings) -> FastAPI:
             content={"detail": errors}
         )
 
-    from central import routes_admin_auth
+    from central import routes_admin_auth, routes_admin_pcs
     app.include_router(routes_admin_auth.router)
+    app.include_router(routes_admin_pcs.router)
 
     @app.get("/healthz")
     def healthz():
