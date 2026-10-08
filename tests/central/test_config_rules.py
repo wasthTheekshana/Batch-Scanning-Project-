@@ -23,3 +23,101 @@ def test_check_config_rejects_credentials_and_oversize():
     with pytest.raises(ValueError, match="too large"):
         check_config({"blob": "x" * (MAX_CONFIG_BYTES + 1)})
     check_config({"ok": True})
+
+
+# Issue 2: Enhanced credential detection with normalization
+@pytest.mark.parametrize("key,should_flag", [
+    ("password", True),
+    ("Password", True),
+    ("Pass-Word", True),
+    ("PASS_WORD", True),
+    ("api_key", True),
+    ("API-Key", True),
+    ("APIKey", True),
+    ("client_secret", True),
+    ("access_token", True),
+    ("refresh_token", True),
+    ("private_key", True),
+    ("privateKey", True),
+    ("auth_token", True),
+    ("passphrase", True),
+    ("PASSPHRASE", True),
+    ("key_file", False),  # Path, not secret
+    ("keyfile", False),   # Path, not secret
+    ("confidence_threshold", False),
+    ("ocr", False),
+    ("rules", False),
+])
+def test_credential_key_detection_with_variants(key, should_flag):
+    """Test that various credential key naming patterns are detected."""
+    cfg = {"field": {key: "value"}}
+    result = find_credential_path(cfg)
+    if should_flag:
+        assert result == f"field.{key}", f"Expected to find credential in {key}"
+    else:
+        assert result is None, f"Should not flag {key} as credential"
+
+
+def test_credential_url_userinfo_detection():
+    """Test that URL userinfo patterns (user:password@host) are flagged."""
+    cfg = {"delivery": {"url": "sftp://user:pass@host.com/path"}}
+    result = find_credential_path(cfg)
+    assert result == "delivery.url"
+
+
+def test_credential_url_without_userinfo_allowed():
+    """Test that URLs without userinfo are allowed."""
+    cfg = {"api": {"endpoint": "https://example.com/api/v1"}}
+    assert find_credential_path(cfg) is None
+
+
+def test_credential_pem_key_detection():
+    """Test that PEM private key headers are detected."""
+    cfg = {"cert": {"key": "-----BEGIN PRIVATE KEY-----\nMIIEvQ..."}}
+    result = find_credential_path(cfg)
+    assert result == "cert.key"
+
+
+def test_regression_default_project_config_passes(project_config):
+    """Ensure the default project config passes credential check."""
+    check_config(project_config)  # Should not raise
+
+
+# Issue 3: Deep nesting limit
+def test_deeply_nested_dict_rejected():
+    """Test that dict nested >64 levels is rejected."""
+    cfg = {}
+    current = cfg
+    for i in range(500):
+        current["nested"] = {}
+        current = current["nested"]
+    current["value"] = "x"
+
+    with pytest.raises(ValueError, match="nested too deeply"):
+        check_config(cfg)
+
+
+def test_deeply_nested_list_rejected():
+    """Test that list nested >64 levels is rejected."""
+    cfg = []
+    current = cfg
+    for i in range(5000):
+        new_list = []
+        current.append(new_list)
+        current = new_list
+    current.append("value")
+
+    with pytest.raises(ValueError, match="nested too deeply"):
+        check_config(cfg)
+
+
+def test_moderately_nested_config_accepted():
+    """Test that config nested 60 levels deep is accepted."""
+    cfg = {}
+    current = cfg
+    for i in range(60):
+        current["nested"] = {}
+        current = current["nested"]
+    current["value"] = "x"
+
+    check_config(cfg)  # Should not raise

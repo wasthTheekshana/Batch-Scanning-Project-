@@ -107,3 +107,82 @@ def test_template_with_credentials_is_rejected(admin_client):
     r = admin_client.put(f"/admin/templates/{pid()}", json={
         "name": "T", "category": "x", "config": {"token": "abc"}})
     assert r.status_code == 422
+
+
+def test_project_concurrent_update_succeeds(admin_client, project_config):
+    """Test that the retry loop in put_project handles concurrent updates gracefully."""
+    p = pid()
+    # First create should succeed
+    r1 = put_project(admin_client, p, project_config)
+    assert r1.status_code == 200
+    assert r1.json()["version"] == 1
+
+    # Second concurrent update should also succeed (retry loop in place)
+    changed = copy.deepcopy(project_config)
+    changed["ocr"]["lang"] = "deu"
+    r2 = put_project(admin_client, p, changed)
+    assert r2.status_code == 200
+    assert r2.json()["version"] == 2
+
+
+def test_template_concurrent_update_succeeds(admin_client):
+    """Test that template updates work correctly (retry logic in place)."""
+    t = pid()
+    # First create
+    r1 = admin_client.put(f"/admin/templates/{t}", json={
+        "name": "Banking", "category": "banking", "config": {"ocr": {"zones": []}}})
+    assert r1.status_code == 200
+    assert r1.json()["version"] == 1
+
+    # Concurrent update should succeed
+    r2 = admin_client.put(f"/admin/templates/{t}", json={
+        "name": "Banking V2", "category": "banking", "config": {"ocr": {"zones": [1]}}})
+    assert r2.status_code == 200
+    assert r2.json()["version"] == 2
+
+
+def test_unknown_template_is_404(admin_client):
+    assert admin_client.get("/admin/templates/nope").status_code == 404
+
+
+def test_template_without_csrf_is_403(client, admin):
+    """Login but don't set CSRF token, should get 403."""
+    t = pid()
+    # Login first
+    r_login = client.post("/admin/login", json={
+        "username": "root", "password": "correct horse battery"})
+    assert r_login.status_code == 200
+    # Try PUT without CSRF token
+    r = client.put(f"/admin/templates/{t}", json={
+        "name": "T", "category": "x", "config": {"ok": True}})
+    assert r.status_code == 403
+
+
+def test_deeply_nested_project_config_rejected(admin_client, project_config):
+    """Test that project with deeply nested config is rejected (422)."""
+    p = pid()
+    cfg = copy.deepcopy(project_config)
+    # Build a deeply nested structure
+    nested = cfg
+    for i in range(100):
+        nested["deep"] = {}
+        nested = nested["deep"]
+    nested["value"] = "x"
+
+    r = put_project(admin_client, p, cfg)
+    assert r.status_code == 422 and "nested too deeply" in r.json()["detail"]
+
+
+def test_deeply_nested_template_config_rejected(admin_client):
+    """Test that template with deeply nested config is rejected (422)."""
+    t = pid()
+    cfg = {}
+    nested = cfg
+    for i in range(100):
+        nested["deep"] = {}
+        nested = nested["deep"]
+    nested["value"] = "x"
+
+    r = admin_client.put(f"/admin/templates/{t}", json={
+        "name": "T", "category": "x", "config": cfg})
+    assert r.status_code == 422 and "nested too deeply" in r.json()["detail"]
