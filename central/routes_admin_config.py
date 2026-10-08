@@ -1,17 +1,19 @@
-"""Admin: versioned project/template config (push and settings: Task 7)."""
+"""Admin: versioned project/template config, push/assign, global settings."""
 import json
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from central.audit import record
 from central.config_rules import check_config
 from central.deps import get_db, require_admin, require_csrf
-from central.models import (AdminUser, ConfigVersion, Project, Template)
+from central.models import (AdminUser, ConfigVersion, Pc, PcAssignment, Project,
+                            Template)
+from central.settings_store import get_poll_interval, set_poll_interval
 from central.versioning import save_version
 from core.profile_manager import ProfileManager, ProjectConfigError
 
@@ -204,3 +206,79 @@ def template_version(version: int, template_id: TemplateId,
     if v is None:
         raise HTTPException(404, "unknown version")
     return {"version": v.version, "config": json.loads(v.config_json)}
+
+
+# -- push / assignments -------------------------------------------------------
+class PushIn(BaseModel):
+    pc_ids: list[str] = Field(default_factory=list)
+    all_pcs: bool = False
+
+
+@router.post("/projects/{project_id}/push")
+def push_project(body: PushIn, project_id: ProjectId,
+                 admin: AdminUser = Depends(require_admin),
+                 db: Session = Depends(get_db)):
+    if body.all_pcs == bool(body.pc_ids):
+        raise HTTPException(422, "give either pc_ids or all_pcs=true, not both/neither")
+    _project(db, project_id)
+    if body.all_pcs:
+        target = list(db.scalars(select(Pc.id)))
+    else:
+        target = list(dict.fromkeys(body.pc_ids))
+        known = set(db.scalars(select(Pc.id).where(Pc.id.in_(target))))
+        missing = [p for p in target if p not in known]
+        if missing:
+            raise HTTPException(404, f"unknown PC(s): {', '.join(missing)}")
+    have = set(db.scalars(select(PcAssignment.pc_id).where(
+        PcAssignment.project_id == project_id)))
+    for pc_id in target:
+        if pc_id not in have:
+            db.add(PcAssignment(pc_id=pc_id, project_id=project_id))
+    record(db, f"admin:{admin.username}", "project_pushed",
+           {"project_id": project_id, "pc_ids": target})
+    try:
+        db.commit()
+    except IntegrityError:
+        # A concurrent push inserted the same (pc, project) first: the
+        # assignments now exist, so this push is an idempotent success.
+        db.rollback()
+        record(db, f"admin:{admin.username}", "project_pushed",
+               {"project_id": project_id, "pc_ids": target})
+        db.commit()
+    return {"assigned": target}
+
+
+@router.delete("/projects/{project_id}/assignments/{pc_id}", status_code=204)
+def unassign(pc_id: str, project_id: ProjectId,
+             admin: AdminUser = Depends(require_admin),
+             db: Session = Depends(get_db)):
+    result = db.execute(delete(PcAssignment).where(
+        PcAssignment.project_id == project_id, PcAssignment.pc_id == pc_id))
+    if result.rowcount == 0:
+        raise HTTPException(404, "no such assignment")
+    record(db, f"admin:{admin.username}", "project_unassigned",
+           {"project_id": project_id, "pc_id": pc_id})
+    db.commit()
+    return Response(status_code=204)
+
+
+# -- global settings ------------------------------------------------------------
+class SettingsIn(BaseModel):
+    poll_interval_seconds: int = Field(ge=30, le=86400, strict=True)
+
+
+@router.get("/settings")
+def get_settings(request: Request, db: Session = Depends(get_db)):
+    default = request.app.state.settings.default_poll_interval_seconds
+    return {"poll_interval_seconds": get_poll_interval(db, default)}
+
+
+@router.put("/settings")
+def put_settings(body: SettingsIn,
+                 admin: AdminUser = Depends(require_admin),
+                 db: Session = Depends(get_db)):
+    set_poll_interval(db, body.poll_interval_seconds)
+    record(db, f"admin:{admin.username}", "settings_changed",
+           {"poll_interval_seconds": body.poll_interval_seconds})
+    db.commit()
+    return {"poll_interval_seconds": body.poll_interval_seconds}
