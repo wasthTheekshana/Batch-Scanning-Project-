@@ -147,12 +147,17 @@ def put_template(body: TemplateIn, template_id: TemplateId,
                     row = Template(id=template_id, name=body.name, category=body.category,
                                    config_json="{}", built_in=False, current_version=0)
                     db.add(row)
+                renamed = (row.name, row.category) != (body.name, body.category)
                 row.name, row.category = body.name, body.category
                 changed = save_version(db, "template", row, body.config,
                                        f"admin:{admin.username}")
                 if changed:
                     record(db, f"admin:{admin.username}", "template_saved",
                            {"template_id": template_id, "version": row.current_version})
+                elif renamed:
+                    record(db, f"admin:{admin.username}", "template_updated",
+                           {"template_id": template_id, "name": body.name,
+                            "category": body.category})
                 db.commit()
                 return {"id": row.id, "name": row.name, "version": row.current_version,
                         "changed": changed}

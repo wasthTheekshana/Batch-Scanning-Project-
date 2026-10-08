@@ -97,6 +97,8 @@ def revoke_key(pc_id: str, admin: AdminUser = Depends(require_admin),
                db: Session = Depends(get_db)):
     pc = _get_pc(db, pc_id)
     pc.api_key_hash = None
+    # A pending enrollment code would otherwise mint a fresh key.
+    db.execute(delete(EnrollmentCode).where(EnrollmentCode.pc_id == pc.id))
     record(db, f"admin:{admin.username}", "pc_key_revoked", {"pc_id": pc.id})
     db.commit()
     return Response(status_code=204)

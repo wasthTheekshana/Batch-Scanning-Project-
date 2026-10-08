@@ -3,8 +3,10 @@ import json
 import uuid
 from pathlib import Path
 import pytest
+from sqlalchemy import select
 
 from central.config_rules import check_config
+from central.models import AuditEvent
 
 
 def pid():
@@ -106,6 +108,22 @@ def test_templates_roundtrip_and_never_built_in(admin_client):
                        "built_in": False, "version": 1}]
     assert admin_client.get(f"/admin/templates/{t}").json()["config"] == {
         "ocr": {"zones": []}}
+
+
+def test_template_rename_without_config_change_is_audited(admin_client, app):
+    t = pid()
+    cfg = {"ocr": {"zones": []}}
+    admin_client.put(f"/admin/templates/{t}", json={
+        "name": "Old", "category": "a", "config": cfg})
+    r = admin_client.put(f"/admin/templates/{t}", json={
+        "name": "New", "category": "b", "config": cfg})
+    assert r.status_code == 200
+    assert r.json()["changed"] is False and r.json()["version"] == 1
+    assert r.json()["name"] == "New"
+    with app.state.session_factory() as db:
+        events = [json.loads(e.detail) for e in db.scalars(
+            select(AuditEvent).where(AuditEvent.action == "template_updated"))]
+    assert events == [{"template_id": t, "name": "New", "category": "b"}]
 
 
 def test_template_with_credentials_is_rejected(admin_client):

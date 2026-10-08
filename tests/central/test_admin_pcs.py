@@ -125,3 +125,13 @@ def test_create_pc_duplicate_at_insert_time_returns_409(admin_client, app, monke
     with app.state.session_factory() as db:
         count = db.query(Pc).filter_by(display_name="RaceTest").count()
         assert count == 1
+
+
+def test_revoke_key_also_kills_pending_enrollment_code(admin_client, app, client):
+    d = admin_client.post("/admin/pcs", json={"display_name": "Gone"}).json()
+    assert admin_client.delete(f"/admin/pcs/{d['pc_id']}/key").status_code == 204
+    r = client.post("/pcs/register", json={"code": d["enrollment_code"]})
+    assert r.status_code == 400
+    with app.state.session_factory() as db:
+        assert db.get(Pc, d["pc_id"]).api_key_hash is None
+        assert db.query(EnrollmentCode).filter_by(pc_id=d["pc_id"]).count() == 0
