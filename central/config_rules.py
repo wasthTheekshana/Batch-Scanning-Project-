@@ -9,8 +9,16 @@ MAX_CONFIG_BYTES = 256 * 1024
 MAX_NESTING_DEPTH = 64
 _CREDENTIAL_KEY_PARTS = {"password", "passwd", "passphrase", "secret",
                          "token", "apikey", "privatekey"}
+# Matched on the whole normalised key only: as substrings "pass" would flag
+# "passthrough" and "bypass_mode".
+_CREDENTIAL_EXACT_KEYS = {"pwd", "pass", "credential", "credentials",
+                          "authorization"}
 _ALLOWED_KEY_PATTERNS = {"keyfile", "key_file"}  # Paths, not secrets
-_URL_USERINFO_PATTERN = re.compile(r"://[^/\s:@]+:[^/\s@]+@")
+_URL_USERINFO_PATTERN = re.compile(r"://[^/\s:@]*:[^/\s@]+@")  # user may be empty
+_KEY_VALUE_PATTERN = re.compile(
+    r"(?i)\b(password|pwd|passwd|passphrase|token|secret|sig|signature|"
+    r"apikey|api_key|accesskey)=[^&\s;]+")
+_AUTH_HEADER_PATTERN = re.compile(r"(?i)^\s*(basic|bearer)\s+\S{8,}")
 _PEM_PRIVATE_KEY_PATTERN = re.compile(r"-----BEGIN.*PRIVATE KEY")
 
 
@@ -24,6 +32,8 @@ def _is_credential_key(key: str) -> bool:
     if _normalize_key(key) in _ALLOWED_KEY_PATTERNS:
         return False
     normalized = _normalize_key(key)
+    if normalized in _CREDENTIAL_EXACT_KEYS:
+        return True
     for part in _CREDENTIAL_KEY_PARTS:
         if part in normalized:
             return True
@@ -36,6 +46,12 @@ def _is_credential_value(value: str) -> bool:
         return False
     # Check for URL userinfo (sftp://user:pass@host)
     if _URL_USERINFO_PATTERN.search(value):
+        return True
+    # ODBC / query-string style (Pwd=...;  ?token=...)
+    if _KEY_VALUE_PATTERN.search(value):
+        return True
+    # Authorization header values
+    if _AUTH_HEADER_PATTERN.search(value):
         return True
     # Check for PEM private key headers
     if "-----BEGIN" in value and "PRIVATE KEY" in value:

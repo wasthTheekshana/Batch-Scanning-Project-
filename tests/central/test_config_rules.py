@@ -121,3 +121,46 @@ def test_moderately_nested_config_accepted():
     current["value"] = "x"
 
     check_config(cfg)  # Should not raise
+
+
+# M3: scanner gaps
+@pytest.mark.parametrize("key", ["pwd", "Pwd", "pass", "PASS", "credential",
+                                 "credentials", "Credentials", "authorization",
+                                 "Authorization"])
+def test_exact_credential_keys_are_flagged(key):
+    assert find_credential_path({"db": {key: "v"}}) == f"db.{key}"
+
+
+@pytest.mark.parametrize("key", ["passthrough", "bypass_mode", "pass_through",
+                                 "authorization_mode", "credential_store_path"])
+def test_exact_key_match_is_not_a_substring_match(key):
+    assert find_credential_path({"db": {key: "v"}}) is None
+
+
+@pytest.mark.parametrize("value", [
+    "Driver={SQL Server};Server=h;Uid=u;Pwd=hunter2;",
+    "DSN=x;PASSWORD=abc",
+    "https://h/path?token=abc123&page=2",
+    "https://h/?sig=AbCdEf",
+    "host=h;apikey=zzz",
+    "https://h/?x=1&secret=s",
+    "Basic dXNlcjpwYXNzd29yZA==",
+    "  bearer abcdefghijkl",
+    "sftp://:pw@host/path",
+])
+def test_credential_value_patterns_are_flagged(value):
+    assert find_credential_path({"endpoint": value}) == "endpoint"
+    assert find_credential_path({"list": [value]}) == "list[0]"
+
+
+@pytest.mark.parametrize("value", [
+    "https://example.com/?page=2",
+    "https://example.com:8080/path",
+    "Server=h;Database=d;Trusted_Connection=yes",
+    "bearer",
+    "basic short",
+    "sftp://user@host/path",
+    "bypass_mode=on",
+])
+def test_harmless_values_are_not_flagged(value):
+    assert find_credential_path({"endpoint": value}) is None
