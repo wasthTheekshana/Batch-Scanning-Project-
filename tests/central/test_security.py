@@ -61,3 +61,15 @@ def test_audit_record_adds_row_without_committing(app):
         row = db.query(AuditEvent).one()
         assert row.actor == "admin:root" and row.action == "pc_created"
         assert json.loads(row.detail) == {"pc_id": "p1"}
+
+
+def test_lone_surrogates_do_not_crash_or_enumerate():
+    """Lone surrogates (from json.loads) must not raise in any path."""
+    # burn_password_check must not raise (would return 500 revealing unknown user)
+    assert sec.burn_password_check("\ud800") is False
+    # hash_password must not raise (would return 500)
+    h = sec.hash_password("\ud800")
+    # verify_password must work roundtrip
+    assert sec.verify_password("\ud800", h) is True
+    # Different lone surrogate must not match
+    assert sec.verify_password("\ud801", h) is False

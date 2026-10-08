@@ -13,8 +13,10 @@ import bcrypt
 def _prehash(password: str) -> bytes:
     """bcrypt 5 raises on inputs over 72 bytes (and older versions silently
     truncate). Pre-hashing to a fixed 44-byte value makes any password
-    length safe and keeps every character significant."""
-    digest = hashlib.sha256(password.encode("utf-8")).digest()
+    length safe and keeps every character significant. surrogatepass
+    allows lone surrogates (from json.loads) to hash deterministically
+    without raising, preventing username enumeration."""
+    digest = hashlib.sha256(password.encode("utf-8", errors="surrogatepass")).digest()
     return base64.b64encode(digest)
 
 
