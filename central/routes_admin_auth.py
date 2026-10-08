@@ -38,20 +38,22 @@ def record_failed_login(db: Session, user_id: int, max_failures: int,
     Increments failed_count, and if threshold reached, sets locked_until.
     Does NOT increment session_version; session invalidation is only done at logout."""
     now = utcnow()
-    # Atomic increment of failed_count
-    db.execute(update(AdminUser).where(AdminUser.id == user_id).values(
-        failed_count=AdminUser.failed_count + 1))
-    db.commit()
-
-    # Re-read to check if we've hit the threshold
-    user = db.get(AdminUser, user_id)
-    if user.failed_count >= max_failures:
+    # Increment and read in ONE statement: the lock decision must use the
+    # value the database produced, never a cached ORM object.
+    new_count = db.execute(
+        update(AdminUser).where(AdminUser.id == user_id)
+        .values(failed_count=AdminUser.failed_count + 1)
+        .returning(AdminUser.failed_count)
+        .execution_options(synchronize_session=False)).scalar_one()
+    if new_count >= max_failures:
         # Lockout: reset failed_count and set locked_until
         # (session_version NOT incremented to prevent forced logout)
-        db.execute(update(AdminUser).where(AdminUser.id == user_id).values(
-            failed_count=0,
-            locked_until=now + timedelta(minutes=lockout_minutes)))
-        db.commit()
+        db.execute(
+            update(AdminUser).where(AdminUser.id == user_id)
+            .values(failed_count=0,
+                    locked_until=now + timedelta(minutes=lockout_minutes))
+            .execution_options(synchronize_session=False))
+    db.commit()
 
 
 @router.post("/login")

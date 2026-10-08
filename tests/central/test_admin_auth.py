@@ -267,3 +267,29 @@ def test_record_failed_login_atomic(app):
     with factory() as db:
         user = db.scalar(select(AdminUser).where(AdminUser.username == "testuser"))
         assert user.failed_count == 2
+
+
+def test_lockout_decision_uses_db_value_not_stale_cached_object(app):
+    """I1: the session already holds the user at failed_count=0 while another
+    connection moved the DB count to 4; the 5th failure must lock."""
+    from sqlalchemy import update
+
+    from central.routes_admin_auth import record_failed_login
+
+    factory = app.state.session_factory
+    create_admin(factory, "testuser", PW)
+    with factory() as db_a, factory() as db_b:
+        cached = db_a.scalar(
+            select(AdminUser).where(AdminUser.username == "testuser"))
+        assert cached.failed_count == 0
+        db_b.execute(update(AdminUser).where(AdminUser.id == cached.id)
+                     .values(failed_count=4))
+        db_b.commit()
+
+        record_failed_login(db_a, cached.id, 5, 15)
+
+    with factory() as db:
+        fresh = db.scalar(
+            select(AdminUser).where(AdminUser.username == "testuser"))
+        assert fresh.locked_until is not None
+        assert fresh.failed_count == 0

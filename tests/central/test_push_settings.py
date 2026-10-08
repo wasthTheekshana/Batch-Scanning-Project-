@@ -1,3 +1,4 @@
+import json
 import uuid
 
 import pytest
@@ -5,7 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from central.models import PcAssignment
+from central.models import AuditEvent, PcAssignment
 
 
 def _project(c, project_config):
@@ -105,6 +106,35 @@ def test_concurrent_push_of_same_assignment_is_idempotent_success(
     assert state["fired"]
     assert r.status_code == 200 and r.json() == {"assigned": [a]}
     assert _assignment_count(app, p, a) == 1
+
+
+def test_concurrent_push_overlap_still_assigns_every_requested_pc(
+        admin_client, project_config, monkeypatch, app):
+    """I2: a competing insert of (a, p) must not discard the pending (b, p)."""
+    p = _project(admin_client, project_config)
+    a, b = _pc(admin_client, "A"), _pc(admin_client, "B")
+    real_scalars = Session.scalars
+    state = {"fired": False}
+
+    def racing_scalars(self, statement, *args, **kw):
+        result = real_scalars(self, statement, *args, **kw)
+        if "pc_assignments" in str(statement) and not state["fired"]:
+            state["fired"] = True
+            with app.state.session_factory() as other:
+                other.add(PcAssignment(pc_id=a, project_id=p))
+                other.commit()
+        return result
+
+    monkeypatch.setattr(Session, "scalars", racing_scalars)
+    r = admin_client.post(f"/admin/projects/{p}/push", json={"pc_ids": [a, b]})
+    assert state["fired"]
+    assert r.status_code == 200 and sorted(r.json()["assigned"]) == sorted([a, b])
+    assert _assignment_count(app, p, a) == 1
+    assert _assignment_count(app, p, b) == 1
+    with app.state.session_factory() as s:
+        pushed = [json.loads(e.detail) for e in s.scalars(
+            select(AuditEvent).where(AuditEvent.action == "project_pushed"))]
+    assert len(pushed) == 1 and sorted(pushed[0]["pc_ids"]) == sorted([a, b])
 
 
 def test_unassign(admin_client, project_config):

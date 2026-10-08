@@ -229,22 +229,24 @@ def push_project(body: PushIn, project_id: ProjectId,
         missing = [p for p in target if p not in known]
         if missing:
             raise HTTPException(404, f"unknown PC(s): {', '.join(missing)}")
-    have = set(db.scalars(select(PcAssignment.pc_id).where(
-        PcAssignment.project_id == project_id)))
-    for pc_id in target:
-        if pc_id not in have:
-            db.add(PcAssignment(pc_id=pc_id, project_id=project_id))
-    record(db, f"admin:{admin.username}", "project_pushed",
-           {"project_id": project_id, "pc_ids": target})
-    try:
-        db.commit()
-    except IntegrityError:
-        # A concurrent push inserted the same (pc, project) first: the
-        # assignments now exist, so this push is an idempotent success.
-        db.rollback()
+    # A concurrent push may insert some of the same (pc, project) rows between
+    # our read and commit. The rollback discards every pending insert, so
+    # re-read what exists and retry for the PCs still missing.
+    for attempt in range(3):
+        have = set(db.scalars(select(PcAssignment.pc_id).where(
+            PcAssignment.project_id == project_id)))
+        for pc_id in target:
+            if pc_id not in have:
+                db.add(PcAssignment(pc_id=pc_id, project_id=project_id))
         record(db, f"admin:{admin.username}", "project_pushed",
                {"project_id": project_id, "pc_ids": target})
-        db.commit()
+        try:
+            db.commit()
+            break
+        except IntegrityError:
+            db.rollback()
+    else:
+        raise HTTPException(409, "concurrent update, retry")
     return {"assigned": target}
 
 
