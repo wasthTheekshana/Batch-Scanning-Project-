@@ -22,8 +22,9 @@ def get_db(request: Request) -> Iterator[Session]:
 def require_admin(request: Request,
                   db: Session = Depends(get_db)) -> AdminUser:
     admin_id = request.session.get("admin_id")
+    session_version = request.session.get("sv")
     user = db.get(AdminUser, admin_id) if admin_id else None
-    if user is None:
+    if user is None or session_version != user.session_version:
         raise HTTPException(401, "login required")
     return user
 

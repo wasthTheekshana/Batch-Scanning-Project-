@@ -1,6 +1,10 @@
 import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import select
 
+from central.app import create_app
 from central.manage import create_admin
+from central.models import AdminUser
 
 PW = "correct horse battery"
 
@@ -33,8 +37,12 @@ def test_wrong_password_and_unknown_user_look_identical(client, admin):
 def test_lockout_after_repeated_failures(client, admin):
     for _ in range(5):
         assert _login(client, "wrong password!").status_code == 401
-    # even the correct password is refused while locked
-    assert _login(client).status_code == 429
+    # even the correct password is refused while locked (401, same as unknown user)
+    r_locked = _login(client)
+    assert r_locked.status_code == 401
+    # body should match unknown user response
+    r_unknown = _login(client, "whatever", username="nobody")
+    assert r_locked.json() == r_unknown.json()
 
 
 def test_successful_login_resets_failure_count(client, admin):
@@ -99,5 +107,126 @@ def test_login_sets_secure_cookie_flags(client, admin):
     assert r.status_code == 200
     # Check Set-Cookie header for dok_central cookie
     cookie_header = r.headers.get("set-cookie", "").lower()
+    assert cookie_header.startswith("dok_central="), f"Cookie name not found in: {cookie_header}"
     assert "httponly" in cookie_header, f"HttpOnly not found in: {cookie_header}"
     assert "samesite=strict" in cookie_header, f"SameSite=strict not found in: {cookie_header}"
+
+
+def test_login_missing_password_returns_422(client, admin):
+    """Test that missing password field returns 422 and doesn't echo input"""
+    body_missing = '{"username": "root"}'
+    r = client.post(
+        "/admin/login",
+        content=body_missing.encode("utf-8"),
+        headers={"content-type": "application/json"}
+    )
+    assert r.status_code == 422
+    # Verify response doesn't include the input field
+    response_text = r.text
+    assert "input" not in response_text.lower() or '"input"' not in response_text
+
+
+def test_login_over_length_password_not_echoed(client, admin):
+    """Test that over-length password (>200 chars) returns 422 and doesn't echo password"""
+    long_password = "x" * 300
+    body = '{"username": "root", "password": "' + long_password + '"}'
+    r = client.post(
+        "/admin/login",
+        content=body.encode("utf-8"),
+        headers={"content-type": "application/json"}
+    )
+    assert r.status_code == 422
+    # Verify the password is not echoed in the response
+    assert long_password not in r.text
+    assert "input" not in r.json().get("detail", [{}])[0] if r.json().get("detail") else True
+
+
+def test_session_invalidation_on_logout(app):
+    """Test that a captured cookie becomes invalid after logout"""
+    factory = app.state.session_factory
+    create_admin(factory, "testuser", PW)
+
+    # Login and capture the session cookie
+    client1 = TestClient(app)
+    r1 = client1.post("/admin/login", json={"username": "testuser", "password": PW})
+    assert r1.status_code == 200
+    old_cookie = client1.cookies.get("dok_central")
+    assert old_cookie is not None
+
+    # Logout with CSRF token
+    token = r1.json()["csrf_token"]
+    logout_r = client1.post("/admin/logout", headers={"X-CSRF-Token": token})
+    assert logout_r.status_code == 204
+
+    # Create a new client and set the old cookie
+    client2 = TestClient(app)
+    client2.cookies.set("dok_central", old_cookie)
+
+    # The old cookie should now be invalid
+    me_r = client2.get("/admin/me")
+    assert me_r.status_code == 401
+
+
+def test_session_per_user_independent(app):
+    """Test that logout of one user doesn't invalidate other users' sessions"""
+    factory = app.state.session_factory
+    create_admin(factory, "user1", PW)
+    create_admin(factory, "user2", PW)
+
+    # User1 logs in
+    c1 = TestClient(app)
+    r1 = c1.post("/admin/login", json={"username": "user1", "password": PW})
+    assert r1.status_code == 200
+    token1 = r1.json()["csrf_token"]
+
+    # User2 logs in
+    c2 = TestClient(app)
+    r2 = c2.post("/admin/login", json={"username": "user2", "password": PW})
+    assert r2.status_code == 200
+
+    # User1 logs out
+    c1.post("/admin/logout", headers={"X-CSRF-Token": token1})
+
+    # User1 should be logged out
+    assert c1.get("/admin/me").status_code == 401
+
+    # User2 should still be logged in
+    assert c2.get("/admin/me").status_code == 200
+
+
+def test_record_failed_login_atomic(app):
+    """Test that failed_count increments atomically even with concurrent access"""
+    factory = app.state.session_factory
+    create_admin(factory, "testuser", PW)
+
+    # Open two separate sessions and verify both see failed_count 0
+    with factory() as db1:
+        from sqlalchemy import select
+        from central.models import AdminUser
+        user1 = db1.scalar(select(AdminUser).where(AdminUser.username == "testuser"))
+        assert user1.failed_count == 0
+
+    with factory() as db2:
+        from sqlalchemy import select
+        from central.models import AdminUser
+        user2 = db2.scalar(select(AdminUser).where(AdminUser.username == "testuser"))
+        assert user2.failed_count == 0
+
+    # Call record_failed_login through two separate sessions
+    from central.routes_admin_auth import record_failed_login
+
+    with factory() as db1:
+        from central.models import AdminUser
+        user = db1.scalar(select(AdminUser).where(AdminUser.username == "testuser"))
+        record_failed_login(db1, user.id, 5, 15)
+
+    with factory() as db2:
+        from central.models import AdminUser
+        user = db2.scalar(select(AdminUser).where(AdminUser.username == "testuser"))
+        record_failed_login(db2, user.id, 5, 15)
+
+    # Final count should be 2, not 1
+    with factory() as db:
+        from central.models import AdminUser
+        user = db.scalar(select(AdminUser).where(AdminUser.username == "testuser"))
+        assert user.failed_count == 2

@@ -43,6 +43,7 @@ class AdminUser(Base):
     role: Mapped[str] = mapped_column(String(20), default="admin")
     failed_count: Mapped[int] = mapped_column(Integer, default=0)
     locked_until: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    session_version: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class Project(Base):

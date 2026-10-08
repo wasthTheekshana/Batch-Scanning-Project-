@@ -1,6 +1,5 @@
 """FastAPI application factory."""
 from contextlib import asynccontextmanager
-from json import JSONDecodeError
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -32,25 +31,16 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request, exc):
-        # Sanitize errors to remove surrogate characters from input
+        """Global validation error handler: return only type, loc, msg (no input/ctx).
+        This prevents echoing back user-supplied values in error responses."""
         errors = []
         for error in exc.errors():
-            # Create a new dict with safe values
-            error_dict = {}
-            for key, value in error.items():
-                if key == 'input':
-                    # Try to encode input; skip if it contains surrogates
-                    try:
-                        str(value).encode('utf-8')
-                        error_dict[key] = value
-                    except UnicodeEncodeError:
-                        # Skip the input field if it has surrogates
-                        pass
-                elif key == 'ctx':
-                    # Skip ctx as it may contain non-serializable objects
-                    pass
-                else:
-                    error_dict[key] = value
+            # Extract only safe fields: type, loc, msg
+            error_dict = {
+                "type": error.get("type"),
+                "loc": error.get("loc"),
+                "msg": error.get("msg")
+            }
             errors.append(error_dict)
         return JSONResponse(
             status_code=422,
