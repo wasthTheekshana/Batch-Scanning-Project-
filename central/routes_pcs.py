@@ -1,6 +1,7 @@
 """PC-facing endpoints: registration, heartbeat (config pull added in Task 8)."""
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from central.audit import record
@@ -20,16 +21,25 @@ class RegisterIn(BaseModel):
 def register(body: RegisterIn, request: Request,
              db: Session = Depends(get_db)):
     now = utcnow()
-    row = db.get(EnrollmentCode, hash_secret(body.code))
-    # unknown, used and expired codes all fail the same way
-    if row is None or row.used_at is not None or row.expires_at < now:
+    h = hash_secret(body.code)
+    # Claim the code atomically: update only if unused and not expired
+    res = db.execute(update(EnrollmentCode)
+        .where(EnrollmentCode.code_hash == h,
+               EnrollmentCode.used_at.is_(None),
+               EnrollmentCode.expires_at >= now)
+        .values(used_at=now))
+    if res.rowcount != 1:
+        db.rollback()
         raise HTTPException(400, "invalid or expired enrollment code")
+    row = db.get(EnrollmentCode, h)   # now ours; read pc_id
     pc = db.get(Pc, row.pc_id)
+    if pc is None:   # dangling code -> uniform 400, not 500
+        db.rollback()
+        raise HTTPException(400, "invalid or expired enrollment code")
     api_key = new_api_key()
     pc.api_key_hash = hash_secret(api_key)
     pc.registered_at = now
     pc.last_seen_at = now
-    row.used_at = now
     record(db, f"pc:{pc.id}", "pc_registered", {})
     db.commit()
     settings = request.app.state.settings
