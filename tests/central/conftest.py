@@ -53,3 +53,8 @@ else:
         assert reg.status_code == 200
         return {"pc_id": d["pc_id"], "api_key": reg.json()["api_key"],
                 "client": pc_client, "code": d["enrollment_code"]}
+
+    @pytest.fixture()
+    def project_config(tmp_path):
+        from core.profile_manager import ProfileManager
+        return ProfileManager(tmp_path / "pm").create("Seed")
