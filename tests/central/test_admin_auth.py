@@ -364,3 +364,18 @@ def test_create_admin_is_audited_as_cli_without_password(app):
     events = _events(app, "admin_created")
     assert events == [("cli", {"username": "newbie", "role": "admin"})]
     assert PW not in json.dumps(events)
+
+
+def test_login_cookie_is_secure_when_cookie_secure_enabled(tmp_path):
+    from central.settings import Settings
+
+    secure_app = create_app(Settings(
+        database_url=f"sqlite:///{tmp_path / 'secure.db'}",
+        session_secret="x" * 40, cookie_secure=True))
+    create_admin(secure_app.state.session_factory, "root", PW)
+    with TestClient(secure_app) as c:
+        r = _login(c)
+    assert r.status_code == 200
+    cookie = r.headers["set-cookie"].lower()
+    assert cookie.startswith("dok_central=")
+    assert "secure" in [part.strip() for part in cookie.split(";")]

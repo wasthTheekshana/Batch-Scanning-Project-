@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from central import security as sec
 from central.audit import record
 from central.models import AuditEvent
@@ -87,3 +89,12 @@ def test_hash_secret_lone_surrogates_differ():
     hash1 = sec.hash_secret("\ud800")
     hash2 = sec.hash_secret("\ud801")
     assert hash1 != hash2
+
+
+@pytest.mark.real_bcrypt
+def test_hash_password_uses_production_cost_factor():
+    """The suite makes bcrypt cheap; this pins the real cost (>= 12)."""
+    h = sec.hash_password("some password")
+    prefix, cost = h.split("$")[1:3]
+    assert prefix == "2b" and int(cost) >= 12
+    assert sec.verify_password("some password", h)

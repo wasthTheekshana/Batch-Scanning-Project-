@@ -5,6 +5,12 @@ import importlib.util
 
 import pytest
 
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "real_bcrypt: run with the production bcrypt cost factor")
+
+
 _DEPS = ("fastapi", "sqlalchemy", "httpx", "itsdangerous")
 if not all(importlib.util.find_spec(m) for m in _DEPS):
     collect_ignore_glob = ["test_*.py"]
@@ -28,6 +34,28 @@ else:
     def client(app):
         with TestClient(app) as c:
             yield c
+
+    import bcrypt
+
+    import central.security
+
+    _CHEAP_ROUNDS = 4
+    _CHEAP_GENSALT = bcrypt.gensalt  # captured before any patching
+    _CHEAP_DUMMY = bcrypt.hashpw(
+        central.security._prehash("timing-equaliser"),
+        _CHEAP_GENSALT(rounds=_CHEAP_ROUNDS)).decode()
+
+    @pytest.fixture(autouse=True)
+    def _cheap_bcrypt(request, monkeypatch):
+        """bcrypt at production cost (12) dominates the suite's runtime.
+        Opt out with @pytest.mark.real_bcrypt."""
+        if request.node.get_closest_marker("real_bcrypt"):
+            return
+        monkeypatch.setattr(
+            central.security.bcrypt, "gensalt",
+            lambda rounds=_CHEAP_ROUNDS, prefix=b"2b": _CHEAP_GENSALT(
+                rounds=_CHEAP_ROUNDS, prefix=prefix))
+        monkeypatch.setattr(central.security, "_DUMMY_HASH", _CHEAP_DUMMY)
 
     from central.manage import create_admin
 
