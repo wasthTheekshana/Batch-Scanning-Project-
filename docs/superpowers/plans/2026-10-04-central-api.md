@@ -28,6 +28,15 @@
 
 - `GET /pcs/{pc_id}/config` returns `{"pc_id": str, "poll_interval_seconds": int, "projects": [{"project_id": str, "name": str, "version": int, "config": dict}]}`. `version` is central's per-project integer, starting at 1, bumped only when the config JSON actually changes.
 - Auth for PC calls: `Authorization: Bearer <api_key>`; optional `X-Operator-Id` header (audit only).
+- **As built (2026-10-04, after the final review) — plan 2 must honour these:**
+  - **Identity & enrollment:** a PC learns its own id and key only from `POST /pcs/register {"code": ...}` → `{pc_id, api_key, poll_interval_seconds}` (code is single-use, 60 min). The server URL is out-of-band (installer / Admin panel). Store `pc_id` + `api_key` (DPAPI keystore) and use `pc_id` in every path.
+  - **Error meanings:** `400` on register = bad/used/expired code (indistinguishable by design); `401` on a PC call = key missing, revoked or replaced → the PC must re-enroll (admin issues a new code); `403` = the key belongs to another PC (misconfigured `pc_id`). Never retry 401/403 in a loop; log and keep running on the last-known-good local config. `5xx`/network errors: back off and keep the local config (never block scanning).
+  - **Versions:** compare ONLY the outer `version` (central's per-project integer) against the version stored locally. The `version` key embedded inside `config` is the project file's own counter (`ProfileManager.save` bumps it on the PC) and must NOT be used for sync decisions; store the central version separately.
+  - **Unassignment:** a project that disappears from `projects` was unassigned by an admin. Phase-1 behaviour for the client: keep the local project but stop updating it (do not delete local data); surface it in the Admin panel as "no longer managed centrally".
+  - **Templates are not delivered to PCs in Phase 1** (admin-side authoring aid only); the pull contract covers projects only.
+  - **`X-Operator-Id`:** self-asserted, audit-only; send ASCII (percent-encode anything else) — the server treats header bytes as latin-1 and caps at 100 chars.
+  - **Polling:** use `poll_interval_seconds` from the last response (30..86400, default 600); pull on startup and every interval; `heartbeat` is optional in Phase 1 (a successful pull already refreshes `last_seen_at`). No ETag/conditional GET: comparing versions client-side is enough.
+  - **Config contents:** central stores/returns the FULL project config but rejects configs containing credential-like keys/values; so a pulled config has no secrets. Pulled configs must never carry SFTP passwords — those stay in the PC's local config.
 - **Open decision for plan 2 (flag to the user before building it):** project configs contain PC-local sections (`delivery`, `export`, `scanner` — local paths, SFTP targets). Central stores the full config, but rejects credentials (Task 6). Plan 2's sync client should overlay the PC's own local `delivery`/`export`/`scanner` on top of pulled configs, mirroring `_LIVE_ONLY_TOP_KEYS` in `core/template_manager.py`.
 
 ## Review Focus
