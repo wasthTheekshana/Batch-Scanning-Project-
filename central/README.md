@@ -27,6 +27,15 @@ Run behind a reverse proxy that terminates TLS. Do not expose uvicorn directly.
   `client_max_body_size 1m;`). The service's 256 KB config cap applies only
   after the body has been parsed, so it does not protect against oversized
   uploads on its own.
+- The deployment MUST include `core/profile_manager.py` and
+  `core/project_schema.json`: `central` imports them to validate project
+  configs. Shipping `central/` alone fails at import time.
+- On an empty Postgres, start the FIRST time with ONE worker
+  (`--workers 1`) so the `create_all()` DDL does not race between workers;
+  scale workers afterwards.
+- `create_all()` never alters existing tables. At the first production deploy
+  generate an Alembic baseline from the models and `alembic stamp` it, so
+  later schema changes are migrations.
 
 ## Enrolling a PC
 
@@ -43,7 +52,12 @@ Run behind a reverse proxy that terminates TLS. Do not expose uvicorn directly.
   expire after 8 hours.
 - Lockout: 5 consecutive failed logins lock the account for 15 minutes. A
   locked account and a wrong password return the same 401, so lockout state
-  cannot be probed.
+  cannot be probed. Lockout does NOT revoke live sessions: an already-issued
+  cookie stays valid until logout or the 8 h expiry.
+- Authentication events (`admin_login`, `admin_login_failed`, `admin_locked`,
+  `admin_logout`, `admin_created`) are written to `audit_events` and to the
+  `dokscanner.central` logger (INFO for login/logout, WARNING for failed/locked;
+  no passwords). Unknown usernames are recorded without the attempted name.
 
 ## Security properties
 
@@ -53,8 +67,12 @@ Run behind a reverse proxy that terminates TLS. Do not expose uvicorn directly.
 
 ## Operational notes
 
-- Tables are created with `create_all()`; adopt Alembic before the first
-  schema change after go-live.
+- Tables are created with `create_all()`; see "Deployment requirements" for
+  the Alembic baseline.
+- Not available yet (needed by dashboard plan 3): admin password reset or
+  disable, "revoke all sessions", PC deletion, and an audit-log read API.
+- Audit text can contain user-supplied characters: any UI that shows it MUST
+  render it as plain text (never HTML).
 - `audit_events` grows by one row per PC poll (default every 10 minutes);
   plan retention before large fleets.
 - A project pushed to "all PCs" reaches only PCs that exist at that moment.
