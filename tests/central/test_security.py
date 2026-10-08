@@ -1,0 +1,63 @@
+import json
+
+from central import security as sec
+from central.audit import record
+from central.models import AuditEvent
+
+
+def test_password_roundtrip():
+    h = sec.hash_password("pw one")
+    assert sec.verify_password("pw one", h)
+    assert not sec.verify_password("pw two", h)
+
+
+def test_long_and_multibyte_passwords_work_and_stay_significant():
+    long_pw = "a" * 150
+    h = sec.hash_password(long_pw)
+    assert sec.verify_password(long_pw, h)
+    assert not sec.verify_password("a" * 149 + "b", h)  # tail is not truncated
+    assert sec.verify_password("pässwörd-日本語-" * 10, sec.hash_password("pässwörd-日本語-" * 10))
+    assert sec.burn_password_check("z" * 200) is False  # must not raise
+
+
+def test_verify_password_with_garbage_hash_is_false_not_error():
+    assert sec.verify_password("x", "not-a-bcrypt-hash") is False
+
+
+def test_burn_password_check_is_always_false():
+    assert sec.burn_password_check("whatever") is False
+
+
+def test_api_keys_are_unique_and_prefixed():
+    a, b = sec.new_api_key(), sec.new_api_key()
+    assert a != b and a.startswith("dsk_") and len(a) >= 40
+
+
+def test_hash_secret_is_deterministic_sha256_hex():
+    assert sec.hash_secret("a") == sec.hash_secret("a")
+    assert len(sec.hash_secret("a")) == 64
+    assert sec.hash_secret("a") != sec.hash_secret("b")
+
+
+def test_enrollment_codes_are_long_and_unique():
+    a, b = sec.new_enrollment_code(), sec.new_enrollment_code()
+    assert a != b and len(a) >= 16
+
+
+def test_sanitize_log_value_strips_control_chars_and_truncates():
+    assert sec.sanitize_log_value("op\nFORGED: x") == "op?FORGED: x"
+    assert sec.sanitize_log_value("a\r\x00b\x7fc") == "a??b?c"
+    assert len(sec.sanitize_log_value("x" * 500)) == 100
+    assert sec.sanitize_log_value(None) == ""
+
+
+def test_audit_record_adds_row_without_committing(app):
+    with app.state.session_factory() as db:
+        record(db, "admin:root", "pc_created", {"pc_id": "p1"})
+        db.rollback()
+        assert db.query(AuditEvent).count() == 0
+        record(db, "admin:root", "pc_created", {"pc_id": "p1"})
+        db.commit()
+        row = db.query(AuditEvent).one()
+        assert row.actor == "admin:root" and row.action == "pc_created"
+        assert json.loads(row.detail) == {"pc_id": "p1"}
