@@ -5,6 +5,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from central.audit import record
@@ -53,7 +54,11 @@ def create_pc(body: PcIn, request: Request,
     pc = Pc(id=str(uuid4()), display_name=body.display_name,
             created_at=utcnow())
     db.add(pc)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "a PC with that name already exists")
     code, expires = issue_code(db, pc, request.app.state.settings)
     record(db, f"admin:{admin.username}", "pc_created", {"pc_id": pc.id})
     db.commit()

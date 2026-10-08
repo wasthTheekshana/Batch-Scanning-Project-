@@ -1,7 +1,8 @@
 """Tests for SafeStr validator (rejects lone surrogates)."""
 import pytest
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
+from central.routes_admin_pcs import PcIn
 from central.textsafe import SafeStr
 
 
@@ -16,9 +17,12 @@ def test_valid_utf8_accepted():
 
 
 def test_empty_string_rejected():
-    """Empty string is rejected by min_length constraint (handled by Field)."""
-    # This would be handled by Field constraints, not SafeStr validator itself
-    pass
+    """Empty string is rejected by min_length constraint on PcIn.display_name."""
+    with pytest.raises(ValidationError) as exc_info:
+        PcIn(display_name="")
+    errors = exc_info.value.errors()
+    assert len(errors) == 1
+    assert errors[0]["type"] == "string_too_short"
 
 
 def test_lone_surrogate_rejected():

@@ -1,4 +1,6 @@
 """Admin PC management endpoints."""
+import json
+
 from central.models import EnrollmentCode, Pc
 
 
@@ -73,7 +75,6 @@ def test_post_pc_with_lone_surrogate_returns_422(client, admin):
     client.headers["X-CSRF-Token"] = csrf
 
     # Send raw JSON with lone surrogate
-    import json
     body = json.dumps({"display_name": "\ud800"})
     r = client.post(
         "/admin/pcs",
@@ -81,3 +82,46 @@ def test_post_pc_with_lone_surrogate_returns_422(client, admin):
         headers={"content-type": "application/json"}
     )
     assert r.status_code == 422
+
+
+def test_create_pc_duplicate_at_insert_time_returns_409(admin_client, app, monkeypatch):
+    """Test that duplicate name caught at insert time (race condition) returns 409, not 500.
+
+    Simulates concurrent creates: both threads pass the select check, but the second
+    thread hits the UNIQUE constraint at insert time.
+    """
+    from sqlalchemy.orm import Session
+    from central.models import utcnow
+    from uuid import uuid4
+
+    # Pre-insert a PC with the target name
+    with app.state.session_factory() as db:
+        pc = Pc(id=str(uuid4()), display_name="RaceTest", created_at=utcnow())
+        db.add(pc)
+        db.commit()
+
+    # Patch Session.scalar to return None for the first call (the existence check)
+    # This simulates the race condition where both threads see the name as non-existent
+    original_scalar = Session.scalar
+    call_count = [0]
+
+    def patched_scalar(self, stmt):
+        call_count[0] += 1
+        # Return None for the first scalar call (the duplicate check)
+        if call_count[0] == 1:
+            call_count[0] = 0  # Reset for next request
+            return None
+        return original_scalar(self, stmt)
+
+    monkeypatch.setattr(Session, "scalar", patched_scalar)
+
+    # Try to create another PC with the same name
+    # The pre-check will pass (scalar returns None), but insert will fail with IntegrityError
+    r = admin_client.post("/admin/pcs", json={"display_name": "RaceTest"})
+    assert r.status_code == 409
+    assert "already exists" in r.json()["detail"]
+
+    # Verify exactly one PC with that name exists in the database
+    with app.state.session_factory() as db:
+        count = db.query(Pc).filter_by(display_name="RaceTest").count()
+        assert count == 1
