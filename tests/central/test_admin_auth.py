@@ -122,8 +122,21 @@ def test_login_missing_password_returns_422(client, admin):
     )
     assert r.status_code == 422
     # Verify response doesn't include the input field
-    response_text = r.text
-    assert "input" not in response_text.lower() or '"input"' not in response_text
+    assert "input" not in r.text
+
+
+def test_login_surrogate_in_username_only_returns_422(client, admin):
+    """F1 Regression: surrogate in username (no password field) returns 422, not 500"""
+    # Raw JSON body with surrogate in username, password omitted
+    body_with_surrogate = '{"username": "\\ud800"}'
+    r = client.post(
+        "/admin/login",
+        content=body_with_surrogate.encode("utf-8"),
+        headers={"content-type": "application/json"}
+    )
+    assert r.status_code == 422
+    # Verify response doesn't include the input field (which would contain the surrogate)
+    assert "input" not in r.text
 
 
 def test_login_over_length_password_not_echoed(client, admin):
@@ -138,7 +151,8 @@ def test_login_over_length_password_not_echoed(client, admin):
     assert r.status_code == 422
     # Verify the password is not echoed in the response
     assert long_password not in r.text
-    assert "input" not in r.json().get("detail", [{}])[0] if r.json().get("detail") else True
+    # Verify input field is not present
+    assert "input" not in r.text
 
 
 def test_session_invalidation_on_logout(app):
@@ -194,39 +208,62 @@ def test_session_per_user_independent(app):
     assert c2.get("/admin/me").status_code == 200
 
 
-def test_record_failed_login_atomic(app):
-    """Test that failed_count increments atomically even with concurrent access"""
+def test_lockout_does_not_invalidate_other_sessions(app):
+    """F6: Test that triggering lockout via bad logins doesn't invalidate valid sessions.
+    Lockout should not bump session_version (that's logout's job only)."""
     factory = app.state.session_factory
     create_admin(factory, "testuser", PW)
 
-    # Open two separate sessions and verify both see failed_count 0
-    with factory() as db1:
-        from sqlalchemy import select
-        from central.models import AdminUser
-        user1 = db1.scalar(select(AdminUser).where(AdminUser.username == "testuser"))
-        assert user1.failed_count == 0
+    # Session A: User logs in successfully
+    c_valid = TestClient(app)
+    r_login = c_valid.post("/admin/login", json={"username": "testuser", "password": PW})
+    assert r_login.status_code == 200
+    # Session A should work
+    assert c_valid.get("/admin/me").status_code == 200
 
-    with factory() as db2:
-        from sqlalchemy import select
-        from central.models import AdminUser
-        user2 = db2.scalar(select(AdminUser).where(AdminUser.username == "testuser"))
-        assert user2.failed_count == 0
+    # Session B: Try to login 5 times with wrong password to trigger lockout
+    c_attacker = TestClient(app)
+    for _ in range(5):
+        r = c_attacker.post("/admin/login", json={"username": "testuser", "password": "wrong"})
+        assert r.status_code == 401
 
-    # Call record_failed_login through two separate sessions
+    # Session A should STILL work (lockout doesn't invalidate other sessions)
+    assert c_valid.get("/admin/me").status_code == 200
+
+
+def test_record_failed_login_atomic(app):
+    """F3: Test that failed_count increments atomically even with concurrent access.
+
+    Opens two sessions, loads the user in both (keeping objects alive with failed_count=0),
+    then calls record_failed_login through both. With atomic UPDATE, final count is 2.
+    With read-modify-write (+=), would race and give 1."""
     from central.routes_admin_auth import record_failed_login
 
-    with factory() as db1:
-        from central.models import AdminUser
-        user = db1.scalar(select(AdminUser).where(AdminUser.username == "testuser"))
-        record_failed_login(db1, user.id, 5, 15)
+    factory = app.state.session_factory
+    create_admin(factory, "testuser", PW)
 
-    with factory() as db2:
-        from central.models import AdminUser
-        user = db2.scalar(select(AdminUser).where(AdminUser.username == "testuser"))
-        record_failed_login(db2, user.id, 5, 15)
+    # Open two separate sessions and load the user in BOTH
+    # Keep the ORM objects alive to simulate concurrent transactions
+    db1 = factory()
+    db2 = factory()
 
-    # Final count should be 2, not 1
+    try:
+        user1 = db1.scalar(select(AdminUser).where(AdminUser.username == "testuser"))
+        user2 = db2.scalar(select(AdminUser).where(AdminUser.username == "testuser"))
+
+        # Both see failed_count = 0
+        assert user1.failed_count == 0
+        assert user2.failed_count == 0
+        user_id = user1.id
+
+        # Now call record_failed_login through both sessions (simulating concurrent requests)
+        record_failed_login(db1, user_id, 5, 15)
+        record_failed_login(db2, user_id, 5, 15)
+    finally:
+        db1.close()
+        db2.close()
+
+    # Final count should be 2, not 1 (which would happen with read-modify-write race)
     with factory() as db:
-        from central.models import AdminUser
         user = db.scalar(select(AdminUser).where(AdminUser.username == "testuser"))
         assert user.failed_count == 2

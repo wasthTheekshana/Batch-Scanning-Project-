@@ -35,8 +35,8 @@ def record_failed_login(db: Session, user_id: int, max_failures: int,
     """Atomically record a failed login attempt.
 
     Uses UPDATE statement to avoid read-modify-write race conditions.
-    Increments failed_count, and if threshold reached, sets locked_until
-    and increments session_version for invalidation."""
+    Increments failed_count, and if threshold reached, sets locked_until.
+    Does NOT increment session_version; session invalidation is only done at logout."""
     now = utcnow()
     # Atomic increment of failed_count
     db.execute(update(AdminUser).where(AdminUser.id == user_id).values(
@@ -46,11 +46,11 @@ def record_failed_login(db: Session, user_id: int, max_failures: int,
     # Re-read to check if we've hit the threshold
     user = db.get(AdminUser, user_id)
     if user.failed_count >= max_failures:
-        # Lockout: reset failed_count, set locked_until, increment session_version
+        # Lockout: reset failed_count and set locked_until
+        # (session_version NOT incremented to prevent forced logout)
         db.execute(update(AdminUser).where(AdminUser.id == user_id).values(
             failed_count=0,
-            locked_until=now + timedelta(minutes=lockout_minutes),
-            session_version=AdminUser.session_version + 1))
+            locked_until=now + timedelta(minutes=lockout_minutes)))
         db.commit()
 
 
