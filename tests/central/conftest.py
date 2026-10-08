@@ -28,3 +28,17 @@ else:
     def client(app):
         with TestClient(app) as c:
             yield c
+
+    from central.manage import create_admin
+
+    @pytest.fixture()
+    def admin(app):
+        create_admin(app.state.session_factory, "root", "correct horse battery")
+
+    @pytest.fixture()
+    def admin_client(client, admin):
+        r = client.post("/admin/login", json={
+            "username": "root", "password": "correct horse battery"})
+        assert r.status_code == 200
+        client.headers["X-CSRF-Token"] = r.json()["csrf_token"]
+        return client

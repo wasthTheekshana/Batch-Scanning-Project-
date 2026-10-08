@@ -1,8 +1,11 @@
 """FastAPI application factory."""
 from contextlib import asynccontextmanager
+from json import JSONDecodeError
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.responses import JSONResponse
 
 from central.db import make_engine, make_session_factory
 from central.settings import Settings
@@ -26,6 +29,36 @@ def create_app(settings: Settings) -> FastAPI:
         SessionMiddleware, secret_key=settings.session_secret,
         session_cookie="dok_central", https_only=settings.cookie_secure,
         same_site="strict", max_age=8 * 3600)
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request, exc):
+        # Sanitize errors to remove surrogate characters from input
+        errors = []
+        for error in exc.errors():
+            # Create a new dict with safe values
+            error_dict = {}
+            for key, value in error.items():
+                if key == 'input':
+                    # Try to encode input; skip if it contains surrogates
+                    try:
+                        str(value).encode('utf-8')
+                        error_dict[key] = value
+                    except UnicodeEncodeError:
+                        # Skip the input field if it has surrogates
+                        pass
+                elif key == 'ctx':
+                    # Skip ctx as it may contain non-serializable objects
+                    pass
+                else:
+                    error_dict[key] = value
+            errors.append(error_dict)
+        return JSONResponse(
+            status_code=422,
+            content={"detail": errors}
+        )
+
+    from central import routes_admin_auth
+    app.include_router(routes_admin_auth.router)
 
     @app.get("/healthz")
     def healthz():
