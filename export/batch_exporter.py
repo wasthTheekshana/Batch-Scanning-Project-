@@ -10,7 +10,7 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
-from core.safe_paths import safe_join
+from core.safe_paths import contained_file, safe_join
 from export.filename import render
 from export.pdf_writer import write_image_pdf, write_searchable_pdf
 from export.tiff_writer import write_multipage_tiff
@@ -34,12 +34,12 @@ def export_document(images: list[str], export_cfg: dict, ctx: dict,
     if sub := ctx.get("output_folder"):
         out_dir = safe_join(out_dir, sub)
     if fmt == "tiff":
-        return write_multipage_tiff(images, out_dir / f"{name}.tif")
+        return write_multipage_tiff(images, contained_file(out_dir, f"{name}.tif"))
     if fmt == "image_pdf":
-        return write_image_pdf(images, out_dir / f"{name}.pdf")
+        return write_image_pdf(images, contained_file(out_dir, f"{name}.pdf"))
     # searchable_pdf / pdf_a both go through reportlab
     return write_searchable_pdf(images, ocr_texts or [""] * len(images),
-                                out_dir / f"{name}.pdf",
+                                contained_file(out_dir, f"{name}.pdf"),
                                 dpi=ctx.get("dpi", 300))
 
 

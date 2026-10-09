@@ -170,7 +170,9 @@ def test_unsafe_set_folder_rejected_naming_the_rule(value):
         validate_entry(_with_action({"type": "set_folder", "value": value}))
 
 
-@pytest.mark.parametrize("value", ["a/b", "a\\b", "..", 5, None])
+@pytest.mark.parametrize("value", ["a/b", "a\\b", "..", 5, None, "", "name.",
+                                   "name ", "CON", "nul.txt", "Com1",
+                                   "LPT9.pdf", "a\x00b"])
 def test_unsafe_set_filename_rejected(value):
     with pytest.raises(PulledProjectError, match="set_filename"):
         validate_entry(_with_action({"type": "set_filename", "value": value}))
@@ -180,6 +182,7 @@ def test_unsafe_set_filename_rejected(value):
     {"type": "set_folder", "value": "Exceptions/Missing"},
     {"type": "set_folder", "value": ""},
     {"type": "set_filename", "value": "{date}_{counter:04d}"},
+    {"type": "set_filename", "value": "console_{counter}"},
     {"type": "set_validation_status", "value": "rejected"}])
 def test_clean_rule_actions_pass(action):
     validate_entry(_with_action(action))

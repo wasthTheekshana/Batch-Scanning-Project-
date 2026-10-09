@@ -10,7 +10,7 @@ import copy
 from pathlib import Path
 
 from core.profile_manager import DEFAULT_PROJECT, is_safe_project_id
-from core.safe_paths import is_safe_relative_subpath
+from core.safe_paths import is_safe_file_name, is_safe_relative_subpath
 
 LOCAL_ONLY_KEYS = ("scanner", "export", "delivery")
 
@@ -58,10 +58,7 @@ def _check_rule_actions(config: dict) -> None:
             if kind == "set_folder" and not is_safe_relative_subpath(value):
                 raise PulledProjectError(
                     f"unsafe set_folder value in {where}: {value!r}")
-            if kind == "set_filename" and (
-                    not isinstance(value, str) or "/" in value
-                    or "\\" in value or ".." in value
-                    or any(ord(c) < 32 for c in value)):
+            if kind == "set_filename" and not is_safe_file_name(value):
                 raise PulledProjectError(
                     f"unsafe set_filename value in {where}: {value!r}")
 

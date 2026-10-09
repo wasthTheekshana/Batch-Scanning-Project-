@@ -169,7 +169,8 @@ def test_malicious_rule_folder_is_skipped_and_the_other_project_applies(s):
     assert s.db.get_project(evil_id) is None
     assert s.db.get_central_project(evil_id) is None
     assert s.pm.load(good_id)["ocr"]["lang"] == "deu"
-    # nothing was created outside the PC's projects dir
+    # pins "skip + sibling applies": the hostile project left no trace on disk
+    # (the export-time guard itself is covered in test_export.py)
     assert not (s.root / "escape").exists()
     assert not (s.tmp / "escape").exists()
     assert not any("escape" in p.name for p in s.root.rglob("*"))
