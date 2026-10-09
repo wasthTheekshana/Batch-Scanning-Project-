@@ -16,6 +16,18 @@ from pathlib import Path
 import jsonschema
 
 _SAFE_ID = re.compile(r"[A-Za-z0-9-]{1,36}")
+_RESERVED_NAMES = frozenset(
+    {"con", "prn", "aux", "nul"}
+    | {f"com{i}" for i in range(1, 10)} | {f"lpt{i}" for i in range(1, 10)})
+
+
+def is_safe_project_id(project_id) -> bool:
+    """True if project_id can safely become a file name: 1-36 of [A-Za-z0-9-]
+    and not a Windows reserved device name. The single check used for ids that
+    arrive from elsewhere (adopt, pulled central entries)."""
+    return (isinstance(project_id, str)
+            and _SAFE_ID.fullmatch(project_id) is not None
+            and project_id.lower() not in _RESERVED_NAMES)
 _SCHEMA_PATH = Path(__file__).parent / "project_schema.json"
 _SCHEMA = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
 
@@ -105,6 +117,15 @@ class ProfileManager:
 
     def save(self, config: dict) -> dict:
         """Increment version, archive the previous file, persist."""
+        config = self._save_file(config)
+        if self.db:
+            self.db.update_project(config["project_id"], config["name"],
+                                   config, config["version"],
+                                   config.get("status", "active"))
+        return config
+
+    def _save_file(self, config: dict) -> dict:
+        """The file half of save(): validate, archive the old file, write."""
         self.validate(config)
         current = self._path(config["project_id"])
         if current.exists():
@@ -112,10 +133,6 @@ class ProfileManager:
             self._archive(old)
             config = {**config, "version": old["version"] + 1}
         self._write(config)
-        if self.db:
-            self.db.update_project(config["project_id"], config["name"],
-                                   config, config["version"],
-                                   config.get("status", "active"))
         return config
 
     def adopt(self, config: dict) -> dict:
@@ -125,9 +142,15 @@ class ProfileManager:
         safe; the incoming 'version' is ignored (local counter)."""
         self.validate(config)
         project_id = config["project_id"]
-        if not isinstance(project_id, str) or not _SAFE_ID.fullmatch(project_id):
+        if not is_safe_project_id(project_id):
             raise ProjectConfigError(f"unsafe project_id: {project_id!r}")
         if self._path(project_id).exists():
+            if self.db and self.db.get_project(project_id) is None:
+                # file exists but the DB never heard of it: insert the row
+                saved = self._save_file(config)
+                self.db.insert_project(project_id, saved["name"], saved,
+                                      version=saved["version"])
+                return saved
             return self.save(config)
         cfg = {**config, "version": 1}
         self._write(cfg)

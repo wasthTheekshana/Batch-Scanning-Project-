@@ -4,7 +4,7 @@ import json
 import pytest
 
 from core.profile_manager import (DEFAULT_PROJECT, ProfileManager,
-                                  ProjectConfigError)
+                                  ProjectConfigError, is_safe_project_id)
 from data.db import Database
 
 
@@ -85,6 +85,46 @@ def test_adopt_rejects_unsafe_ids_and_writes_nothing(pm, tmp_path, bad_id):
         pm.adopt(_cfg(project_id=bad_id))
     assert list((tmp_path).rglob("evil*")) == []
     assert list((tmp_path / "projects").glob("*.json")) == []
+
+
+def test_adopt_when_file_exists_but_db_row_missing_inserts_row(pm, db, tmp_path):
+    first = pm.adopt(_cfg())
+    pid = first["project_id"]
+    db.conn.execute("DELETE FROM projects WHERE project_id=?", (pid,))
+    db.conn.commit()
+    assert db.get_project(pid) is None
+    out = pm.adopt(_cfg(name="Renamed"))
+    assert out["version"] == 2
+    row = db.get_project(pid)
+    assert row is not None and row["name"] == "Renamed" and row["version"] == 2
+
+
+_BAD_IDS = ["abc\n", 123, None, ["a"], "CON", "nul", "Com1", "LPT9"]
+_GOOD_IDS = ["x" * 36, "console", "com10"]
+
+
+@pytest.mark.parametrize("bad_id", _BAD_IDS)
+def test_is_safe_project_id_rejects(bad_id):
+    assert is_safe_project_id(bad_id) is False
+
+
+@pytest.mark.parametrize("good_id", _GOOD_IDS)
+def test_is_safe_project_id_accepts(good_id):
+    assert is_safe_project_id(good_id) is True
+
+
+@pytest.mark.parametrize("bad_id", _BAD_IDS)
+def test_adopt_rejects_more_unsafe_ids(pm, tmp_path, bad_id):
+    with pytest.raises(ProjectConfigError):
+        pm.adopt(_cfg(project_id=bad_id))
+    assert list((tmp_path / "projects").glob("*.json")) == []
+
+
+@pytest.mark.parametrize("good_id", _GOOD_IDS)
+def test_adopt_accepts_boundary_ids(pm, tmp_path, good_id):
+    out = pm.adopt(_cfg(project_id=good_id))
+    assert out["project_id"] == good_id
+    assert (tmp_path / "projects" / f"{good_id}.json").exists()
 
 
 def test_adopt_rejects_invalid_config(pm):
