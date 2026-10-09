@@ -28,6 +28,15 @@
 
 - `GET /pcs/{pc_id}/config` returns `{"pc_id": str, "poll_interval_seconds": int, "projects": [{"project_id": str, "name": str, "version": int, "config": dict}]}`. `version` is central's per-project integer, starting at 1, bumped only when the config JSON actually changes.
 - Auth for PC calls: `Authorization: Bearer <api_key>`; optional `X-Operator-Id` header (audit only).
+- **As built (2026-10-04, after the final review) — plan 2 must honour these:**
+  - **Identity & enrollment:** a PC learns its own id and key only from `POST /pcs/register {"code": ...}` → `{pc_id, api_key, poll_interval_seconds}` (code is single-use, 60 min). The server URL is out-of-band (installer / Admin panel). Store `pc_id` + `api_key` (DPAPI keystore) and use `pc_id` in every path.
+  - **Error meanings:** `400` on register = bad/used/expired code (indistinguishable by design); `401` on a PC call = key missing, revoked or replaced → the PC must re-enroll (admin issues a new code); `403` = the key belongs to another PC (misconfigured `pc_id`). Never retry 401/403 in a loop; log and keep running on the last-known-good local config. `5xx`/network errors: back off and keep the local config (never block scanning).
+  - **Versions:** compare ONLY the outer `version` (central's per-project integer) against the version stored locally. The `version` key embedded inside `config` is the project file's own counter (`ProfileManager.save` bumps it on the PC) and must NOT be used for sync decisions; store the central version separately.
+  - **Unassignment:** a project that disappears from `projects` was unassigned by an admin. Phase-1 behaviour for the client: keep the local project but stop updating it (do not delete local data); surface it in the Admin panel as "no longer managed centrally".
+  - **Templates are not delivered to PCs in Phase 1** (admin-side authoring aid only); the pull contract covers projects only.
+  - **`X-Operator-Id`:** self-asserted, audit-only; send ASCII (percent-encode anything else) — the server treats header bytes as latin-1 and caps at 100 chars.
+  - **Polling:** use `poll_interval_seconds` from the last response (30..86400, default 600); pull on startup and every interval; `heartbeat` is optional in Phase 1 (a successful pull already refreshes `last_seen_at`). No ETag/conditional GET: comparing versions client-side is enough.
+  - **Config contents:** central stores/returns the FULL project config but rejects configs containing credential-like keys/values; so a pulled config has no secrets. Pulled configs must never carry SFTP passwords — those stay in the PC's local config.
 - **Open decision for plan 2 (flag to the user before building it):** project configs contain PC-local sections (`delivery`, `export`, `scanner` — local paths, SFTP targets). Central stores the full config, but rejects credentials (Task 6). Plan 2's sync client should overlay the PC's own local `delivery`/`export`/`scanner` on top of pulled configs, mirroring `_LIVE_ONLY_TOP_KEYS` in `core/template_manager.py`.
 
 ## Review Focus
@@ -425,6 +434,15 @@ def test_password_roundtrip():
     assert not sec.verify_password("pw two", h)
 
 
+def test_long_and_multibyte_passwords_work_and_stay_significant():
+    long_pw = "a" * 150
+    h = sec.hash_password(long_pw)
+    assert sec.verify_password(long_pw, h)
+    assert not sec.verify_password("a" * 149 + "b", h)  # tail is not truncated
+    assert sec.verify_password("pässwörd-日本語-" * 10, sec.hash_password("pässwörd-日本語-" * 10))
+    assert sec.burn_password_check("z" * 200) is False  # must not raise
+
+
 def test_verify_password_with_garbage_hash_is_false_not_error():
     assert sec.verify_password("x", "not-a-bcrypt-hash") is False
 
@@ -482,19 +500,28 @@ high-entropy random values, so a plain SHA-256 at rest is sufficient and
 allows an indexed lookup."""
 from __future__ import annotations
 
+import base64
 import hashlib
 import secrets
 
 import bcrypt
 
 
+def _prehash(password: str) -> bytes:
+    """bcrypt 5 raises on inputs over 72 bytes (and older versions silently
+    truncate). Pre-hashing to a fixed 44-byte value makes any password
+    length safe and keeps every character significant."""
+    digest = hashlib.sha256(password.encode("utf-8")).digest()
+    return base64.b64encode(digest)
+
+
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode()
+    return bcrypt.hashpw(_prehash(password), bcrypt.gensalt()).decode()
 
 
 def verify_password(password: str, hashed: str) -> bool:
     try:
-        return bcrypt.checkpw(password.encode("utf-8"), hashed.encode())
+        return bcrypt.checkpw(_prehash(password), hashed.encode())
     except ValueError:
         return False
 
@@ -505,7 +532,7 @@ _DUMMY_HASH = hash_password("timing-equaliser")
 def burn_password_check(password: str) -> bool:
     """Spend the same time as a real check so an unknown username is not
     distinguishable from a wrong password by response time."""
-    bcrypt.checkpw(password.encode("utf-8"), _DUMMY_HASH.encode())
+    bcrypt.checkpw(_prehash(password), _DUMMY_HASH.encode())
     return False
 
 
@@ -547,7 +574,7 @@ def record(db, actor: str, action: str, detail: dict | None = None) -> None:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `$env:QT_QPA_PLATFORM='offscreen'; .\.venv\Scripts\python.exe -m pytest tests/central/test_security.py`
-Expected: 8 passed.
+Expected: 9 passed.
 
 - [ ] **Step 5: Commit**
 

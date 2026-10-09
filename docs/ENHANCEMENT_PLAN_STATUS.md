@@ -12,6 +12,16 @@ Last updated: 2026-10-04.
 | 4.4 | Metadata Field Templates | Generalized beyond "banking only" per project direction — 5 built-in templates (Banking/Insurance/HR/Legal/Invoices) + admin "Save as template" so the library grows from real usage |
 | 4.6 | Reporting Output | Explicit rejection-rate/rescan-rate metrics — required untangling the fact that "reject" and "rescan" QC decisions silently write the same `validation_status` value in the DB |
 
+## Multi-PC central service (decided 2026-10-04: more than one scanning PC at go-live)
+
+Spec `docs/superpowers/specs/2026-08-29-central-admin-dashboard-design.md` is now the active build (un-defers §3.3/§3.7 Phase 1). Three plans:
+
+| Plan | Status |
+|---|---|
+| 1. Central backend API (`central/`) | **Built** on branch `central-api` (not yet merged): admin login/CSRF/lockout, PC enrollment (one-time codes), Bearer-key PC auth, versioned project/template config with credential scanning, push/assign, config pull, audit, threat model + SAST triage. |
+| 2. Sync client in DOKScanner.exe | Not started — contract and error semantics are written in `docs/superpowers/plans/2026-10-04-central-api.md` ("Cross-plan contracts"); one user decision pending (PC-local `delivery`/`export`/`scanner` overlay). |
+| 3. React admin dashboard | Not started — needs admin password reset/disable, session revoke-all, PC deletion and an audit-log read API first (listed in `central/README.md`). |
+
 ## Remaining — grouped by why it's not done
 
 ### Group A — explicitly deferred by project decision

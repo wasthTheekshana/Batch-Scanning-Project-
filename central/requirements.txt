@@ -1,0 +1,13 @@
+# Exact pins = the versions this service was developed and tested against.
+# Starlette's SessionMiddleware must stay on a version that only re-signs the
+# cookie when the session changes (that keeps the absolute 8 h expiry).
+fastapi==0.142.4
+starlette==1.7.0
+pydantic==2.13.5
+uvicorn[standard]==0.54.0
+sqlalchemy==2.1.4
+psycopg[binary]==3.3.6
+itsdangerous==2.2.0
+httpx==0.28.1
+bcrypt==5.0.0
+jsonschema==4.26.0

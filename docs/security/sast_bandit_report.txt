@@ -1,4 +1,4 @@
-Run started:2026-08-31 03:07:11.832094+00:00
+Run started:2026-10-08 08:51:15.869705+00:00
 
 Test results:
 >> Issue: [B105:hardcoded_password_string] Possible hardcoded password: '80'
@@ -17,6 +17,38 @@ Test results:
 53	        "output_path": "",
 54	    },
 55	    "delivery": {
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: .\custody\timeline.py:42:12
+41	        rows = db.conn.execute(
+42	            "SELECT rowid AS seq, * FROM custody_events WHERE " + where,
+43	            args).fetchall()
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: .\custody\timeline.py:66:12
+65	        rows = db.conn.execute(
+66	            "SELECT * FROM audit_log WHERE action != ? AND (%s)"
+67	            % " OR ".join(clauses), [_MIRRORED_ACTION] + args).fetchall()
+68	    out = []
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: .\custody\timeline.py:86:12
+85	        rows = db.conn.execute(
+86	            "SELECT document_id, batch_id FROM documents WHERE batch_id IN "
+87	            "(%s)" % ",".join("?" * len(batch_ids)), batch_ids).fetchall()
+88	    return {r["document_id"]: r["batch_id"] for r in rows}
 
 --------------------------------------------------
 >> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
@@ -157,11 +189,11 @@ Test results:
    Severity: Low   Confidence: High
    CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
    More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
-   Location: .\ui\custody_panel.py:20:0
-19	_INCIDENT_STAGES = ["damaged", "missing", "compromised"]
-20	assert set(_CHECKPOINT_STAGES) | set(_INCIDENT_STAGES) | {"receipt"} == \
-21	    VALID_STAGES, "custody_panel's stage lists drifted from VALID_STAGES"
-22	
+   Location: .\ui\custody_panel.py:21:0
+20	_INCIDENT_STAGES = ["damaged", "missing", "compromised"]
+21	assert set(_CHECKPOINT_STAGES) | set(_INCIDENT_STAGES) | {"receipt"} == \
+22	    VALID_STAGES, "custody_panel's stage lists drifted from VALID_STAGES"
+23	
 
 --------------------------------------------------
 >> Issue: [B105:hardcoded_password_string] Possible hardcoded password: '#1E8E5A'
@@ -209,7 +241,7 @@ Test results:
 --------------------------------------------------
 
 Code scanned:
-	Total lines of code: 7135
+	Total lines of code: 8268
 	Total lines skipped (#nosec): 0
 	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
 
@@ -217,11 +249,11 @@ Run metrics:
 	Total issues (by severity):
 		Undefined: 0
 		Low: 15
-		Medium: 3
+		Medium: 6
 		High: 0
 	Total issues (by confidence):
 		Undefined: 0
 		Low: 0
-		Medium: 8
+		Medium: 11
 		High: 10
 Files skipped (0):
