@@ -150,6 +150,13 @@ CREATE TABLE IF NOT EXISTS jobs (
     updated_at   TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS central_projects (
+    project_id      TEXT PRIMARY KEY,
+    central_version INTEGER NOT NULL,
+    managed         INTEGER NOT NULL DEFAULT 1,
+    applied_at      TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_documents_batch ON documents(batch_id);
 CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(validation_status);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
@@ -235,6 +242,42 @@ class Database:
             args = (status,)
         with self._lock:
             return self.conn.execute(q + " ORDER BY name", args).fetchall()
+
+    # -- central sync (multi-PC) -------------------------------------------
+    def set_central_project(self, project_id: str, central_version: int,
+                            managed: bool = True) -> None:
+        with self._lock, self.conn:
+            self.conn.execute(
+                "INSERT INTO central_projects (project_id, central_version, "
+                "managed, applied_at) VALUES (?,?,?,?) "
+                "ON CONFLICT(project_id) DO UPDATE SET "
+                "central_version=excluded.central_version, "
+                "managed=excluded.managed, applied_at=excluded.applied_at",
+                (project_id, central_version, 1 if managed else 0, _now()))
+
+    def get_central_project(self, project_id: str) -> sqlite3.Row | None:
+        with self._lock:
+            return self.conn.execute(
+                "SELECT * FROM central_projects WHERE project_id=?",
+                (project_id,)).fetchone()
+
+    def list_central_projects(self, managed_only: bool = False
+                              ) -> list[sqlite3.Row]:
+        q = "SELECT * FROM central_projects"
+        if managed_only:
+            q += " WHERE managed=1"
+        with self._lock:
+            return self.conn.execute(q + " ORDER BY project_id").fetchall()
+
+    def unmanage_central_project(self, project_id: str) -> None:
+        with self._lock, self.conn:
+            self.conn.execute(
+                "UPDATE central_projects SET managed=0 WHERE project_id=?",
+                (project_id,))
+
+    def unmanage_all_central_projects(self) -> None:
+        with self._lock, self.conn:
+            self.conn.execute("UPDATE central_projects SET managed=0")
 
     # -- batches ----------------------------------------------------------
     def insert_batch(self, batch_id: str, project_id: str,
