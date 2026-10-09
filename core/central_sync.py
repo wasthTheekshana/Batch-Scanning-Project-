@@ -322,12 +322,16 @@ class SyncWorker:
         return float(s.poll_interval_seconds)
 
     # -- lifecycle ----------------------------------------------------------------
-    def start(self, initial_sync: bool = True) -> None:
+    def start(self, initial_sync: bool = True,
+              first_result: SyncResult | None = None) -> None:
+        """initial_sync=False means a sync already ran (e.g. at startup);
+        pass its result as first_result so an unavailable server is retried
+        after RETRY_AFTER_FAILURE instead of after the whole poll interval."""
         if self._thread is not None:
             return
         self._thread = threading.Thread(
-            target=self._run, args=(initial_sync,), name="central-sync",
-            daemon=True)
+            target=self._run, args=(initial_sync, first_result),
+            name="central-sync", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
@@ -346,8 +350,9 @@ class SyncWorker:
         self._wake.set()
 
     # -- loop ------------------------------------------------------------------------
-    def _run(self, initial_sync: bool) -> None:
-        result = self._do_sync() if initial_sync else None
+    def _run(self, initial_sync: bool,
+             first_result: SyncResult | None = None) -> None:
+        result = self._do_sync() if initial_sync else first_result
         while not self._stop.is_set():
             self._wake.wait(self.next_wait(result))
             if self._stop.is_set():
@@ -372,8 +377,10 @@ class SyncWorker:
 
 def startup_sync(service: CentralSyncService,
                  state: CentralState) -> SyncResult | None:
-    """One short, bounded sync before the pipeline profile is chosen. Never
-    raises and never lingers: None when unregistered or if it crashed."""
+    """One short sync before the pipeline profile is chosen. Never raises:
+    None when unregistered or if it crashed. The 5 s limit applies to each
+    socket operation (connect/read); resolving the host name is not covered
+    by it, so a slow DNS lookup can delay startup longer."""
     if not state.is_registered():
         return None
     previous = service.timeout
@@ -397,3 +404,26 @@ def choose_pipeline_profile(db, fallback: Callable[[], dict]) -> dict:
         if row["project_id"] in managed:
             return json.loads(row["config_json"])
     return fallback()
+
+
+def build_central(db, pm: ProfileManager, root, audit, bus,
+                  operator_fn: Callable[[], str]):
+    """Create the central sync objects: (state, service, worker). Central
+    must never stop the application from starting: on any failure log it and
+    return (None, None, None); the app then runs without central sync."""
+    try:
+        state = CentralState(root)
+        service = CentralSyncService(db, pm, state, root, audit=audit,
+                                     operator_fn=operator_fn)
+        worker = SyncWorker(service, state,
+                            on_result=bus.central_synced.emit)
+        return state, service, worker
+    except Exception:
+        logging.exception("central sync disabled this session")
+        return None, None, None
+
+
+def shutdown_central(worker: SyncWorker | None) -> None:
+    """Exit path: stop the sync thread if there is one."""
+    if worker is not None:
+        worker.stop()

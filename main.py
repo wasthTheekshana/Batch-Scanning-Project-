@@ -13,9 +13,8 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import QApplication
 
-from core.central_state import CentralState
-from core.central_sync import (CentralSyncService, SyncWorker,
-                               choose_pipeline_profile, startup_sync)
+from core.central_sync import (build_central, choose_pipeline_profile,
+                               shutdown_central, startup_sync)
 from core.event_bus import EventBus
 from core.job_queue import Pipeline
 from core.profile_manager import ProfileManager
@@ -100,12 +99,13 @@ def main() -> int:
     if login.exec() != login.DialogCode.Accepted:
         return 0
 
-    central_state = CentralState(root)
-    sync_service = CentralSyncService(
-        db, pm, central_state, root, audit=audit,
+    bus = EventBus()
+    central_state, sync_service, sync_worker = build_central(
+        db, pm, root, audit, bus,
         operator_fn=lambda: (Session.current_user().username
                              if Session.current_user() else ""))
-    startup_sync(sync_service, central_state)   # bounded; never blocks startup
+    startup_result = (startup_sync(sync_service, central_state)
+                      if sync_service is not None else None)
     profile = choose_pipeline_profile(
         db, fallback=lambda: build_default_project(pm, db, root))
     ocr_fn = ocr_page if tesseract_available() else None
@@ -121,13 +121,11 @@ def main() -> int:
         audit=audit,
         ocr_fn=ocr_fn,
         working_dir=root / "staging")
-    bus = EventBus()
     pipeline.subscribe(bus.publish_pipeline_event)
     pipeline.start()
     pipeline.recover()
-    sync_worker = SyncWorker(sync_service, central_state,
-                             on_result=bus.central_synced.emit)
-    sync_worker.start(initial_sync=False)   # startup sync already ran above
+    if sync_worker is not None:     # the startup sync already ran above
+        sync_worker.start(initial_sync=False, first_result=startup_result)
 
     window = MainWindow(db, pm, bus, pipeline=pipeline, audit=audit,
                         staging_dir=root / "staging",
@@ -139,7 +137,7 @@ def main() -> int:
     window.show()
     code = app.exec()
 
-    sync_worker.stop()
+    shutdown_central(sync_worker)
     backup_service.stop()
     pipeline.shutdown(wait=False)
     Session.logout(db)

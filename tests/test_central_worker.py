@@ -1,12 +1,16 @@
 import copy
+import logging
 import threading
 
 import pytest
 from PyQt6.QtCore import QObject, pyqtSlot
 
+import core.central_sync
 from core.central_state import CentralState
-from core.central_sync import (RETRY_AFTER_FAILURE, SyncResult, SyncWorker,
-                               choose_pipeline_profile, startup_sync)
+from core.central_sync import (RETRY_AFTER_FAILURE, CentralSyncService,
+                               SyncResult, SyncWorker, build_central,
+                               choose_pipeline_profile, shutdown_central,
+                               startup_sync)
 from core.event_bus import EventBus
 from core.profile_manager import DEFAULT_PROJECT, ProfileManager
 from data.db import Database
@@ -285,3 +289,78 @@ def test_choose_profile_skips_inactive_managed_projects(db, tmp_path):
     pm.save(cfg)
     db.set_central_project("aaaa", 1)
     assert choose_pipeline_profile(db, fallback=lambda: {"fb": 1}) == {"fb": 1}
+
+
+# ---- I2: an unavailable startup sync is retried soon, not after the whole interval -------
+def test_first_unavailable_result_waits_at_most_two_minutes_even_with_long_interval(state):
+    state.update(poll_interval_seconds=86400)
+    w = worker(FakeService([SyncResult("ok")]), state)
+    assert w.next_wait(SyncResult("unavailable")) <= 120.0
+    assert w.next_wait(None) == 86400.0                   # without a result: unchanged
+
+
+def test_unavailable_first_result_triggers_a_retry_without_sync_now(state, monkeypatch):
+    monkeypatch.setattr(core.central_sync, "RETRY_AFTER_FAILURE", 0.05)
+    svc = FakeService([SyncResult("ok")])
+    w = worker(svc, state)
+    w.start(initial_sync=False, first_result=SyncResult("unavailable"))
+    try:
+        assert svc.called.wait(3)                          # timer-driven, nobody woke it
+    finally:
+        w.stop()
+
+
+@pytest.mark.parametrize("first", [None, SyncResult("ok")], ids=["none", "ok"])
+def test_no_first_result_or_ok_result_keeps_waiting_for_the_interval(state, monkeypatch, first):
+    monkeypatch.setattr(core.central_sync, "RETRY_AFTER_FAILURE", 0.05)
+    svc = FakeService([SyncResult("ok")])
+    w = worker(svc, state)
+    w.start(initial_sync=False, first_result=first)
+    try:
+        assert not svc.called.wait(0.4)                    # interval is 600 s
+        w.sync_now()
+        assert svc.called.wait(3)
+    finally:
+        w.stop()
+
+
+# ---- I3: building the central objects can never stop the app --------------------------
+class BusStub:
+    def __init__(self):
+        self.central_synced = type("S", (), {"emit": staticmethod(lambda r: None)})
+
+
+@pytest.fixture()
+def pm_db(tmp_path):
+    d = Database(tmp_path / "b.db")
+    yield d, ProfileManager(tmp_path / "p", d)
+    d.close()
+
+
+def test_build_central_returns_wired_objects(tmp_path, pm_db):
+    db, pm = pm_db
+    bus = BusStub()
+    st, svc, w = build_central(db, pm, tmp_path, None, bus, lambda: "bob")
+    assert isinstance(st, CentralState) and isinstance(svc, CentralSyncService)
+    assert isinstance(w, SyncWorker) and w._on_result is bus.central_synced.emit
+    assert svc._operator_fn() == "bob" and svc.state is st
+
+
+@pytest.mark.parametrize("target", ["CentralState", "CentralSyncService", "SyncWorker"])
+def test_build_central_failure_returns_nones_and_logs(tmp_path, pm_db, monkeypatch,
+                                                      caplog, target):
+    db, pm = pm_db
+
+    def boom(*a, **k):
+        raise OSError("disk on fire")
+    monkeypatch.setattr(core.central_sync, target, boom)
+    with caplog.at_level(logging.ERROR, logger="core.central_sync"):
+        assert build_central(db, pm, tmp_path, None, BusStub(), lambda: "") ==             (None, None, None)
+    assert "central sync disabled this session" in caplog.text
+
+
+def test_shutdown_central_stops_the_worker_only_if_it_exists():
+    shutdown_central(None)                                  # must not raise
+    stopped = []
+    shutdown_central(type("W", (), {"stop": lambda self: stopped.append(1)})())
+    assert stopped == [1]
