@@ -41,8 +41,14 @@ Run behind a reverse proxy that terminates TLS. Do not expose uvicorn directly.
 
 1. Dashboard/API: `POST /admin/pcs {"display_name": "..."}` returns a one-time
    `enrollment_code` (valid 60 minutes).
-2. On the PC, the installer/Admin panel calls `POST /pcs/register {"code": ...}`
-   and stores the returned `api_key` in the DPAPI keystore.
+2. On the PC, an administrator opens Admin > Central, enters the server URL
+   (HTTPS) and the code, and clicks Register. The returned `api_key` is stored
+   DPAPI-protected on that PC and never shown or logged. The PC then pulls its
+   assigned projects at startup and on the server's poll interval.
+   Updated or new projects are written locally at once but only drive scanning
+   after the next DOKScanner restart. The PC keeps its own scanner, export and
+   delivery settings; central owns the processing settings (OCR, QC,
+   separation, rules, index fields).
 3. Lost or compromised PC: `DELETE /admin/pcs/{id}/key`, then issue a new code.
 
 ## Admin sessions and lockout

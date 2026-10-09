@@ -57,6 +57,22 @@ Record pass/fail + notes per item; all must pass before go-live sign-off.
 - [ ] Power-loss simulation (hold power button) → DB passes integrity
       check on restart; latest backup restorable
 
+## 8. Central sync (multi-PC)
+- [ ] Admin > Central: register with a one-time code from the central admin;
+      status shows connected
+- [ ] The assigned project appears in the project list after the first sync
+- [ ] Edit the project on central: the new version arrives on the next sync;
+      the Designer refuses a local save and rollback of that managed project
+- [ ] Unassign the project on central: it stays on the PC, editing is enabled
+      again
+- [ ] Revoke the PC key on central: banner shows re-enrolment is needed and
+      the PC stops polling; a new code restores sync
+- [ ] Stop the central server, then start DOKScanner: it starts within a few
+      seconds and scans normally with the last-known projects
+- [ ] Admin > Central > Disconnect: the projects stay and become editable
+- [ ] A project whose rule has a `..` set_folder value is skipped (listed as
+      skipped), other projects still apply
+
 ## Sign-off
 | Role | Name | Date | Signature |
 |---|---|---|---|

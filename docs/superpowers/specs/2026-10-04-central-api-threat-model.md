@@ -188,3 +188,53 @@ configured reverse proxy; items 1-3 are conditions of that configuration.
     `central/requirements.txt`; Starlette's SessionMiddleware behaviour (cookie
     re-signed only when the session changes) underpins the absolute 8 h expiry
     and must be re-checked on any Starlette upgrade.
+
+## 7. Client side (DOKScanner.exe)
+
+The PC-side sync client (`core/central_client.py`, `central_sync.py`,
+`central_state.py`, `config_overlay.py`, `safe_paths.py`) treats the central
+server and everything it returns as untrusted input. End-to-end tests against
+the real app: `tests/test_central_integration.py`.
+
+**Mitigations**
+
+- Transport: HTTPS only (plain HTTP solely to loopback when an explicit
+  environment switch is set); TLS always verified; redirects never followed;
+  response body capped at 5 MB; non-JSON, non-object, NaN/Infinity and
+  malformed replies are rejected as "unavailable".
+- Credentials: the API key is stored DPAPI-protected, sent only in the
+  Authorization header, and never logged or put in error text. `pc_id` and the
+  key must be printable ASCII, 1-256 chars. Central never sends credentials
+  (the API rejects them with 422), and the client does not take any.
+- `project_id` safety: it becomes a file name, so only safe ids are accepted
+  (no separators, `..`, control characters or Windows reserved names such as
+  CON/NUL/COM1); unsafe entries are skipped, not fatal.
+- Local-only sections: `scanner`, `export` and `delivery` are never taken from
+  central; the PC keeps its own (or defaults for a new project).
+- Rule-action path guard: `set_folder` / `set_filename` values containing
+  `..`, absolute paths, drive letters or control characters cause the project
+  to be skipped. `safe_join` is applied again at export and local delivery (and the same
+  sub-path check at SFTP), so a value that slipped through cannot leave the root.
+- Availability: the startup sync is bounded to 5 s and never blocks scanning;
+  an unreachable server leaves the last-known projects untouched. A revoked key
+  (401/403) is persisted as `auth_failed` and polling stops until
+  re-enrolment. Updates apply on the next restart (the pipeline is never
+  changed under a running batch).
+- Consistency: state writes are generation-guarded, so a sync that started
+  before a register/disconnect cannot overwrite the new registration; apply
+  and register/disconnect are serialised by one lock, with no network call
+  held under it. Server-supplied text is stripped of control characters and
+  truncated before it reaches the audit trail or logs.
+
+**Residual risks**
+
+1. A compromised central (or a stolen admin session) can push arbitrary
+   processing configuration, including rules, to every assigned PC. The path
+   guards limit the damage to the PC's own output tree, not to what the
+   configuration does with documents.
+2. Configs are not signed; TLS to the server is the only integrity control.
+3. `X-Operator-Id` is self-asserted (see item 8 above).
+4. A persistently invalid project is re-skipped, and re-audited, on every
+   poll; this audit noise is not throttled.
+5. The pipeline binds one project at startup, so a change applies only after
+   a restart; a PC with several managed projects runs the first active one.
