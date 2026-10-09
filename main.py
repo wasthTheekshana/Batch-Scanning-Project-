@@ -132,7 +132,10 @@ def main() -> int:
     window = MainWindow(db, pm, bus, pipeline=pipeline, audit=audit,
                         staging_dir=root / "staging",
                         backup_service=backup_service,
-                        cddvd_channel=cddvd_channel)
+                        cddvd_channel=cddvd_channel,
+                        central_state=central_state,
+                        sync_service=sync_service,
+                        sync_worker=sync_worker)
     window.show()
     code = app.exec()
 

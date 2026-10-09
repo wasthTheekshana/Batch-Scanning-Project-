@@ -23,7 +23,8 @@ ROLE_LABELS = {"admin": "Administrator", "operator": "Operator",
 class MainWindow(QMainWindow):
     def __init__(self, db, profile_manager, bus, pipeline=None, audit=None,
                  staging_dir="staging", backup_service=None,
-                 cddvd_channel=None, parent=None):
+                 cddvd_channel=None, central_state=None, sync_service=None,
+                 sync_worker=None, parent=None):
         super().__init__(parent)
         self.db = db
         self.profile_manager = profile_manager
@@ -137,7 +138,11 @@ class MainWindow(QMainWindow):
         if user is not None and user.can("user.manage"):
             self.admin_panel = AdminPanel(db, user,
                                           backup_service=backup_service,
-                                          cddvd_channel=cddvd_channel)
+                                          cddvd_channel=cddvd_channel,
+                                          central_state=central_state,
+                                          central_service=sync_service,
+                                          central_worker=sync_worker,
+                                          bus=bus)
             self.tabs.addTab(self.admin_panel, icon("fa5s.user-shield"),
                              "Admin")
 

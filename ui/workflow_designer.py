@@ -583,7 +583,25 @@ class WorkflowDesigner(QWidget):
                 item.setData(Qt.ItemDataRole.UserRole, zone)
                 item.setText(self._zone_label(zone, self._is_full_page_mode()))
 
+    def _refuse_if_managed(self) -> bool:
+        """True (after telling the user) when the shown project is managed
+        by the central server: local changes would be overwritten at the
+        next sync."""
+        if not self.config:
+            return False
+        rec = self.db.get_central_project(self.config["project_id"])
+        if rec is None or not rec["managed"]:
+            return False
+        QMessageBox.warning(
+            self, "Managed centrally",
+            "This project is managed by the central server; local changes "
+            "would be overwritten at the next sync. Change it in the "
+            "central dashboard instead.")
+        return True
+
     def save(self) -> None:
+        if self._refuse_if_managed():
+            return
         try:
             cfg = self.collect_config()
             RuleEngine(cfg["rules"])          # validate DSL before saving
@@ -658,7 +676,7 @@ class WorkflowDesigner(QWidget):
                                 f"Saved as template “{name.strip()}”.")
 
     def rollback_dialog(self) -> None:
-        if self.config is None:
+        if self.config is None or self._refuse_if_managed():
             return
         versions = self.pm.list_versions(self.config["project_id"])
         if not versions:
