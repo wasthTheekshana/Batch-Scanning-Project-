@@ -4,7 +4,7 @@ import threading
 
 import pytest
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QListWidgetItem, QMessageBox
 
 import ui.central_tab
 from core.central_client import (CentralRegistrationError, CentralUnavailable,
@@ -373,21 +373,114 @@ def test_main_window_forwards_bus_to_central_tab(qtbot, env):
 
 
 # ---- Workflow Designer guard -------------------------------------------------------------
-def test_designer_refuses_to_save_a_centrally_managed_project(qtbot, env, monkeypatch):
-    cfg = env.pm.create("Managed")
-    env.db.set_central_project(cfg["project_id"], 1)
+def _designer(qtbot, env, name="Managed", managed=True):
+    cfg = env.pm.create(name)
+    cfg["delivery"]["sftp"] = {"enabled": True, "host": "h", "username": "u"}
+    cfg = env.pm.save(cfg)
+    if managed:
+        env.db.set_central_project(cfg["project_id"], 1)
     d = WorkflowDesigner(env.db, env.pm, ADMIN)
     qtbot.addWidget(d)
-    assert d.config["project_id"] == cfg["project_id"]     # designer shows it
+    assert d.config["project_id"] == cfg["project_id"]
+    return d, cfg["project_id"]
+
+
+def _silence_boxes(monkeypatch):
     shown = []
     monkeypatch.setattr("ui.workflow_designer.QMessageBox.warning",
                         staticmethod(lambda *a, **k: shown.append(a[2])))
     monkeypatch.setattr("ui.workflow_designer.QMessageBox.information",
-                        staticmethod(lambda *a, **k: None))   # never block if unguarded
-    before = env.pm.load(cfg["project_id"])["version"]
+                        staticmethod(lambda *a, **k: shown.append(a[2])))
+    return shown
+
+
+def _edit_everything(d):
+    """Edit one local field and several central-owned ones in the form."""
+    d.delivery_path.setText("D:/bank/delivered")
+    d.pass_score.setValue(11)
+    d.feature_checks["duplicate_check"].setChecked(
+        not d.feature_checks["duplicate_check"].isChecked())
+    d.ocr_mode.setCurrentIndex(1)
+    d.fixed_pages.setValue(7)
+    d.rule_list.addItem(QListWidgetItem("r001 - sneaky"))
+    d.rule_list.item(0).setData(Qt.ItemDataRole.UserRole, {
+        "id": "r001", "name": "sneaky",
+        "condition": {"field": "page_count", "op": "gt", "value": 1},
+        "actions": [{"type": "add_flag", "value": "x"}]})
+
+
+def test_managed_designer_save_persists_only_local_sections(qtbot, env, monkeypatch):
+    d, pid = _designer(qtbot, env)
+    shown = _silence_boxes(monkeypatch)
+    before = env.pm.load(pid)
+    _edit_everything(d)
     d.save()
-    assert shown and "central" in shown[0].lower()
-    assert env.pm.load(cfg["project_id"])["version"] == before
+    after = env.pm.load(pid)
+    assert after["delivery"]["local_folder"]["path"] == "D:/bank/delivered"
+    assert after["version"] == before["version"] + 1
+    for key in before:
+        if key in ("scanner", "export", "delivery", "version"):
+            continue
+        assert after[key] == before[key], key       # rules/ocr/qc/features/... untouched
+    assert after["rules"]["rules"] == [] and "mode" not in after["ocr"]
+    assert shown and "scanner / export / delivery" in shown[-1]
+    assert "managed centrally" in shown[-1].lower()
+
+
+def test_managed_designer_save_keeps_stored_delivery_flags(qtbot, env, monkeypatch):
+    d, pid = _designer(qtbot, env)
+    _silence_boxes(monkeypatch)
+    d.sftp_host.setText("sftp.bank.lk")
+    d.save()
+    after = env.pm.load(pid)
+    # features.sftp (central) is False, but this PC's delivery.sftp stays on
+    assert after["features"]["sftp"] is False
+    assert after["delivery"]["sftp"]["enabled"] is True
+    assert after["delivery"]["sftp"]["host"] == "sftp.bank.lk"
+
+
+def test_designer_saves_everything_for_unmanaged_projects(qtbot, env, monkeypatch):
+    d, pid = _designer(qtbot, env, managed=False)
+    _silence_boxes(monkeypatch)
+    _edit_everything(d)
+    d.save()
+    after = env.pm.load(pid)
+    assert after["delivery"]["local_folder"]["path"] == "D:/bank/delivered"
+    assert after["qc"]["pass_score"] == 11 and after["separation"]["fixed_pages"] == 7
+    assert after["ocr"]["mode"] == "full_page"
+    assert [r["id"] for r in after["rules"]["rules"]] == ["r001"]
+
+
+def test_designer_banner_and_disabled_state_follow_the_selected_project(qtbot, env):
+    local = env.pm.create("Alpha local")
+    managed = env.pm.create("Zulu managed")
+    env.db.set_central_project(managed["project_id"], 1)
+    d = WorkflowDesigner(env.db, env.pm, ADMIN)
+    qtbot.addWidget(d)
+    d.project_combo.setCurrentIndex(d.project_combo.findData(local["project_id"]))
+    assert d.managed_banner.isHidden()
+    assert all(b.isEnabled() for b in d._central_boxes())
+    assert d.exp_box.isEnabled() and d.sftp_box.isEnabled()
+    d.project_combo.setCurrentIndex(d.project_combo.findData(managed["project_id"]))
+    assert not d.managed_banner.isHidden()
+    assert "only scanner / export / delivery" in d.managed_banner.text()
+    assert not any(b.isEnabled() for b in d._central_boxes())
+    assert d.exp_box.isEnabled() and d.sftp_box.isEnabled()
+    env.db.unmanage_central_project(managed["project_id"])      # evaluated live, not cached
+    d.project_combo.setCurrentIndex(d.project_combo.findData(local["project_id"]))
+    d.project_combo.setCurrentIndex(d.project_combo.findData(managed["project_id"]))
+    assert d.managed_banner.isHidden() and all(b.isEnabled() for b in d._central_boxes())
+
+
+def test_designer_checks_managed_at_click_time_not_at_construction(qtbot, env, monkeypatch):
+    d, pid = _designer(qtbot, env, managed=False)
+    _silence_boxes(monkeypatch)
+    env.db.set_central_project(pid, 1)                          # assigned after the form opened
+    _edit_everything(d)
+    d.save()
+    after = env.pm.load(pid)
+    assert after["rules"]["rules"] == [] and after["qc"]["pass_score"] != 11
+    assert after["delivery"]["local_folder"]["path"] == "D:/bank/delivered"
 
 
 def test_designer_still_saves_unmanaged_and_unassigned_projects(qtbot, env, monkeypatch):

@@ -10,7 +10,8 @@ import pytest
 from core.central_client import (CentralAuthError, CentralRegistrationError,
                                  CentralUnavailable, PullResult, RegisterResult)
 from core.central_state import CentralState
-from core.central_sync import CentralSyncService, SyncResult
+from core.central_sync import (CentralSyncService, SyncResult,
+                               choose_pipeline_profile)
 from core.config_overlay import default_local_sections
 from core.profile_manager import DEFAULT_PROJECT, ProfileManager
 from data.audit import AuditLogger
@@ -735,3 +736,17 @@ def test_seed_is_a_deep_copy_of_the_source(env):
     stored = env.pm.load(source["project_id"])
     assert stored["delivery"]["sftp"]["host"] == "sftp.bank.lk"
     assert stored["export"]["output_path"] == "D:/bank/out"
+
+
+def test_after_enrollment_and_restart_the_pipeline_keeps_the_pcs_delivery_settings(env):
+    source = bank_project(env)
+    register(env)
+    pull(env, project_entry(lang="deu"))
+    env.svc.sync_once()
+    profile = choose_pipeline_profile(env.db, fallback=lambda: {"fallback": True})
+    assert profile["project_id"] == PID and profile["ocr"]["lang"] == "deu"
+    stored = env.pm.load(source["project_id"])
+    assert profile["export"] == stored["export"]
+    assert profile["delivery"] == stored["delivery"]
+    assert profile["scanner"] == stored["scanner"]
+    assert profile["export"]["output_path"] == "D:/bank/out"

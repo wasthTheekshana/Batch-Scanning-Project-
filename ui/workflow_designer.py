@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                              QListWidgetItem, QMessageBox, QPushButton,
                              QScrollArea, QSpinBox, QVBoxLayout, QWidget)
 
+from core.config_overlay import LOCAL_ONLY_KEYS
 from core.profile_manager import ProjectConfigError
 from separation.rule_engine import RuleEngine, RuleSetError
 
@@ -26,6 +27,8 @@ OPERATORS = ["eq", "neq", "contains", "not_contains", "is_empty",
 ACTIONS = ["set_folder", "set_filename", "set_validation_status",
            "add_flag", "set_metadata_field", "trigger_delivery",
            "skip_stage"]
+MANAGED_BANNER = ("Managed centrally: only scanner / export / delivery "
+                  "can be changed on this PC")
 EXPORT_FORMATS = ["searchable_pdf", "image_pdf", "pdf_a", "tiff"]
 
 # QC strictness presets (Enhancement Plan §4.3) - one-click threshold sets
@@ -198,6 +201,11 @@ class WorkflowDesigner(QWidget):
 
         self.version_label = QLabel("")
         outer.addWidget(self.version_label)
+        self.managed_banner = QLabel(MANAGED_BANNER)
+        self.managed_banner.setWordWrap(True)
+        self.managed_banner.setTextFormat(Qt.TextFormat.PlainText)
+        self.managed_banner.hide()
+        outer.addWidget(self.managed_banner)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -207,7 +215,7 @@ class WorkflowDesigner(QWidget):
         layout = QVBoxLayout(body)
 
         # feature toggles
-        feature_box = QGroupBox("Feature toggles")
+        feature_box = self.feature_box = QGroupBox("Feature toggles")
         f_layout = QVBoxLayout(feature_box)
         self.feature_checks: dict[str, QCheckBox] = {}
         for key in ("auto_index", "duplicate_check", "sftp", "cd_burn"):
@@ -218,7 +226,7 @@ class WorkflowDesigner(QWidget):
         layout.addWidget(feature_box)
 
         # separation strategies
-        sep_box = QGroupBox("Separation strategy")
+        sep_box = self.sep_box = QGroupBox("Separation strategy")
         s_layout = QVBoxLayout(sep_box)
         self.strategy_checks: dict[str, QCheckBox] = {}
         for key in STRATEGIES:
@@ -236,7 +244,7 @@ class WorkflowDesigner(QWidget):
         layout.addWidget(sep_box)
 
         # QC config
-        qc_box = QGroupBox("QC pipeline")
+        qc_box = self.qc_box = QGroupBox("QC pipeline")
         q_layout = QFormLayout(qc_box)
         self.qc_preset = QComboBox()
         self.qc_preset.addItems(["Custom", *QC_PRESETS.keys()])
@@ -273,7 +281,7 @@ class WorkflowDesigner(QWidget):
         layout.addWidget(qc_box)
 
         # scanner + export
-        exp_box = QGroupBox("Scanner & export")
+        exp_box = self.exp_box = QGroupBox("Scanner & export")
         e_layout = QFormLayout(exp_box)
         self.dpi = QSpinBox()
         self.dpi.setRange(75, 1200)
@@ -297,7 +305,7 @@ class WorkflowDesigner(QWidget):
         layout.addWidget(exp_box)
 
         # index zones (auto-index fields)
-        zone_box = QGroupBox("Index zones (auto-index fields)")
+        zone_box = self.zone_box = QGroupBox("Index zones (auto-index fields)")
         z_layout = QVBoxLayout(zone_box)
         z_layout.addWidget(QLabel(
             "Each zone reads one field from the page. Zone-based: drag a "
@@ -331,7 +339,7 @@ class WorkflowDesigner(QWidget):
         layout.addWidget(zone_box)
 
         # SFTP delivery (Phase 3)
-        sftp_box = QGroupBox("SFTP delivery (LAN)")
+        sftp_box = self.sftp_box = QGroupBox("SFTP delivery (LAN)")
         sftp_layout = QFormLayout(sftp_box)
         self.sftp_host = QLineEdit()
         self.sftp_port = QSpinBox()
@@ -357,7 +365,7 @@ class WorkflowDesigner(QWidget):
         layout.addWidget(sftp_box)
 
         # rules
-        rule_box = QGroupBox("Rules (IF / THEN)")
+        rule_box = self.rule_box = QGroupBox("Rules (IF / THEN)")
         r_layout = QVBoxLayout(rule_box)
         self.rule_list = QListWidget()
         r_layout.addWidget(self.rule_list)
@@ -395,6 +403,28 @@ class WorkflowDesigner(QWidget):
             return
         self.config = self.pm.load(project_id)
         self._bind_config()
+        self._update_managed_state()
+
+    def _is_managed(self) -> bool:
+        """Evaluated on demand (never cached): central may assign or
+        unassign the shown project at any time."""
+        if not self.config:
+            return False
+        rec = self.db.get_central_project(self.config["project_id"])
+        return rec is not None and bool(rec["managed"])
+
+    def _update_managed_state(self) -> None:
+        """A managed project: only the PC-local sections (scanner, export,
+        delivery = 'Scanner & export' and 'SFTP delivery') stay editable.
+        Everything else belongs to central and is shown read-only."""
+        managed = self._is_managed()
+        self.managed_banner.setVisible(managed)
+        for box in self._central_boxes():
+            box.setEnabled(not managed)
+
+    def _central_boxes(self) -> tuple[QGroupBox, ...]:
+        return (self.feature_box, self.sep_box, self.qc_box, self.zone_box,
+                self.rule_box)
 
     def _apply_qc_preset(self, text: str) -> None:
         """Fill all five QC threshold fields at once from a named
@@ -585,12 +615,9 @@ class WorkflowDesigner(QWidget):
 
     def _refuse_if_managed(self) -> bool:
         """True (after telling the user) when the shown project is managed
-        by the central server: local changes would be overwritten at the
-        next sync."""
-        if not self.config:
-            return False
-        rec = self.db.get_central_project(self.config["project_id"])
-        if rec is None or not rec["managed"]:
+        by the central server: used for actions that would change
+        central-owned content (a rollback restores an old central config)."""
+        if not self._is_managed():
             return False
         QMessageBox.warning(
             self, "Managed centrally",
@@ -599,8 +626,39 @@ class WorkflowDesigner(QWidget):
             "central dashboard instead.")
         return True
 
+    def _save_local_sections_only(self) -> None:
+        """Managed project: persist ONLY scanner/export/delivery. The stored
+        config is the base, so nothing edited in a central-owned part of the
+        form (rules, ocr, qc, features, name...) can reach disk. The delivery
+        on/off flags stay as stored: the shorthand feature toggles that
+        collect_config copies them from belong to central.
+
+        Narrow race: if a sync applies a new central version between the
+        load and the save below, this save is based on the older central
+        content and the next sync restores central's version. Local sections
+        are never overwritten by a sync, so nothing local is lost."""
+        stored = self.pm.load(self.config["project_id"])
+        enabled = {ch: bool(stored["delivery"].get(ch, {}).get("enabled"))
+                   for ch in ("sftp", "cd_dvd")}
+        collected = self.collect_config()
+        for key in LOCAL_ONLY_KEYS:
+            stored[key] = collected[key]
+        for channel, flag in enabled.items():
+            stored["delivery"].setdefault(channel, {})["enabled"] = flag
+        self.config = self.pm.save(stored)
+        self._bind_config()
+        self.refresh_projects_keep_selection()
+        QMessageBox.information(
+            self, "Saved",
+            "Saved this PC's scanner / export / delivery settings. "
+            "Everything else is managed centrally and was not changed.")
+
     def save(self) -> None:
-        if self._refuse_if_managed():
+        if self._is_managed():
+            try:
+                self._save_local_sections_only()
+            except ProjectConfigError as e:
+                QMessageBox.critical(self, "Invalid configuration", str(e))
             return
         try:
             cfg = self.collect_config()
