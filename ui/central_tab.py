@@ -8,6 +8,7 @@ capped. The API key is never read, shown or copied by this tab.
 """
 from __future__ import annotations
 
+import logging
 import threading
 from typing import Callable
 
@@ -19,6 +20,8 @@ from PyQt6.QtWidgets import (QFormLayout, QHBoxLayout, QLabel, QLineEdit,
 from core.central_client import (CentralRegistrationError, CentralUnavailable)
 from core.central_sync import SyncResult, note_sync_result, restart_pending
 from ui.theme import mark
+
+log = logging.getLogger(__name__)
 
 MAX_TEXT = 200       # cap for any single piece of server-supplied text
 MAX_ERRORS_SHOWN = 5
@@ -150,13 +153,21 @@ class CentralTab(QWidget):
         self.refresh_status(result)
 
     # -- actions ------------------------------------------------------------------
+    def _show_warning(self, text: str) -> None:
+        """Plain text always: a message that looks like HTML (server text,
+        exception text) must not be rendered as rich text."""
+        box = QMessageBox(QMessageBox.Icon.Warning, "Central", text,
+                          QMessageBox.StandardButton.Ok, self)
+        box.setTextFormat(Qt.TextFormat.PlainText)
+        box.exec()
+
     def register(self) -> None:
-        if self._registering:
+        if not self._can or self._registering:
             return
         url, code = self.url_edit.text().strip(), self.code_edit.text().strip()
         if not url or not code:
-            QMessageBox.warning(self, "Central",
-                                "Enter the server address and the enrollment code.")
+            self._show_warning("Enter the server address and the "
+                               "enrollment code.")
             return
         self._registering = True
         self.refresh_status()
@@ -174,7 +185,10 @@ class CentralTab(QWidget):
             self.service.register(url, code)
         except Exception as e:  # delivered to the UI thread, never lost
             outcome = e
-        self.registration_finished.emit(outcome)
+        try:
+            self.registration_finished.emit(outcome)
+        except RuntimeError:        # the tab was destroyed while we were away
+            pass
 
     @pyqtSlot(object)
     def _on_registration_finished(self, error) -> None:
@@ -192,13 +206,18 @@ class CentralTab(QWidget):
             msg = ("Could not reach the central server. Check the address "
                    "and the network connection, then try again.")
         else:
+            # type name only: the exception text could contain the code
+            log.warning("central registration failed: %s", type(error).__name__)
             msg = "Registration failed unexpectedly. See the log for details."
-        QMessageBox.warning(self, "Central", msg)
+        self._show_warning(msg)
 
     def sync_now(self) -> None:
-        self.worker.sync_now()
+        if self._can and self.worker is not None:
+            self.worker.sync_now()
 
     def disconnect(self) -> None:
+        if not self._can:
+            return
         answer = QMessageBox.question(
             self, "Disconnect",
             "Disconnect this PC from central? Existing projects stay on this "

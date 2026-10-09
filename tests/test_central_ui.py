@@ -1,8 +1,10 @@
 import copy
 import inspect
+import logging
 import threading
 
 import pytest
+from PyQt6 import sip
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QListWidgetItem, QMessageBox
 
@@ -107,8 +109,8 @@ def test_register_success_updates_state_and_wakes_worker(qtbot, env):
 
 def test_register_rejects_http_url_with_message(qtbot, env, monkeypatch):
     shown = []
-    monkeypatch.setattr("ui.central_tab.QMessageBox.warning",
-                        staticmethod(lambda *a, **k: shown.append(a[2])))
+    monkeypatch.setattr(CentralTab, "_show_warning",
+                        lambda self, text: shown.append(text))
     env.svc._client_factory = default_client_factory
     t = tab(env, qtbot=qtbot)
     t.url_edit.setText("http://central.example")
@@ -119,8 +121,8 @@ def test_register_rejects_http_url_with_message(qtbot, env, monkeypatch):
 
 def test_register_bad_code_shows_message_and_keeps_code(qtbot, env, monkeypatch):
     shown = []
-    monkeypatch.setattr("ui.central_tab.QMessageBox.warning",
-                        staticmethod(lambda *a, **k: shown.append(a[2])))
+    monkeypatch.setattr(CentralTab, "_show_warning",
+                        lambda self, text: shown.append(text))
     env.holder["client"] = StubClient(exc=CentralRegistrationError("bad"))
     t = tab(env, qtbot=qtbot)
     t.url_edit.setText("https://central.example")
@@ -132,8 +134,7 @@ def test_register_bad_code_shows_message_and_keeps_code(qtbot, env, monkeypatch)
 
 
 def test_register_requires_both_fields(qtbot, env, monkeypatch):
-    monkeypatch.setattr("ui.central_tab.QMessageBox.warning",
-                        staticmethod(lambda *a, **k: None))
+    monkeypatch.setattr(CentralTab, "_show_warning", lambda self, text: None)
     t = tab(env, qtbot=qtbot)
     t.url_edit.setText("https://central.example")
     t.register()
@@ -245,8 +246,8 @@ def test_second_click_while_registering_does_nothing(qtbot, env):
 def test_register_unavailable_shows_generic_message_without_raw_error(
         qtbot, env, monkeypatch):
     shown = []
-    monkeypatch.setattr("ui.central_tab.QMessageBox.warning",
-                        staticmethod(lambda *a, **k: shown.append(a[2])))
+    monkeypatch.setattr(CentralTab, "_show_warning",
+                        lambda self, text: shown.append(text))
     env.holder["client"] = StubClient(
         exc=CentralUnavailable("URLError: internal-host.corp:8443 refused"))
     t = tab(env, qtbot=qtbot)
@@ -577,3 +578,77 @@ def test_main_window_without_central_objects_has_no_notices(qtbot, env):
     win = _admin_window(qtbot, env)
     win.bus.central_synced.emit(SyncResult("ok", applied=["p1"]))
     assert win.restart_label.isHidden() and win.reenroll_label.isHidden()
+
+
+# ---- I4: an unexpected registration failure is logged (type only) ------------------------
+def test_unexpected_registration_failure_is_logged_without_code_or_message(
+        qtbot, env, monkeypatch, caplog):
+    shown = []
+    monkeypatch.setattr(CentralTab, "_show_warning",
+                        lambda self, text: shown.append(text))
+    env.holder["client"] = StubClient(
+        exc=RuntimeError("leaky ABCDEFGH1234 internal detail"))
+    t = tab(env, qtbot=qtbot)
+    t.url_edit.setText("https://central.example")
+    t.code_edit.setText("ABCDEFGH1234")
+    with caplog.at_level(logging.WARNING, logger="ui.central_tab"):
+        t.register()
+    records = [r for r in caplog.records if r.name == "ui.central_tab"]
+    assert len(records) == 1 and "RuntimeError" in records[0].getMessage()
+    assert "ABCDEFGH1234" not in caplog.text and "leaky" not in caplog.text
+    assert shown and "log" in shown[0].lower()
+
+
+# ---- M1: a tab destroyed mid-registration must not break the thread ----------------------
+def test_registration_thread_survives_the_tab_being_destroyed(qtbot, env, monkeypatch):
+    client = BlockingClient()
+    env.holder["client"] = client
+    escaped = []
+    monkeypatch.setattr(threading, "excepthook", lambda args: escaped.append(args))
+    t = CentralTab(env.state, env.svc, env.worker, ADMIN)
+    t.url_edit.setText("https://central.example")
+    t.code_edit.setText("ABCDEFGH1234")
+    t.register()
+    qtbot.waitUntil(lambda: client.thread is not None, timeout=3000)
+    sip.delete(t)                                            # tab gone, register still blocked
+    client.release.set()
+    client.thread.join(5)
+    assert not client.thread.is_alive()
+    assert escaped == []
+    assert env.state.is_registered()                         # the registration itself completed
+
+
+# ---- M2: programmatic calls respect the role gate ----------------------------------------
+def test_viewer_cannot_bypass_the_role_gate_by_calling_methods(qtbot, env, monkeypatch):
+    env.state.register_result("https://central.example", "pc-1", "k", 600)
+    monkeypatch.setattr("ui.central_tab.QMessageBox.question",
+                        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes))
+    v = tab(env, VIEWER, qtbot)
+    v.url_edit.setText("https://central.example")
+    v.code_edit.setText("ABCDEFGH1234")
+    v.register()
+    v.sync_now()
+    v.disconnect()
+    assert env.holder["client"].codes == [] and env.worker.woken == 0
+    assert env.state.is_registered()
+
+
+def test_sync_now_without_a_worker_does_nothing(qtbot, env):
+    t = CentralTab(env.state, env.svc, None, ADMIN)
+    qtbot.addWidget(t)
+    t.sync_now()                                             # must not raise
+
+
+# ---- M3: warnings are plain text ---------------------------------------------------------
+def test_warning_box_renders_plain_text(qtbot, env, monkeypatch):
+    boxes = []
+    monkeypatch.setattr("ui.central_tab.QMessageBox.exec",
+                        lambda self: boxes.append(self) or 0)
+    env.holder["client"] = StubClient(exc=CentralRegistrationError("<b>bad</b> code"))
+    t = tab(env, qtbot=qtbot)
+    t.url_edit.setText("https://central.example")
+    t.code_edit.setText("ABCDEFGH1234")
+    t.register()
+    assert len(boxes) == 1
+    assert boxes[0].textFormat() == Qt.TextFormat.PlainText
+    assert boxes[0].text() == "<b>bad</b> code"
