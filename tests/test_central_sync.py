@@ -650,3 +650,88 @@ def test_sync_once_is_not_held_up_by_a_slow_register(env):
         client.release.set()
         t.join(10)
     assert env.state.settings.pc_id == "pc-2"
+
+
+# ---- C1a: new managed projects are seeded from the PC's previous project ------------------
+def bank_project(env, name="Bank local"):
+    """A project the PC already had before enrollment, with real local setup."""
+    cfg = env.pm.create(name)
+    cfg["export"]["output_path"] = "D:/bank/out"
+    cfg["delivery"]["local_folder"]["path"] = "D:/bank/delivered"
+    cfg["delivery"]["sftp"] = {"enabled": True, "host": "sftp.bank.lk",
+                               "username": "scan", "password": "pw"}
+    cfg["scanner"]["sdk"] = "twain"
+    return env.pm.save(cfg)
+
+
+def test_new_managed_project_is_seeded_from_the_pcs_existing_local_project(env):
+    source = bank_project(env)
+    register(env)
+    pull(env, project_entry())
+    env.svc.sync_once()
+    managed, stored = env.pm.load(PID), env.pm.load(source["project_id"])
+    for key in ("scanner", "export", "delivery"):
+        assert managed[key] == stored[key]
+    assert managed["export"]["output_path"] == "D:/bank/out"
+    assert managed["delivery"]["sftp"]["host"] == "sftp.bank.lk"
+    assert managed["scanner"]["sdk"] == "twain"
+
+
+def test_all_new_projects_in_one_pull_get_the_same_seed(env):
+    bank_project(env)
+    register(env)
+    pull(env, project_entry(), project_entry(pid=PID2, name="Other"))
+    env.svc.sync_once()
+    assert env.pm.load(PID)["export"] == env.pm.load(PID2)["export"]
+    assert env.pm.load(PID2)["export"]["output_path"] == "D:/bank/out"
+
+
+def test_seed_source_is_the_first_active_unmanaged_project_by_name(env):
+    bank_project(env, "Zulu")
+    first = bank_project(env, "Alpha")
+    first["export"]["output_path"] = "D:/alpha"
+    env.pm.save(first)
+    archived = bank_project(env, "Aaa archived")
+    archived["status"] = "archived"
+    archived["export"]["output_path"] = "D:/archived"
+    env.pm.save(archived)
+    register(env)
+    pull(env, project_entry())
+    env.svc.sync_once()
+    assert env.pm.load(PID)["export"]["output_path"] == "D:/alpha"
+
+
+def test_no_local_project_falls_back_to_defaults(env):
+    register(env)
+    pull(env, project_entry())
+    env.svc.sync_once()
+    cfg = env.pm.load(PID)
+    expected = default_local_sections(env.root)
+    for key in ("scanner", "export", "delivery"):
+        assert cfg[key] == expected[key]
+
+
+def test_a_centrally_managed_project_is_never_the_seed_source(env):
+    managed = bank_project(env)
+    env.db.set_central_project(managed["project_id"], 1)     # already managed
+    register(env)
+    pull(env, project_entry(),
+         project_entry(pid=managed["project_id"], name="Bank local"))
+    env.svc.sync_once()
+    cfg = env.pm.load(PID)
+    assert cfg["export"]["output_path"] == str(env.root / "output")
+    assert cfg["delivery"]["sftp"] == {"enabled": False}
+
+
+def test_seed_is_a_deep_copy_of_the_source(env):
+    source = bank_project(env)
+    register(env)
+    pull(env, project_entry())
+    env.svc.sync_once()
+    managed = env.pm.load(PID)
+    managed["delivery"]["sftp"]["host"] = "changed.example"
+    managed["export"]["output_path"] = "D:/changed"
+    env.pm.save(managed)
+    stored = env.pm.load(source["project_id"])
+    assert stored["delivery"]["sftp"]["host"] == "sftp.bank.lk"
+    assert stored["export"]["output_path"] == "D:/bank/out"

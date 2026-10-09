@@ -18,6 +18,7 @@ reaches an audit entry, a log line or a SyncResult.
 """
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import threading
@@ -29,8 +30,9 @@ from typing import Callable
 from core.central_client import (CentralAuthError, CentralClient,
                                  CentralError, allow_loopback_http)
 from core.central_state import CentralState
-from core.config_overlay import (PulledProjectError, default_local_sections,
-                                 overlay, validate_entry)
+from core.config_overlay import (LOCAL_ONLY_KEYS, PulledProjectError,
+                                 default_local_sections, overlay,
+                                 validate_entry)
 from core.profile_manager import ProfileManager, ProjectConfigError
 
 log = logging.getLogger(__name__)
@@ -183,7 +185,7 @@ class CentralSyncService:
         managed_before = {r["project_id"] for r in
                           self.db.list_central_projects(managed_only=True)}
         seen: set[str] = set()
-        defaults = default_local_sections(self.root)
+        defaults = self._local_seed(managed_before)
         entries = list(pulled.projects)
         for entry in entries[MAX_PROJECTS:]:   # not processed, but still assigned
             if isinstance(entry, dict) and isinstance(
@@ -220,6 +222,23 @@ class CentralSyncService:
                 auth_failed=False):
             return SyncResult("unavailable", message=_CHANGED)
         return result
+
+    def _local_seed(self, managed: set[str]) -> dict:
+        """Scanner/export/delivery for a project new to this PC: those of the
+        project the pipeline used before enrollment (the first active project
+        by name that central does not manage), so scans keep going where they
+        went. Without such a project: the app defaults."""
+        for row in self.db.list_projects("active"):
+            if row["project_id"] in managed:
+                continue
+            try:
+                cfg = json.loads(row["config_json"])
+                return {k: copy.deepcopy(cfg[k]) for k in LOCAL_ONLY_KEYS}
+            except (ValueError, KeyError, TypeError):
+                log.warning("project %s unusable as a local-settings seed",
+                            _clean(row["project_id"]))
+                continue
+        return default_local_sections(self.root)
 
     def _apply_entry(self, entry: dict, defaults: dict,
                      result: SyncResult) -> None:
