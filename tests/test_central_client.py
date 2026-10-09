@@ -7,9 +7,10 @@ import urllib.request
 
 import pytest
 
-from core.central_client import (MAX_RESPONSE_BYTES, CentralAuthError,
-                                 CentralClient, CentralRegistrationError,
-                                 CentralUnavailable, urllib_transport)
+from core.central_client import (LOOPBACK_ENV, MAX_RESPONSE_BYTES,
+                                 CentralAuthError, CentralClient,
+                                 CentralRegistrationError, CentralUnavailable,
+                                 allow_loopback_http, urllib_transport)
 
 
 class FakeTransport:
@@ -260,3 +261,87 @@ def test_urllib_transport_uses_a_verifying_tls_context(monkeypatch):
         urllib_transport("GET", "http://127.0.0.1:1/x", {}, None, 2)
     ctx = seen["ctx"]
     assert ctx.verify_mode == ssl.CERT_REQUIRED and ctx.check_hostname is True
+
+
+# ---- hostile server responses (fix round 1) -----------------------------------
+REG_OK = {"pc_id": "pc-1", "api_key": "dsk_x", "poll_interval_seconds": 600}
+
+
+@pytest.mark.parametrize("raw", [b"[" * 100000, b'{"a":' * 100000],
+                         ids=["nested-array", "nested-object"])
+def test_deeply_nested_json_is_unavailable(raw):
+    with pytest.raises(CentralUnavailable):
+        client(FakeTransport(raw=raw)).register("c" * 12)
+    with pytest.raises(CentralUnavailable):
+        client(FakeTransport(raw=raw)).pull_config("pc-1", "k")
+
+
+@pytest.mark.parametrize("const", [b"NaN", b"Infinity", b"-Infinity"])
+def test_non_finite_json_constants_are_unavailable(const):
+    raw = (b'{"pc_id":"p","poll_interval_seconds":600,'
+           b'"projects":[{"config":{"x":' + const + b'}}]}')
+    with pytest.raises(CentralUnavailable):
+        client(FakeTransport(raw=raw)).pull_config("pc-1", "k")
+
+
+def test_valid_payload_shape_used_by_the_non_finite_test_parses():
+    raw = (b'{"pc_id":"p","poll_interval_seconds":600,'
+           b'"projects":[{"config":{"x":1}}]}')
+    assert client(FakeTransport(raw=raw)).pull_config("pc-1", "k").pc_id == "p"
+
+
+BAD_TOKENS = ["abc" + chr(10) + "def", chr(0x4e2d) + chr(0x6587) + "key", "has space", "",
+              "x" * 257, "tab" + chr(9) + "here"]
+
+
+@pytest.mark.parametrize("bad", BAD_TOKENS)
+def test_register_rejects_hostile_api_key(bad):
+    with pytest.raises(CentralUnavailable) as e:
+        client(FakeTransport(payload=dict(REG_OK, api_key=bad))).register("c" * 12)
+    if bad:
+        assert bad not in str(e.value) and bad not in repr(e.value)
+
+
+@pytest.mark.parametrize("bad", BAD_TOKENS)
+def test_register_rejects_hostile_pc_id(bad):
+    with pytest.raises(CentralUnavailable) as e:
+        client(FakeTransport(payload=dict(REG_OK, pc_id=bad))).register("c" * 12)
+    if bad:
+        assert bad not in str(e.value) and bad not in repr(e.value)
+
+
+def test_register_accepts_max_length_token():
+    r = client(FakeTransport(payload=dict(REG_OK, api_key="k" * 256))).register("c" * 12)
+    assert len(r.api_key) == 256
+
+
+@pytest.mark.parametrize("bad", BAD_TOKENS)
+def test_pull_rejects_hostile_echoed_pc_id(bad):
+    with pytest.raises(CentralUnavailable):
+        client(FakeTransport(payload=dict(PULL_OK, pc_id=bad))).pull_config("pc-1", "k")
+
+
+@pytest.mark.parametrize("bad_key", ["abc" + chr(10) + "def", chr(0x4e2d) + "key"])
+def test_bad_stored_key_is_unavailable_and_never_leaks(loopback_server, bad_key):
+    c = CentralClient(loopback_server, allow_insecure_loopback=True, timeout=5)
+    with pytest.raises(CentralUnavailable) as e:
+        c.pull_config("pc-1", bad_key)
+    ex = e.value
+    for text in (str(ex), repr(ex), repr(ex.__cause__), repr(ex.__context__)):
+        assert bad_key not in text and "def" not in text
+        assert bad_key.encode("unicode_escape").decode() not in text
+    assert ex.__cause__ is None
+
+
+def test_loopback_server_still_works_with_a_good_key(loopback_server):
+    c = CentralClient(loopback_server, allow_insecure_loopback=True, timeout=5)
+    assert c.pull_config("pc-1", "dsk_good").pc_id == "pc-1"
+
+
+def test_allow_loopback_http_reads_env(monkeypatch):
+    monkeypatch.delenv(LOOPBACK_ENV, raising=False)
+    assert allow_loopback_http() is False
+    monkeypatch.setenv(LOOPBACK_ENV, "0")
+    assert allow_loopback_http() is False
+    monkeypatch.setenv(LOOPBACK_ENV, "1")
+    assert allow_loopback_http() is True

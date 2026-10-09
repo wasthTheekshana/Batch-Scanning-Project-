@@ -57,11 +57,13 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 def urllib_transport(method: str, url: str, headers: dict,
                      body: bytes | None, timeout: float) -> tuple[int, bytes]:
     ctx = ssl.create_default_context()
+    # Env proxies are deliberately still honoured (a corporate proxy may be the
+    # only route to the server); TLS verification is end-to-end regardless.
     opener = urllib.request.build_opener(
         _NoRedirect, urllib.request.HTTPSHandler(context=ctx))
-    req = urllib.request.Request(url, data=body, method=method,
-                                 headers=dict(headers))
     try:
+        req = urllib.request.Request(url, data=body, method=method,
+                                     headers=dict(headers))
         with opener.open(req, timeout=timeout) as resp:
             return resp.status, resp.read(MAX_RESPONSE_BYTES + 1)
     except urllib.error.HTTPError as e:
@@ -72,6 +74,13 @@ def urllib_transport(method: str, url: str, headers: dict,
     except (urllib.error.URLError, OSError, ssl.SSLError,
             http.client.HTTPException) as e:
         raise CentralUnavailable(f"{type(e).__name__}: {e}") from e
+    except (ValueError, UnicodeError):
+        # e.g. a header value with CR/LF or non-latin-1 text. The message
+        # would contain the offending header (the API key).
+        pass
+    # Raised outside the except block so the exception has neither a __cause__
+    # nor an implicit __context__ that could carry the header text.
+    raise CentralUnavailable("invalid request")
 
 
 @dataclass
@@ -92,16 +101,26 @@ def _clamp(v: int) -> int:
     return max(MIN_POLL, min(MAX_POLL, v))
 
 
-def _json_object(status_ok_body: bytes) -> dict:
-    if len(status_ok_body) > MAX_RESPONSE_BYTES:
+def _reject_constant(name: str):
+    raise ValueError(name)  # NaN / Infinity / -Infinity are not valid JSON
+
+
+def _valid_token(v: object) -> bool:
+    """An id / key we are willing to store and put in a URL or header."""
+    return (isinstance(v, str) and 1 <= len(v) <= 256 and v.isascii()
+            and v.isprintable() and not any(c.isspace() for c in v))
+
+
+def _json_object(data: bytes) -> dict:
+    if len(data) > MAX_RESPONSE_BYTES:
         raise CentralUnavailable("response too large")
     try:
-        data = json.loads(status_ok_body)
-    except ValueError as e:
+        obj = json.loads(data, parse_constant=_reject_constant)
+    except (ValueError, RecursionError) as e:
         raise CentralUnavailable("response is not valid JSON") from e
-    if not isinstance(data, dict):
+    if not isinstance(obj, dict):
         raise CentralUnavailable("response is not a JSON object")
-    return data
+    return obj
 
 
 class CentralClient:
@@ -135,8 +154,8 @@ class CentralClient:
         d = _json_object(data)
         pc_id, key, poll = d.get("pc_id"), d.get("api_key"), d.get(
             "poll_interval_seconds")
-        if not (isinstance(pc_id, str) and pc_id and isinstance(key, str)
-                and key and isinstance(poll, int) and not isinstance(poll, bool)):
+        if not (_valid_token(pc_id) and _valid_token(key)
+                and isinstance(poll, int) and not isinstance(poll, bool)):
             raise CentralUnavailable("malformed register response")
         return RegisterResult(pc_id, key, _clamp(poll))
 
@@ -156,7 +175,7 @@ class CentralClient:
         d = _json_object(data)
         pid, poll, projects = d.get("pc_id"), d.get("poll_interval_seconds"), \
             d.get("projects")
-        if not (isinstance(pid, str) and isinstance(poll, int)
+        if not (_valid_token(pid) and isinstance(poll, int)
                 and not isinstance(poll, bool) and isinstance(projects, list)
                 and all(isinstance(p, dict) for p in projects)):
             raise CentralUnavailable("malformed config response")
