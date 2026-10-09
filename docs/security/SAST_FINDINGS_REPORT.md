@@ -251,6 +251,46 @@ review; their disposition (false positive, no action) is recorded in the
 in the raw reports are now High 0 / Medium 6 / Low 15 (previously 0 / 3 / 15).
 The updated raw reports `sast_bandit_report.json` / `.txt` reflect this run.
 
+## Central sync client (`core/central_*.py` and related)
+
+**Re-scan #4 (2026-10-09):** re-run via `scripts/security_scan.py` after the
+PC-side sync client for the central service landed.
+
+**Scope (lines of code per Bandit's per-file metrics):** `core/central_client.py`
+(141), `core/central_state.py` (111), `core/central_sync.py` (306),
+`core/config_overlay.py` (74), `core/safe_paths.py` (39), `ui/central_tab.py`
+(178).
+
+**Result for these files: 0 findings** (High 0, Medium 0, Low 0, no `#nosec`).
+Repository-wide totals are unchanged from re-scan #3: High 0 / Medium 6 /
+Low 15, so no new finding exists anywhere.
+
+| Severity | Findings in the new files |
+|---|---|
+| High | 0 |
+| Medium | 0 |
+| Low | 0 |
+
+**Disposition: nothing to fix, nothing to accept.** Notes so the clean result
+is not over-read:
+
+- *Network (B310, urllib scheme audit):* not raised; `CentralClient` accepts
+  only `https://` (or loopback `http://` behind an explicit environment
+  switch) before any request is built, and TLS verification is never disabled.
+- *Hardcoded passwords (B105/B106):* none; the API key is held in the DPAPI
+  keystore, never in source or settings.
+- *Broad `except` (B110/B112):* the sync paths catch `Exception` deliberately
+  but log (type name only, never message text that could hold key data) and
+  convert to a `SyncResult`; Bandit does not flag them because they do not
+  `pass`.
+
+**Limits of this evidence:** Bandit does not assess the path-traversal guards
+(`safe_paths`, `config_overlay`), the redirect/size handling or the sync race
+handling; those are pinned by `tests/test_central_*.py`,
+`tests/test_safe_paths.py` and the end-to-end `tests/test_central_integration.py`.
+The client-side threat model is section 7 of
+`docs/superpowers/specs/2026-10-04-central-api-threat-model.md`.
+
 ## Recommended sequencing (per Enhancement Plan §7.1)
 
 - [x] Draft the SDLC policy document and security testing scope statement
