@@ -1,13 +1,16 @@
 import copy
 import json
 import logging
+import sqlite3
+import threading
+import time
 
 import pytest
 
 from core.central_client import (CentralAuthError, CentralRegistrationError,
                                  CentralUnavailable, PullResult, RegisterResult)
 from core.central_state import CentralState
-from core.central_sync import CentralSyncService
+from core.central_sync import CentralSyncService, SyncResult
 from core.config_overlay import default_local_sections
 from core.profile_manager import DEFAULT_PROJECT, ProfileManager
 from data.audit import AuditLogger
@@ -286,11 +289,17 @@ def test_register_failure_leaves_state_untouched(env):
     assert not env.state.is_registered()
 
 
-def test_register_rejects_non_https_url_before_any_call(env):
+def test_register_rejects_non_https_url_before_any_call(env, monkeypatch):
     from core.central_sync import default_client_factory
+
+    def no_network(*a, **k):
+        raise AssertionError("a transport/opener was built for a non-https URL")
+    monkeypatch.setattr("core.central_client.urllib.request.build_opener",
+                        no_network)
     env.svc._client_factory = default_client_factory
     with pytest.raises(ValueError):
         env.svc.register("http://central.example", "ABCDEFGH1234")
+    assert not env.state.is_registered()
 
 
 def test_disconnect_unmanages_projects_but_keeps_them(env):
@@ -383,11 +392,10 @@ def test_thousands_of_projects_are_capped_and_reported(env):
     pull(env, project_entry(version=1), *junk, project_entry(pid=PID2, name="Other"))
     r = env.svc.sync_once()
     assert r.status == "ok" and "overflow" in r.errors
-    assert len(r.errors) <= 501
+    assert len(r.errors) == 500          # 499 junk entries + the overflow key
     assert r.unassigned == []
     assert env.db.get_central_project(PID2)["managed"] == 1
-    assert env.state.settings.last_sync_status.startswith("ok with ")
-    assert "skipped" in env.state.settings.last_sync_status
+    assert env.state.settings.last_sync_status == "ok with 500 skipped"
 
 
 def test_hostile_ids_and_reasons_are_truncated_and_stripped(env, caplog):
@@ -448,6 +456,127 @@ def test_disconnect_while_applying_does_not_resurrect_state(env, monkeypatch):
         return out
     monkeypatch.setattr(env.pm, "adopt", adopt_then_disconnect)
     r = env.svc.sync_once()
-    assert "registration changed" in r.message
+    assert r.status == "unavailable" and "registration changed" in r.message
     assert not (env.root / "central.json").exists()
     assert not env.state.is_registered()
+
+
+# ---- fix round: lock, generation, never-raise -----------------------------------------
+def three_projects():
+    return [project_entry(), project_entry(pid=PID2, name="Two"),
+            project_entry(pid="aaaaaaaa-2222-3333-4444-555555555555", name="Three")]
+
+
+def sync_with_concurrent_action(env, action):
+    """Run sync_once on a worker thread; once its apply loop is inside the
+    first pm.adopt, start `action` on another thread, give it time to run into
+    the service lock, then let the apply continue. Returns the SyncResult."""
+    in_apply, started = threading.Event(), threading.Event()
+    real_adopt, first = env.pm.adopt, [True]
+
+    def spy(cfg):
+        if first[0]:
+            first[0] = False
+            in_apply.set()
+            assert started.wait(5), "action thread never started"
+            time.sleep(0.4)           # let it reach (and block on) the lock
+        return real_adopt(cfg)
+    env.pm.adopt = spy
+    out = {}
+    worker = threading.Thread(target=lambda: out.update(r=env.svc.sync_once()))
+    worker.start()
+    assert in_apply.wait(5), "apply loop never started"
+
+    def run_action():
+        started.set()
+        action()
+    other = threading.Thread(target=run_action)
+    other.start()
+    worker.join(10)
+    other.join(10)
+    assert not worker.is_alive() and not other.is_alive()
+    return out["r"]
+
+
+def test_disconnect_from_another_thread_during_apply_leaves_nothing_managed(env):
+    register(env)
+    pull(env, *three_projects())
+    r = sync_with_concurrent_action(env, env.svc.disconnect)
+    assert r.status == "ok" and len(r.applied) == 3     # disconnect waited
+    assert env.db.list_central_projects(managed_only=True) == []
+    assert not env.state.is_registered()
+    assert not (env.root / "central.json").exists()
+    assert "central_disconnected" in actions(env)
+
+
+def test_register_from_another_thread_during_apply_keeps_new_identity_clean(env):
+    register(env)
+    env.holder["client"] = FakeClient(
+        pull=PullResult("pc-1", 600, three_projects()),
+        register=RegisterResult("pc-2", "dsk_NEW", 300))
+    r = sync_with_concurrent_action(
+        env, lambda: env.svc.register("https://c.example", "ABCDEFGH1234"))
+    assert r.status == "ok" and len(r.applied) == 3     # register waited
+    s = env.state.settings
+    assert s.pc_id == "pc-2" and env.state.api_key() == "dsk_NEW"
+    assert s.auth_failed is False and s.poll_interval_seconds == 300
+    env.holder["client"] = FakeClient(pull=PullResult("pc-2", 300, []))
+    assert env.svc.sync_once().status == "ok"
+    assert env.db.list_central_projects(managed_only=True) == []
+
+
+# ---- sync_once never raises ------------------------------------------------------------
+def deny_save(self, settings=None):
+    raise PermissionError("held by antivirus")
+
+
+@pytest.mark.parametrize("client", [
+    FakeClient(pull=PullResult("pc-1", 600, [])),             # ok path
+    FakeClient(exc=CentralUnavailable("down")),               # unavailable path
+    FakeClient(exc=CentralAuthError(401)),                    # auth-failed path
+], ids=["ok", "unavailable", "auth_failed"])
+def test_sync_once_never_raises_when_state_cannot_be_saved(env, monkeypatch, client):
+    register(env)
+    env.holder["client"] = client
+    monkeypatch.setattr(CentralState, "_save", deny_save)
+    r = env.svc.sync_once()
+    assert isinstance(r, SyncResult) and r.status == "unavailable"
+    assert "PermissionError" in r.message
+
+
+def test_sync_once_never_raises_when_the_database_fails(env, monkeypatch):
+    register(env)
+
+    def broken(*a, **k):
+        raise sqlite3.OperationalError("database is locked")
+    monkeypatch.setattr(env.db, "list_central_projects", broken)
+    r = env.svc.sync_once()
+    assert isinstance(r, SyncResult) and r.status == "unavailable"
+    assert "OperationalError" in r.message
+
+
+# ---- unambiguous skip keys --------------------------------------------------------------
+def test_entries_without_a_usable_id_are_keyed_by_index_and_all_counted(env):
+    register(env)
+    pull(env, "garbage", {"no": "id"}, {"project_id": ""}, project_entry())
+    r = env.svc.sync_once()
+    assert sorted(r.errors) == ["invalid-entry-0", "invalid-entry-1",
+                                "invalid-entry-2"]
+    assert env.state.settings.last_sync_status == "ok with 3 skipped"
+
+
+def test_registration_cleared_mid_loop_stops_applying_further_projects(env):
+    register(env)
+    pull(env, *three_projects())
+    real_adopt, calls = env.pm.adopt, []
+
+    def adopt_then_clear(cfg):
+        calls.append(cfg["project_id"])
+        out = real_adopt(cfg)
+        env.state.clear()
+        return out
+    env.pm.adopt = adopt_then_clear
+    r = env.svc.sync_once()
+    assert r.status == "unavailable" and r.applied == []
+    assert calls == [PID]
+    assert env.db.get_project(PID2) is None

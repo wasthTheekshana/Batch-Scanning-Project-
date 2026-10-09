@@ -41,6 +41,9 @@ class CentralState:
         self._key = ProtectedBlob(self.root / "keys" / KEY_FILE,
                                   "DOKScanner central API key")
         self._lock = threading.Lock()  # worker thread + UI both write
+        # Bumped by register_result/clear (never persisted): lets a sync that
+        # started under one registration detect that it no longer applies.
+        self.generation = 0
         self.settings = self._load()
 
     def _load(self) -> CentralSettings:
@@ -79,10 +82,10 @@ class CentralState:
     def api_key(self) -> str | None:
         try:
             raw = self._key.load()
+            return raw.decode("utf-8") if raw else None
         except Exception as e:  # never log the message: it could hold key data
             log.error("cannot read the central API key (%s)", type(e).__name__)
             return None
-        return raw.decode("utf-8") if raw else None
 
     def register_result(self, server_url: str, pc_id: str, api_key: str,
                         poll_interval_seconds: int) -> None:
@@ -91,21 +94,39 @@ class CentralState:
             self.settings = CentralSettings(
                 server_url=server_url, pc_id=pc_id,
                 poll_interval_seconds=clamp_poll(poll_interval_seconds))
+            self.generation += 1
             self._save()
 
     def update(self, **changes) -> None:
+        with self._lock:
+            self._update_locked(changes)
+
+    def update_if(self, generation: int, **changes) -> bool:
+        """update(), but only if no register/clear happened since `generation`
+        was read. Returns False (writing nothing) when the registration moved."""
         with self._lock:
             known = {f.name for f in fields(CentralSettings)}
             for k in changes:
                 if k not in known:
                     raise AttributeError(f"unknown central setting: {k}")
-            new = replace(self.settings, **changes)
-            new.poll_interval_seconds = clamp_poll(new.poll_interval_seconds)
-            self._save(new)               # memory changes only once disk did
-            self.settings = new
+            if generation != self.generation:
+                return False
+            self._update_locked(changes)
+            return True
+
+    def _update_locked(self, changes: dict) -> None:
+        known = {f.name for f in fields(CentralSettings)}
+        for k in changes:
+            if k not in known:
+                raise AttributeError(f"unknown central setting: {k}")
+        new = replace(self.settings, **changes)
+        new.poll_interval_seconds = clamp_poll(new.poll_interval_seconds)
+        self._save(new)               # memory changes only once disk did
+        self.settings = new
 
     def clear(self) -> None:
         with self._lock:
             self._key.delete()
             self.settings = CentralSettings()
+            self.generation += 1
             self._path.unlink(missing_ok=True)

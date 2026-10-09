@@ -148,3 +148,55 @@ def test_load_falls_back_to_defaults_for_wrongly_typed_fields(tmp_path):
     assert s.server_url == "" and s.pc_id == "" and s.auth_failed is False
     assert s.last_sync_at == "" and s.last_sync_status == ""
     assert s.poll_interval_seconds == 90
+
+
+# ---- generation / update_if (Task 5 fix round) -------------------------------
+def test_generation_bumps_on_register_and_clear_but_not_on_update(tmp_path):
+    state = CentralState(tmp_path)
+    assert state.generation == 0
+    state.register_result("https://c.example", "pc-1", "dsk_K", 600)
+    assert state.generation == 1
+    state.update(last_sync_status="x")
+    assert state.generation == 1
+    state.clear()
+    assert state.generation == 2
+    assert CentralState(tmp_path).generation == 0      # not persisted
+
+
+def test_update_if_applies_when_generation_matches(tmp_path):
+    state = CentralState(tmp_path)
+    state.register_result("https://c.example", "pc-1", "dsk_K", 600)
+    assert state.update_if(state.generation, last_sync_status="ok") is True
+    assert state.settings.last_sync_status == "ok"
+    assert CentralState(tmp_path).settings.last_sync_status == "ok"
+
+
+def test_update_if_refuses_after_clear_and_does_not_resurrect_file(tmp_path):
+    state = CentralState(tmp_path)
+    state.register_result("https://c.example", "pc-1", "dsk_K", 600)
+    gen = state.generation
+    state.clear()
+    assert state.update_if(gen, auth_failed=True) is False
+    assert state.settings.auth_failed is False
+    assert not (tmp_path / "central.json").exists()
+
+
+def test_update_if_refuses_after_reregister_without_writing(tmp_path):
+    state = CentralState(tmp_path)
+    state.register_result("https://c.example", "pc-1", "dsk_K", 600)
+    gen = state.generation
+    state.register_result("https://c.example", "pc-1", "dsk_K2", 600)
+    assert state.update_if(gen, auth_failed=True) is False
+    assert CentralState(tmp_path).settings.auth_failed is False
+
+
+def test_update_if_validates_field_names_even_when_current(tmp_path):
+    state = CentralState(tmp_path)
+    with pytest.raises(AttributeError, match="unknown central setting"):
+        state.update_if(state.generation, bogus=1)
+
+
+def test_api_key_with_non_utf8_blob_returns_none(tmp_path):
+    state = CentralState(tmp_path)
+    state._key.load = lambda: b"\xff\xfe\x80"
+    assert state.api_key() is None
