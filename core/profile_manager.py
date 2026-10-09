@@ -149,7 +149,8 @@ class ProfileManager:
                 # file exists but the DB never heard of it: insert the row
                 saved = self._save_file(config)
                 self.db.insert_project(project_id, saved["name"], saved,
-                                      version=saved["version"])
+                                      version=saved["version"],
+                                      status=saved.get("status", "active"))
                 return saved
             return self.save(config)
         cfg = {**config, "version": 1}

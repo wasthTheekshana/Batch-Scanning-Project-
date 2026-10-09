@@ -10,6 +10,7 @@ import copy
 from pathlib import Path
 
 from core.profile_manager import DEFAULT_PROJECT, is_safe_project_id
+from core.safe_paths import is_safe_relative_subpath
 
 LOCAL_ONLY_KEYS = ("scanner", "export", "delivery")
 
@@ -35,6 +36,34 @@ def validate_entry(entry) -> None:
         raise PulledProjectError("config is not an object")
     if config.get("project_id") not in (None, pid):
         raise PulledProjectError("config.project_id does not match the entry")
+    _check_rule_actions(config)
+
+
+def _check_rule_actions(config: dict) -> None:
+    """Reject rules whose set_folder / set_filename values could write outside
+    the output root (the exporter and channels guard again at write time)."""
+    rules_cfg = config.get("rules")
+    rules = rules_cfg.get("rules") if isinstance(rules_cfg, dict) else None
+    if not isinstance(rules, list):
+        return
+    for i, rule in enumerate(rules):
+        actions = rule.get("actions") if isinstance(rule, dict) else None
+        if not isinstance(actions, list):
+            continue
+        for j, action in enumerate(actions):
+            if not isinstance(action, dict):
+                continue
+            kind, value = action.get("type"), action.get("value")
+            where = f"rule {i} action {j}"
+            if kind == "set_folder" and not is_safe_relative_subpath(value):
+                raise PulledProjectError(
+                    f"unsafe set_folder value in {where}: {value!r}")
+            if kind == "set_filename" and (
+                    not isinstance(value, str) or "/" in value
+                    or "\\" in value or ".." in value
+                    or any(ord(c) < 32 for c in value)):
+                raise PulledProjectError(
+                    f"unsafe set_filename value in {where}: {value!r}")
 
 
 def default_local_sections(root: Path) -> dict:
@@ -49,6 +78,7 @@ def default_local_sections(root: Path) -> dict:
 
 
 def overlay(entry: dict, local: dict | None, defaults: dict) -> dict:
+    """entry must already have passed validate_entry."""
     cfg = copy.deepcopy(entry["config"])
     cfg["project_id"] = entry["project_id"]
     cfg["name"] = entry["name"]

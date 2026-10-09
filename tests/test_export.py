@@ -125,3 +125,16 @@ def test_batch_exporter_flags_after_max_attempts(page_files, tmp_path):
     with pytest.raises(ExportError):
         future.result(timeout=30)
     exporter.shutdown()
+
+
+@pytest.mark.parametrize("bad", ["../evil", "D:/evil", "\\\\h\\s", "C:evil",
+                                 "a/../../evil"])
+def test_export_document_rejects_escaping_output_folder(page_files, tmp_path, bad):
+    root = tmp_path / "root"
+    cfg = {"format": "tiff", "filename_template": "{batch_id}_{counter:04d}",
+           "output_path": str(root / "exports")}
+    before = {p for p in tmp_path.rglob("*")}
+    with pytest.raises(ValueError, match="unsafe output folder"):
+        export_document(page_files, cfg, {"batch_id": "b1", "counter": 1,
+                                          "output_folder": bad})
+    assert {p for p in tmp_path.rglob("*")} == before  # nothing written anywhere

@@ -5,6 +5,7 @@ import hashlib
 import shutil
 from pathlib import Path
 
+from core.safe_paths import safe_join
 from delivery.base import BaseDeliveryChannel, DeliveryResult
 
 
@@ -31,9 +32,12 @@ class LocalFolderChannel(BaseDeliveryChannel):
 
     def deliver(self, doc_path: str, metadata: dict) -> DeliveryResult:
         src = Path(doc_path)
-        dest_dir = Path(self.config["path"])
-        if sub := metadata.get("output_folder"):
-            dest_dir = dest_dir / sub
+        try:
+            dest_dir = safe_join(Path(self.config["path"]),
+                                 metadata.get("output_folder") or "")
+        except ValueError as e:  # rule tried to leave the delivery root
+            return DeliveryResult(success=False, channel=self.name,
+                                  detail={"error": str(e)})
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / src.name
 

@@ -149,3 +149,13 @@ def test_existing_db_without_central_table_gets_it_on_open(tmp_path):
         assert reopened.get_central_project("p1")["central_version"] == 2
     finally:
         reopened.close()
+
+
+def test_adopt_row_insert_branch_keeps_status(pm, db):
+    pid = pm.adopt(_cfg())["project_id"]
+    db.conn.execute("DELETE FROM projects WHERE project_id=?", (pid,))
+    db.conn.commit()
+    archived = _cfg()
+    archived["status"] = "archived"
+    pm.adopt(archived)
+    assert db.get_project(pid)["status"] == "archived"

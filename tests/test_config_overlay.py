@@ -25,11 +25,16 @@ def test_valid_entry_passes():
     validate_entry(entry())
 
 
-@pytest.mark.parametrize("bad_id", ["../evil", "a/b", "a\\b", "", "x" * 37,
-                                    "has space", "..", "a.b", 5, None])
+UNSAFE_IDS = ["../evil", "a/b", "a\\b", "", "x" * 37, "has space", "..", "a.b",
+              5, None, "abc\n", 123, ["a"], "CON", "nul", "Com1", "LPT9"]
+
+
+@pytest.mark.parametrize("bad_id", UNSAFE_IDS)
 def test_unsafe_ids_rejected(bad_id):
-    with pytest.raises(PulledProjectError):
-        validate_entry(entry(project_id=bad_id))
+    e = entry(project_id=bad_id)
+    e["config"]["project_id"] = bad_id  # so only the id check can reject it
+    with pytest.raises(PulledProjectError, match="unsafe project_id"):
+        validate_entry(e)
 
 
 @pytest.mark.parametrize("bad_version", [0, -1, "2", 1.5, True, None])
@@ -118,15 +123,6 @@ def test_entry_name_and_id_win_over_config_values(tmp_path):
 
 
 # ---- controller rulings --------------------------------------------------------
-@pytest.mark.parametrize("bad_id", ["abc\n", 123, None, ["a"], "CON", "nul",
-                                    "Com1", "LPT9"])
-def test_more_unsafe_ids_rejected(bad_id):
-    e = entry(project_id=bad_id)
-    e["config"]["project_id"] = bad_id  # so only the id check can reject it
-    with pytest.raises(PulledProjectError, match="unsafe project_id"):
-        validate_entry(e)
-
-
 @pytest.mark.parametrize("good_id", ["x" * 36, "console", "com10"])
 def test_boundary_ids_accepted(good_id):
     e = entry(project_id=good_id)
@@ -149,3 +145,50 @@ def test_local_missing_a_section_falls_back_to_defaults(tmp_path):
     cfg = overlay(entry(), local, defaults)
     assert cfg["delivery"] == defaults["delivery"]
     assert cfg["export"]["output_path"] == "D:/scans/out"
+
+
+def test_config_without_project_id_passes_and_overlay_stamps_entry_id(tmp_path):
+    e = entry()
+    del e["config"]["project_id"]
+    validate_entry(e)
+    cfg = overlay(e, None, default_local_sections(tmp_path))
+    assert cfg["project_id"] == PID
+
+
+# ---- rule actions that could escape the output root ------------------------------
+def _with_action(action):
+    e = entry()
+    e["config"]["rules"]["rules"] = [
+        {"rule_id": "r1", "actions": [{"type": "add_flag", "value": "x"}, action]}]
+    return e
+
+
+@pytest.mark.parametrize("value", ["../../x", "D:/evil", "\\\\h\\s", "/abs",
+                                   "a/../../b", "C:evil", "CON", 5, None])
+def test_unsafe_set_folder_rejected_naming_the_rule(value):
+    with pytest.raises(PulledProjectError, match="set_folder.*rule 0 action 1"):
+        validate_entry(_with_action({"type": "set_folder", "value": value}))
+
+
+@pytest.mark.parametrize("value", ["a/b", "a\\b", "..", 5, None])
+def test_unsafe_set_filename_rejected(value):
+    with pytest.raises(PulledProjectError, match="set_filename"):
+        validate_entry(_with_action({"type": "set_filename", "value": value}))
+
+
+@pytest.mark.parametrize("action", [
+    {"type": "set_folder", "value": "Exceptions/Missing"},
+    {"type": "set_folder", "value": ""},
+    {"type": "set_filename", "value": "{date}_{counter:04d}"},
+    {"type": "set_validation_status", "value": "rejected"}])
+def test_clean_rule_actions_pass(action):
+    validate_entry(_with_action(action))
+
+
+@pytest.mark.parametrize("rules", [None, "x", {"rules": "x"}, {"rules": [5]},
+                                   {"rules": [{"actions": "x"}]},
+                                   {"rules": [{"actions": [7]}]}])
+def test_odd_rule_shapes_never_raise_anything_but_pulled_error(rules):
+    e = entry()
+    e["config"]["rules"] = rules
+    validate_entry(e)  # odd shapes are the schema's problem, not a path escape

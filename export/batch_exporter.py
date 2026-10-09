@@ -10,6 +10,7 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
+from core.safe_paths import safe_join
 from export.filename import render
 from export.pdf_writer import write_image_pdf, write_searchable_pdf
 from export.tiff_writer import write_multipage_tiff
@@ -31,7 +32,7 @@ def export_document(images: list[str], export_cfg: dict, ctx: dict,
     name = render(export_cfg.get("filename_template", "{batch_id}_{counter:04d}"), ctx)
     out_dir = Path(export_cfg.get("output_path") or ".")
     if sub := ctx.get("output_folder"):
-        out_dir = out_dir / sub
+        out_dir = safe_join(out_dir, sub)
     if fmt == "tiff":
         return write_multipage_tiff(images, out_dir / f"{name}.tif")
     if fmt == "image_pdf":
