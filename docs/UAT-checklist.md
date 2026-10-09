@@ -62,7 +62,9 @@ Record pass/fail + notes per item; all must pass before go-live sign-off.
       status shows connected
 - [ ] The assigned project appears in the project list after the first sync
 - [ ] Edit the project on central: the new version arrives on the next sync;
-      the Designer refuses a local save and rollback of that managed project
+      the Designer shows a "Managed centrally" banner, only its scanner /
+      export / delivery fields are editable (saving changes just those) and
+      rollback of that managed project is refused
 - [ ] Unassign the project on central: it stays on the PC, editing is enabled
       again
 - [ ] Revoke the PC key on central: banner shows re-enrolment is needed and
@@ -70,8 +72,13 @@ Record pass/fail + notes per item; all must pass before go-live sign-off.
 - [ ] Stop the central server, then start DOKScanner: it starts within a few
       seconds and scans normally with the last-known projects
 - [ ] Admin > Central > Disconnect: the projects stay and become editable
-- [ ] A project whose rule has a `..` set_folder value is skipped (listed as
-      skipped), other projects still apply
+- [ ] A project whose rule has a `..` set_folder value (publish via the
+      central API) is skipped (listed as skipped), other projects still apply
+- [ ] After enrollment and restart, scans are delivered to the same place as
+      before (output folder, SFTP/local delivery, scanner)
+- [ ] After a sync that applied something, the status bar shows "restart
+      DOKScanner to apply" for every role (also for an operator) and keeps
+      showing it after later syncs until the app is restarted
 
 ## Sign-off
 | Role | Name | Date | Signature |

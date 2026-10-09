@@ -19,7 +19,7 @@ Spec `docs/superpowers/specs/2026-08-29-central-admin-dashboard-design.md` is no
 | Plan | Status |
 |---|---|
 | 1. Central backend API (`central/`) | **Built** on branch `central-api` (not yet merged): admin login/CSRF/lockout, PC enrollment (one-time codes), Bearer-key PC auth, versioned project/template config with credential scanning, push/assign, config pull, audit, threat model + SAST triage. |
-| 2. Sync client in DOKScanner.exe | **Built** on branch `central-sync` (state, HTTPS client, config overlay, safe paths, sync service/worker, startup sync, Admin > Central tab, Designer guard for managed projects). End-to-end tests against the real central app: `tests/test_central_integration.py`. PC-local `scanner`/`export`/`delivery` stay local. |
+| 2. Sync client in DOKScanner.exe | **Built** on branch `central-sync` (state, HTTPS client, config overlay, safe paths, sync service/worker, startup sync, Admin > Central tab, Workflow Designer limited to scanner/export/delivery for managed projects). End-to-end tests against the real central app: `tests/test_central_integration.py`. PC-local `scanner`/`export`/`delivery` stay local, are seeded from the PC's previous project and are editable in the Designer. |
 | 3. React admin dashboard | Not started — needs admin password reset/disable, session revoke-all, PC deletion and an audit-log read API first (listed in `central/README.md`). |
 
 Known limitations of plan 2:

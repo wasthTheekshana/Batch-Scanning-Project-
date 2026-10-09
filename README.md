@@ -88,6 +88,16 @@ Tesseract 5 must be on PATH for OCR features (bundled in the packaged EXE).
   Multi-Site Consolidation §3.3: a location field with no multi-site
   aggregation behind it would be a hollow label in a single-site
   deployment, so it's tied to that work rather than added standalone).
+- **Central sync client** — complete: Admin > Central enrols the PC with a
+  one-time code (enrollment is per Windows account: the key is DPAPI-protected
+  and the data lives under that user's `%LOCALAPPDATA%`). Assigned projects are
+  pulled in the background and apply after a restart (a status-bar notice
+  shows for every role). Central owns processing settings; the PC keeps its own
+  scanner / export / delivery. A project new to the PC has those three sections
+  seeded from the PC's previous project (the first active project that central
+  does not manage), so scans keep going to the same place, and they stay
+  editable for a managed project in the Workflow Designer (everything else is
+  read-only there).
 - **Remaining before go-live** — bundle `tesseract.exe`/`tessdata`/
   `libzbar-64.dll` into the release build (blocked on binaries), vendor
   SDK `acquire()` bodies for Kodak/Alaris/CZUR/Viisan (blocked on vendor
