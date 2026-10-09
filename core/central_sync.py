@@ -57,6 +57,28 @@ class SyncResult:
         return bool(self.applied)
 
 
+# Process-level "restart pending": once a sync applied something the running
+# pipeline cannot pick up, the notice stays until the application exits (a
+# later empty sync must not hide that no restart has happened yet).
+_restart_pending = False
+
+
+def note_sync_result(result: SyncResult) -> None:
+    global _restart_pending
+    if result.restart_needed:
+        _restart_pending = True
+
+
+def restart_pending() -> bool:
+    return _restart_pending
+
+
+def _reset_restart_pending() -> None:
+    """For tests only."""
+    global _restart_pending
+    _restart_pending = False
+
+
 def default_client_factory(server_url: str, timeout: float) -> CentralClient:
     return CentralClient(server_url, timeout=timeout,
                          allow_insecure_loopback=allow_loopback_http())

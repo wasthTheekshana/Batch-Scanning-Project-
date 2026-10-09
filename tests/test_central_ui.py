@@ -11,7 +11,7 @@ from core.central_client import (CentralRegistrationError, CentralUnavailable,
                                  RegisterResult)
 from core.central_state import CentralState
 from core.central_sync import (CentralSyncService, SyncResult,
-                               default_client_factory)
+                               _reset_restart_pending, default_client_factory)
 from core.event_bus import EventBus
 from core.profile_manager import DEFAULT_PROJECT, ProfileManager
 from core.rbac import Session, User
@@ -23,6 +23,14 @@ from ui.workflow_designer import WorkflowDesigner
 
 ADMIN = User("u1", "root", "admin")
 VIEWER = User("u2", "view", "viewer")
+OPERATOR = User("u3", "op", "operator")
+
+
+@pytest.fixture(autouse=True)
+def fresh_restart_flag():
+    _reset_restart_pending()
+    yield
+    _reset_restart_pending()
 
 
 class StubClient:
@@ -510,3 +518,62 @@ def test_designer_refuses_rollback_of_a_managed_project(qtbot, env, monkeypatch)
     monkeypatch.setattr(env.pm, "rollback", lambda *a: rolled.append(a))
     d.rollback_dialog()
     assert shown and "central" in shown[0].lower() and rolled == []
+
+
+# ---- I1: "restart to apply" survives later syncs and is visible to every role -------------
+def test_restart_notice_in_central_tab_survives_a_following_empty_result(qtbot, env):
+    bus = EventBus()
+    env.state.register_result("https://central.example", "pc-1", "k", 600)
+    t = CentralTab(env.state, env.svc, env.worker, ADMIN, bus=bus)
+    qtbot.addWidget(t)
+    bus.central_synced.emit(SyncResult("ok", applied=["p1"]))
+    assert "restart" in t.status_label.text().lower()
+    bus.central_synced.emit(SyncResult("ok", unchanged=1))      # the next poll: nothing applied
+    assert "restart" in t.status_label.text().lower()
+
+
+@pytest.mark.parametrize("user", [ADMIN, OPERATOR], ids=["admin", "operator"])
+def test_main_window_restart_label_stays_until_exit_for_every_role(qtbot, env, user):
+    env.pm.create("Default Project")
+    Session._current = user
+    win = MainWindow(env.db, env.pm, EventBus(), staging_dir=env.root / "staging",
+                     central_state=env.state, sync_service=env.svc,
+                     sync_worker=env.worker)
+    qtbot.addWidget(win)
+    assert win.restart_label.isHidden()
+    win.bus.central_synced.emit(SyncResult("ok", unchanged=1))
+    assert win.restart_label.isHidden()                         # nothing applied: no notice
+    win.bus.central_synced.emit(SyncResult("ok", applied=["p1"]))
+    assert not win.restart_label.isHidden()
+    assert "restart DOKScanner" in win.restart_label.text()
+    win.bus.central_synced.emit(SyncResult("ok", unchanged=1))
+    assert not win.restart_label.isHidden()                     # still pending
+    assert win.restart_label.parent() is win.statusBar()
+
+
+@pytest.mark.parametrize("user", [ADMIN, OPERATOR], ids=["admin", "operator"])
+def test_main_window_shows_reenrollment_notice_only_after_auth_failure(qtbot, env, user):
+    env.pm.create("Default Project")
+    env.state.register_result("https://central.example", "pc-1", "k", 600)
+    Session._current = user
+    win = MainWindow(env.db, env.pm, EventBus(), staging_dir=env.root / "staging",
+                     central_state=env.state, sync_service=env.svc,
+                     sync_worker=env.worker)
+    qtbot.addWidget(win)
+    win.bus.central_synced.emit(SyncResult("ok"))
+    assert win.reenroll_label.isHidden()
+    env.state.update(auth_failed=True)
+    win.bus.central_synced.emit(SyncResult("auth_failed"))
+    assert not win.reenroll_label.isHidden()
+    assert "new enrollment code" in win.reenroll_label.text()
+    assert win.restart_label.isHidden()
+    env.state.update(auth_failed=False)                         # re-enrolled
+    win.bus.central_synced.emit(SyncResult("ok"))
+    assert win.reenroll_label.isHidden()
+
+
+def test_main_window_without_central_objects_has_no_notices(qtbot, env):
+    env.pm.create("Default Project")
+    win = _admin_window(qtbot, env)
+    win.bus.central_synced.emit(SyncResult("ok", applied=["p1"]))
+    assert win.restart_label.isHidden() and win.reenroll_label.isHidden()

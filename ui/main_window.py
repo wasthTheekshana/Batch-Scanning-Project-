@@ -2,10 +2,11 @@
 panels (HLD §16, §10.1)."""
 from __future__ import annotations
 
-from PyQt6.QtCore import QSize
+from PyQt6.QtCore import QSize, Qt, pyqtSlot
 from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QMainWindow, QPushButton,
                              QTabWidget, QVBoxLayout, QWidget)
 
+from core.central_sync import note_sync_result, restart_pending
 from core.rbac import Session
 from ui.admin_panel import AdminPanel
 from ui.image_viewer import ImageViewer
@@ -15,6 +16,10 @@ from ui.qc_review import QCReviewPanel
 from ui.scan_wizard import ScanWizard
 from ui.theme import ACCENT, icon, mark
 from ui.workflow_designer import WorkflowDesigner
+
+RESTART_NOTICE = ("Updated project settings received - restart DOKScanner "
+                  "to apply")
+REENROLL_NOTICE = "Central: this PC needs a new enrollment code"
 
 ROLE_LABELS = {"admin": "Administrator", "operator": "Operator",
                "qc_officer": "QC Officer", "viewer": "Viewer"}
@@ -154,10 +159,32 @@ class MainWindow(QMainWindow):
                              "Custody")
 
         bus.qc_ready.connect(lambda _doc_id: self.qc_panel.refresh())
+        # Central notices are for every role (the Central tab is admin-only).
+        self._central_state = central_state
+        self.restart_label = QLabel(RESTART_NOTICE)
+        self.reenroll_label = QLabel(REENROLL_NOTICE)
+        for label in (self.restart_label, self.reenroll_label):
+            label.setTextFormat(Qt.TextFormat.PlainText)
+            label.hide()
+            self.statusBar().addPermanentWidget(label)
+        if central_state is not None:
+            bus.central_synced.connect(self._on_central_synced)
+            self._refresh_central_notices()
         self.statusBar().showMessage(
             f"Signed in as {user.username} "
             f"({ROLE_LABELS.get(user.role, user.role)})" if user else
             "Not signed in")
+
+    @pyqtSlot(object)
+    def _on_central_synced(self, result) -> None:
+        note_sync_result(result)
+        self._refresh_central_notices()
+
+    def _refresh_central_notices(self) -> None:
+        self.restart_label.setVisible(restart_pending())
+        self.reenroll_label.setVisible(
+            self._central_state is not None
+            and self._central_state.settings.auth_failed)
 
     def _active_zones(self) -> list:
         import json
