@@ -24,6 +24,7 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 from core.central_client import (CentralAuthError, CentralClient,
                                  CentralError, allow_loopback_http)
@@ -242,3 +243,116 @@ class CentralSyncService:
         result.errors[key] = reason
         self._audit("central_project_skipped", project_id=key, reason=reason)
         log.warning("skipped central project %s: %s", key, reason)
+
+
+# -- background polling --------------------------------------------------------
+RETRY_AFTER_FAILURE = 120.0
+STARTUP_TIMEOUT = 5.0
+STOP_JOIN_TIMEOUT = 5.0
+
+
+class SyncWorker:
+    """Polls central on a daemon thread. Never raises into the app.
+
+    on_result runs on the worker thread: hand it a thread-safe sink such as a
+    Qt signal's emit."""
+
+    def __init__(self, service: CentralSyncService, state: CentralState,
+                 on_result: Callable[[SyncResult], None] | None = None,
+                 join_timeout: float = STOP_JOIN_TIMEOUT):
+        self._service, self._state, self._on_result = service, state, on_result
+        self._join_timeout = join_timeout
+        self._stop = threading.Event()
+        self._wake = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    # -- policy (pure) -----------------------------------------------------------
+    def next_wait(self, result: SyncResult | None) -> float | None:
+        """Seconds to sleep before the next sync; None = until woken."""
+        s = self._state.settings
+        if result is None:
+            if not self._state.is_registered() or s.auth_failed:
+                return None
+            return float(s.poll_interval_seconds)
+        if result.status in ("not_registered", "auth_failed"):
+            return None
+        if result.status == "unavailable":
+            return min(float(s.poll_interval_seconds), RETRY_AFTER_FAILURE)
+        return float(s.poll_interval_seconds)
+
+    # -- lifecycle ----------------------------------------------------------------
+    def start(self, initial_sync: bool = True) -> None:
+        if self._thread is not None:
+            return
+        self._thread = threading.Thread(
+            target=self._run, args=(initial_sync,), name="central-sync",
+            daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        """Ask the thread to end and wait a bounded time. A sync blocked on
+        the network is left to the daemon thread; exit is never held up."""
+        self._stop.set()
+        self._wake.set()
+        t = self._thread
+        if t is not None:
+            t.join(timeout=self._join_timeout)
+
+    def is_running(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
+    def sync_now(self) -> None:
+        self._wake.set()
+
+    # -- loop ------------------------------------------------------------------------
+    def _run(self, initial_sync: bool) -> None:
+        result = self._do_sync() if initial_sync else None
+        while not self._stop.is_set():
+            self._wake.wait(self.next_wait(result))
+            if self._stop.is_set():
+                break
+            self._wake.clear()
+            result = self._do_sync()
+
+    def _do_sync(self) -> SyncResult:
+        try:
+            result = self._service.sync_once()
+        except Exception as e:                       # belt and braces
+            log.exception("central sync crashed")
+            result = SyncResult("unavailable",
+                                message=_clean(f"{type(e).__name__}: {e}"))
+        if self._on_result is not None:
+            try:
+                self._on_result(result)
+            except Exception:
+                log.exception("central sync result handler failed")
+        return result
+
+
+def startup_sync(service: CentralSyncService,
+                 state: CentralState) -> SyncResult | None:
+    """One short, bounded sync before the pipeline profile is chosen. Never
+    raises and never lingers: None when unregistered or if it crashed."""
+    if not state.is_registered():
+        return None
+    previous = service.timeout
+    service.timeout = STARTUP_TIMEOUT
+    try:
+        return service.sync_once()
+    except Exception:
+        log.exception("startup central sync failed; continuing")
+        return None
+    finally:
+        service.timeout = previous
+
+
+def choose_pipeline_profile(db, fallback: Callable[[], dict]) -> dict:
+    """The pipeline binds to ONE project at startup. A PC that is managed
+    centrally uses its first active managed project; otherwise (or if none
+    is usable) the existing first-run behaviour applies."""
+    managed = {r["project_id"] for r in
+               db.list_central_projects(managed_only=True)}
+    for row in db.list_projects("active"):
+        if row["project_id"] in managed:
+            return json.loads(row["config_json"])
+    return fallback()
