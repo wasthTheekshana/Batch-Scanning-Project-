@@ -104,3 +104,47 @@ def test_registered_requires_the_key_file(tmp_path):
     st.register_result("https://c.example", "pc-1", "k", 600)
     (tmp_path / "keys" / "central_api_key.bin").unlink()
     assert not CentralState(tmp_path).is_registered()
+
+
+# ---- hardening (Task 5, R3) --------------------------------------------------
+def test_api_key_swallows_any_exception_and_logs_only_the_type(tmp_path, caplog):
+    state = CentralState(tmp_path)
+
+    def boom():
+        raise ValueError("SECRET-KEY-MATERIAL")
+    state._key.load = boom
+    with caplog.at_level("DEBUG"):
+        assert state.api_key() is None
+    assert "ValueError" in caplog.text
+    assert "SECRET-KEY-MATERIAL" not in caplog.text
+
+
+def test_update_with_unknown_field_changes_nothing(tmp_path):
+    state = CentralState(tmp_path)
+    with pytest.raises(AttributeError):
+        state.update(last_sync_status="changed", bogus=1)
+    assert state.settings.last_sync_status == ""
+    assert not (tmp_path / "central.json").exists()
+
+
+def test_update_whose_save_fails_leaves_memory_unchanged(tmp_path, monkeypatch):
+    state = CentralState(tmp_path)
+
+    def fail(self, settings=None):
+        raise OSError("disk full")
+    monkeypatch.setattr(CentralState, "_save", fail)
+    with pytest.raises(OSError):
+        state.update(auth_failed=True, last_sync_status="x")
+    assert state.settings.auth_failed is False
+    assert state.settings.last_sync_status == ""
+
+
+def test_load_falls_back_to_defaults_for_wrongly_typed_fields(tmp_path):
+    (tmp_path / "central.json").write_text(json.dumps({
+        "server_url": 5, "pc_id": ["x"], "auth_failed": "no",
+        "last_sync_at": 7, "last_sync_status": None,
+        "poll_interval_seconds": 90}), encoding="utf-8")
+    s = CentralState(tmp_path).settings
+    assert s.server_url == "" and s.pc_id == "" and s.auth_failed is False
+    assert s.last_sync_at == "" and s.last_sync_status == ""
+    assert s.poll_interval_seconds == 90

@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import threading
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 
 from data.keystore import ProtectedBlob
@@ -53,18 +53,22 @@ class CentralState:
         except (OSError, ValueError) as e:
             log.warning("ignoring unreadable %s: %s", self._path, e)
             return CentralSettings()
-        known = {f.name for f in fields(CentralSettings)}
-        try:
-            s = CentralSettings(**{k: v for k, v in data.items() if k in known})
-        except TypeError:
-            return CentralSettings()
+        s = CentralSettings()
+        for f in fields(CentralSettings):
+            v = data.get(f.name, getattr(s, f.name))
+            if f.name == "poll_interval_seconds":
+                continue                      # clamp_poll validates the type
+            if isinstance(v, type(getattr(s, f.name))):
+                setattr(s, f.name, v)
+        s.poll_interval_seconds = data.get("poll_interval_seconds")
         s.poll_interval_seconds = clamp_poll(s.poll_interval_seconds)
         return s
 
-    def _save(self) -> None:
+    def _save(self, settings: CentralSettings | None = None) -> None:
+        settings = settings if settings is not None else self.settings
         self.root.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(asdict(self.settings), indent=2),
+        tmp.write_text(json.dumps(asdict(settings), indent=2),
                        encoding="utf-8")
         os.replace(tmp, self._path)
 
@@ -75,8 +79,8 @@ class CentralState:
     def api_key(self) -> str | None:
         try:
             raw = self._key.load()
-        except RuntimeError as e:
-            log.error("cannot read the central API key: %s", e)
+        except Exception as e:  # never log the message: it could hold key data
+            log.error("cannot read the central API key (%s)", type(e).__name__)
             return None
         return raw.decode("utf-8") if raw else None
 
@@ -92,13 +96,13 @@ class CentralState:
     def update(self, **changes) -> None:
         with self._lock:
             known = {f.name for f in fields(CentralSettings)}
-            for k, v in changes.items():
+            for k in changes:
                 if k not in known:
                     raise AttributeError(f"unknown central setting: {k}")
-                setattr(self.settings, k, v)
-            self.settings.poll_interval_seconds = clamp_poll(
-                self.settings.poll_interval_seconds)
-            self._save()
+            new = replace(self.settings, **changes)
+            new.poll_interval_seconds = clamp_poll(new.poll_interval_seconds)
+            self._save(new)               # memory changes only once disk did
+            self.settings = new
 
     def clear(self) -> None:
         with self._lock:
