@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import re
 import uuid
 from datetime import datetime, timezone
@@ -213,11 +214,22 @@ class ProfileManager:
         return self.projects_dir / f"{project_id}.json"
 
     def _write(self, cfg: dict) -> None:
-        self._path(cfg["project_id"]).write_text(
-            json.dumps(cfg, indent=2), encoding="utf-8")
+        self._write_atomic(self._path(cfg["project_id"]),
+                           json.dumps(cfg, indent=2))
 
     def _archive(self, cfg: dict) -> None:
         d = self.archive_dir / cfg["project_id"]
         d.mkdir(parents=True, exist_ok=True)
-        (d / f"v{cfg['version']}.json").write_text(
-            json.dumps(cfg, indent=2), encoding="utf-8")
+        self._write_atomic(d / f"v{cfg['version']}.json",
+                           json.dumps(cfg, indent=2))
+
+    @staticmethod
+    def _write_atomic(path: Path, text: str) -> None:
+        """Write to a sibling .tmp then os.replace, so an exit or crash
+        mid-write can never leave a truncated project file behind."""
+        tmp = path.with_name(path.name + ".tmp")
+        try:
+            tmp.write_text(text, encoding="utf-8")
+            os.replace(tmp, path)
+        finally:
+            tmp.unlink(missing_ok=True)
