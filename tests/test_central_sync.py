@@ -467,30 +467,43 @@ def three_projects():
             project_entry(pid="aaaaaaaa-2222-3333-4444-555555555555", name="Three")]
 
 
+class SignalLock:
+    """Wraps the service lock; the thread named "action" announces that it is
+    about to take it, so a test can wait for that instead of sleeping."""
+
+    def __init__(self, real, attempt):
+        self.real, self.attempt = real, attempt
+
+    def __enter__(self):
+        if threading.current_thread().name == "action":
+            self.attempt.set()
+        return self.real.__enter__()
+
+    def __exit__(self, *exc):
+        return self.real.__exit__(*exc)
+
+
 def sync_with_concurrent_action(env, action):
     """Run sync_once on a worker thread; once its apply loop is inside the
-    first pm.adopt, start `action` on another thread, give it time to run into
-    the service lock, then let the apply continue. Returns the SyncResult."""
-    in_apply, started = threading.Event(), threading.Event()
+    first pm.adopt, start `action` on another thread and wait until that
+    thread is about to take the service lock, then let the apply continue.
+    Returns the SyncResult."""
+    in_apply, attempt = threading.Event(), threading.Event()
+    env.svc._lock = SignalLock(env.svc._lock, attempt)
     real_adopt, first = env.pm.adopt, [True]
 
     def spy(cfg):
         if first[0]:
             first[0] = False
             in_apply.set()
-            assert started.wait(5), "action thread never started"
-            time.sleep(0.4)           # let it reach (and block on) the lock
+            assert attempt.wait(5), "action thread never reached the lock"
         return real_adopt(cfg)
     env.pm.adopt = spy
     out = {}
     worker = threading.Thread(target=lambda: out.update(r=env.svc.sync_once()))
     worker.start()
     assert in_apply.wait(5), "apply loop never started"
-
-    def run_action():
-        started.set()
-        action()
-    other = threading.Thread(target=run_action)
+    other = threading.Thread(target=action, name="action")
     other.start()
     worker.join(10)
     other.join(10)
@@ -580,3 +593,60 @@ def test_registration_cleared_mid_loop_stops_applying_further_projects(env):
     assert r.status == "unavailable" and r.applied == []
     assert calls == [PID]
     assert env.db.get_project(PID2) is None
+
+
+# ---- register's network call is made outside the service lock -----------------------------
+class GatedRegisterClient(FakeClient):
+    """register() blocks until `release` is set (a slow HTTP enrollment)."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.inside, self.release = threading.Event(), threading.Event()
+
+    def register(self, code):
+        self.inside.set()
+        assert self.release.wait(5), "test never released the register call"
+        return super().register(code)
+
+
+def start_slow_register(env, client):
+    env.holder["client"] = client
+    t = threading.Thread(target=lambda: env.svc.register(
+        "https://c.example", "ABCDEFGH1234"), name="action")
+    t.start()
+    assert client.inside.wait(5), "register never reached the network call"
+    return t
+
+
+def test_service_lock_is_free_while_register_waits_on_the_network(env):
+    client = GatedRegisterClient(register=RegisterResult("pc-9", "dsk_NEW", 120))
+    t = start_slow_register(env, client)
+    try:
+        assert env.svc._lock.acquire(timeout=1), "lock held during the HTTP call"
+        env.svc._lock.release()
+    finally:
+        client.release.set()
+        t.join(10)
+    assert not t.is_alive()
+    assert env.state.is_registered() and env.state.settings.pc_id == "pc-9"
+
+
+def test_sync_once_is_not_held_up_by_a_slow_register(env):
+    register(env)
+    client = GatedRegisterClient(pull=PullResult("pc-1", 600, []),
+                                 register=RegisterResult("pc-2", "dsk_NEW", 120))
+    t = start_slow_register(env, client)
+    try:
+        out = {}
+        w = threading.Thread(target=lambda: out.update(r=env.svc.sync_once()))
+        started = time.monotonic()
+        w.start()
+        w.join(2)
+        assert not w.is_alive(), "sync_once waited for the enrollment HTTP call"
+        assert time.monotonic() - started < 2
+        assert out["r"].status == "ok"
+        assert not client.release.is_set()
+    finally:
+        client.release.set()
+        t.join(10)
+    assert env.state.settings.pc_id == "pc-2"

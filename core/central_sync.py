@@ -5,11 +5,12 @@ raises: every outcome is a SyncResult. It never touches the running pipeline
 - new or changed projects are written to the local project store/database and
 take effect for the pipeline at the next application start (restart_needed).
 
-Concurrency: the network call runs outside the service lock; the apply phase
-(local I/O only) and register()/disconnect() run under it, so a disconnect
-cannot interleave with a half-applied sync. A sync also snapshots
-CentralState.generation before the call and discards its outcome if the
-registration changed meanwhile.
+Concurrency: no network call (pull or enrollment) is made under the service
+lock. Under it run only local steps: a sync's apply phase and its state
+writes, and the local part of register() (storing the result) and
+disconnect(). So a register/disconnect cannot interleave with a half-applied
+sync. A sync also snapshots CentralState.generation before its pull and
+discards its outcome if the registration changed meanwhile.
 
 Everything that comes from the server (project ids, exception text) is
 untrusted: it is stripped of control characters and truncated before it
@@ -81,8 +82,8 @@ class CentralSyncService:
         self._client_factory = client_factory
         self._operator_fn = operator_fn
         self.timeout = timeout
-        # Serialises register/disconnect with the apply phase of a sync (all
-        # local I/O); the network call itself is never made under it.
+        # Serialises the local steps of register/disconnect with the apply
+        # phase of a sync. No network call is ever made while holding it.
         self._lock = threading.RLock()
 
     def _audit(self, action: str, **detail) -> None:
@@ -97,11 +98,12 @@ class CentralSyncService:
         """Exchange a one-time enrollment code for this PC's identity.
         Raises ValueError (bad URL), CentralRegistrationError (bad code) or
         CentralUnavailable; leaves the local state untouched on failure.
-        Waits for a sync that is applying projects (local I/O only)."""
+        The network call is made without the lock; only storing the result
+        waits for a sync that is applying projects (local I/O only)."""
         url = server_url.strip().rstrip("/")
+        client = self._client_factory(url, self.timeout)
+        result = client.register(code.strip())
         with self._lock:
-            client = self._client_factory(url, self.timeout)
-            result = client.register(code.strip())
             self.state.register_result(url, result.pc_id, result.api_key,
                                        result.poll_interval_seconds)
             self._audit("central_registered", pc_id=_clean(result.pc_id),
