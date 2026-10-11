@@ -8,6 +8,7 @@ ProfileManager.save which versions + archives automatically.
 from __future__ import annotations
 
 import json
+import logging
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
@@ -20,6 +21,10 @@ from core.config_overlay import LOCAL_ONLY_KEYS
 from core.profile_manager import ProjectConfigError
 from separation.rule_engine import RuleEngine, RuleSetError
 
+log = logging.getLogger(__name__)
+
+WRITE_FAILED_TEXT = ("The project file could not be written. Close other "
+                     "programs using it and try again.")
 QC_STAGES = ["punch_hole", "rotation", "margin", "color", "advanced"]
 STRATEGIES = ["barcode", "blank_page", "zone", "fixed_pages"]
 OPERATORS = ["eq", "neq", "contains", "not_contains", "is_empty",
@@ -649,6 +654,13 @@ class WorkflowDesigner(QWidget):
             "central dashboard instead.")
         return True
 
+    def _write_failed(self, exc: OSError) -> None:
+        """A project-file write failed (file locked by another program, disk
+        error...): tell the user, log only the exception type, change nothing
+        in the form. Qt slots must never let an exception escape."""
+        log.error("project file write failed: %s", type(exc).__name__)
+        QMessageBox.critical(self, "Could not save", WRITE_FAILED_TEXT)
+
     def _save_local_sections_only(self) -> None:
         """Managed project: persist ONLY scanner/export/delivery. The stored
         config is the base, so nothing edited in a central-owned part of the
@@ -678,6 +690,8 @@ class WorkflowDesigner(QWidget):
                 self._save_local_sections_only()
             except ProjectConfigError as e:
                 QMessageBox.critical(self, "Invalid configuration", str(e))
+            except OSError as e:
+                self._write_failed(e)
             return
         try:
             cfg = self.collect_config()
@@ -689,6 +703,8 @@ class WorkflowDesigner(QWidget):
                 self, "Saved", f"Saved as version {self.config['version']}.")
         except (ProjectConfigError, RuleSetError) as e:
             QMessageBox.critical(self, "Invalid configuration", str(e))
+        except OSError as e:
+            self._write_failed(e)
 
     def refresh_projects_keep_selection(self) -> None:
         current = self.project_combo.currentData()
@@ -703,7 +719,11 @@ class WorkflowDesigner(QWidget):
         name, ok = QInputDialog.getText(self, "Clone project",
                                         "New project name:")
         if ok and name.strip():
-            self.pm.clone(self.config["project_id"], name.strip())
+            try:
+                self.pm.clone(self.config["project_id"], name.strip())
+            except OSError as e:
+                self._write_failed(e)
+                return
             self.refresh_projects()
 
     def new_from_template(self) -> None:
@@ -728,7 +748,11 @@ class WorkflowDesigner(QWidget):
         if not (ok and name.strip()):
             return
         cfg = tm.build_project_config(template["template_id"])
-        new_cfg = self.pm.create(name.strip(), config=cfg)
+        try:
+            new_cfg = self.pm.create(name.strip(), config=cfg)
+        except OSError as e:
+            self._write_failed(e)
+            return
         self.refresh_projects()
         idx = self.project_combo.findData(new_cfg["project_id"])
         if idx >= 0:
@@ -764,8 +788,13 @@ class WorkflowDesigner(QWidget):
             self, "Rollback", "Restore version:",
             [str(v) for v in versions], len(versions) - 1, False)
         if ok:
-            self.config = self.pm.rollback(self.config["project_id"],
-                                           int(version))
+            try:
+                restored = self.pm.rollback(self.config["project_id"],
+                                            int(version))
+            except OSError as e:
+                self._write_failed(e)
+                return
+            self.config = restored
             self._bind_config()
             self.refresh_projects_keep_selection()
 

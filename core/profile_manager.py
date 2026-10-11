@@ -10,11 +10,18 @@ import copy
 import json
 import os
 import re
+import tempfile
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 import jsonschema
+
+# os.replace can hit a momentary sharing violation on Windows (backup
+# service, antivirus, indexer holding the destination open): retry briefly.
+REPLACE_RETRY_ATTEMPTS = 5
+REPLACE_RETRY_DELAY = 0.05
 
 _SAFE_ID = re.compile(r"[A-Za-z0-9-]{1,36}")
 _RESERVED_NAMES = frozenset(
@@ -225,11 +232,26 @@ class ProfileManager:
 
     @staticmethod
     def _write_atomic(path: Path, text: str) -> None:
-        """Write to a sibling .tmp then os.replace, so an exit or crash
-        mid-write can never leave a truncated project file behind."""
-        tmp = path.with_name(path.name + ".tmp")
+        """Write to a unique sibling temp file then os.replace, so a crash
+        mid-write never leaves a truncated project file and concurrent
+        writers never share a temp name. A PermissionError from os.replace
+        (destination briefly open elsewhere on Windows) is retried a few
+        times; any other error, or the last failure, is raised with the
+        original file intact and no temp file left behind."""
+        fd, tmp_name = tempfile.mkstemp(dir=path.parent,
+                                        prefix=path.name + ".",
+                                        suffix=".tmp")
         try:
-            tmp.write_text(text, encoding="utf-8")
-            os.replace(tmp, path)
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+                f.write(text)
+                f.flush()
+            for attempt in range(1, REPLACE_RETRY_ATTEMPTS + 1):
+                try:
+                    os.replace(tmp_name, path)
+                    return
+                except PermissionError:
+                    if attempt == REPLACE_RETRY_ATTEMPTS:
+                        raise
+                    time.sleep(REPLACE_RETRY_DELAY)
         finally:
-            tmp.unlink(missing_ok=True)
+            Path(tmp_name).unlink(missing_ok=True)

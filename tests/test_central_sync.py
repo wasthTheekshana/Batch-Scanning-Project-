@@ -1,6 +1,7 @@
 import copy
 import json
 import logging
+import os
 import sqlite3
 import threading
 import time
@@ -750,3 +751,23 @@ def test_after_enrollment_and_restart_the_pipeline_keeps_the_pcs_delivery_settin
     assert profile["delivery"] == stored["delivery"]
     assert profile["scanner"] == stored["scanner"]
     assert profile["export"]["output_path"] == "D:/bank/out"
+
+
+def test_failing_file_write_for_one_project_is_reported_others_apply(env, monkeypatch):
+    import core.profile_manager as profile_manager
+    monkeypatch.setattr(profile_manager, "REPLACE_RETRY_DELAY", 0.0)
+    real_replace = profile_manager.os.replace
+
+    def replace(src, dst):
+        if PID in os.path.basename(dst):
+            raise PermissionError("locked by another process")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(profile_manager.os, "replace", replace)
+    register(env)
+    pull(env, project_entry(pid=PID), project_entry(pid=PID2, name="Good"))
+    r = env.svc.sync_once()
+    assert PID in r.errors and r.applied == [PID2]
+    assert env.pm.load(PID2)["name"] == "Good"
+    assert not env.pm._path(PID).exists()
+    assert list(env.pm.projects_dir.glob("*.tmp")) == []
