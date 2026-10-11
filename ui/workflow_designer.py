@@ -341,6 +341,9 @@ class WorkflowDesigner(QWidget):
         # SFTP delivery (Phase 3)
         sftp_box = self.sftp_box = QGroupBox("SFTP delivery (LAN)")
         sftp_layout = QFormLayout(sftp_box)
+        self.sftp_enabled = QCheckBox("Enabled")
+        self.sftp_enabled.setEnabled(self.can_edit)
+        sftp_layout.addRow(self.sftp_enabled)
         self.sftp_host = QLineEdit()
         self.sftp_port = QSpinBox()
         self.sftp_port.setRange(1, 65535)
@@ -360,9 +363,24 @@ class WorkflowDesigner(QWidget):
         sftp_layout.addRow("Password", self.sftp_password)
         sftp_layout.addRow("Key file (optional)", self.sftp_key_file)
         sftp_layout.addRow("Remote path", self.sftp_remote_path)
-        sftp_layout.addRow(QLabel(
-            "Enable via the 'sftp' feature toggle above."))
+        sftp_layout.addRow(QLabel("Tick Enabled to deliver via SFTP."))
         layout.addWidget(sftp_box)
+
+        # CD/DVD delivery: local to this PC, like SFTP
+        cd_box = self.cd_box = QGroupBox("CD/DVD delivery")
+        cd_layout = QVBoxLayout(cd_box)
+        self.cd_enabled = QCheckBox("Enabled")
+        self.cd_enabled.setEnabled(self.can_edit)
+        cd_layout.addWidget(self.cd_enabled)
+        cd_layout.addWidget(QLabel("Tick Enabled to deliver to CD/DVD."))
+        layout.addWidget(cd_box)
+
+        # on an unmanaged project the shorthand toggles still drive the
+        # checkboxes (the user may then change a checkbox independently)
+        self.feature_checks["sftp"].toggled.connect(
+            self.sftp_enabled.setChecked)
+        self.feature_checks["cd_burn"].toggled.connect(
+            self.cd_enabled.setChecked)
 
         # rules
         rule_box = self.rule_box = QGroupBox("Rules (IF / THEN)")
@@ -488,6 +506,10 @@ class WorkflowDesigner(QWidget):
         for zone in cfg.get("ocr", {}).get("zones", []):
             self._append_zone(zone)
         sftp = cfg["delivery"].get("sftp", {})
+        # after the feature toggles above (their signals also set these)
+        self.sftp_enabled.setChecked(bool(sftp.get("enabled")))
+        self.cd_enabled.setChecked(
+            bool(cfg["delivery"].get("cd_dvd", {}).get("enabled")))
         self.sftp_host.setText(sftp.get("host", ""))
         self.sftp_port.setValue(int(sftp.get("port", 22)))
         self.sftp_user.setText(sftp.get("username", ""))
@@ -527,9 +549,10 @@ class WorkflowDesigner(QWidget):
         cfg["export"]["filename_template"] = self.filename_template.text()
         cfg["export"]["output_path"] = self.output_path.text()
         cfg["delivery"]["local_folder"]["path"] = self.delivery_path.text()
-        # sync shorthand toggles to delivery blocks (HLD Appendix B)
-        cfg["delivery"]["sftp"]["enabled"] = cfg["features"]["sftp"]
-        cfg["delivery"]["cd_dvd"]["enabled"] = cfg["features"]["cd_burn"]
+        # delivery on/off comes from the Enabled checkboxes (local to this
+        # PC); the feature toggles only pre-set them in the form
+        cfg["delivery"]["sftp"]["enabled"] = self.sftp_enabled.isChecked()
+        cfg["delivery"]["cd_dvd"]["enabled"] = self.cd_enabled.isChecked()
         cfg["delivery"]["sftp"].update({
             "host": self.sftp_host.text().strip(),
             "port": self.sftp_port.value(),
@@ -638,13 +661,9 @@ class WorkflowDesigner(QWidget):
         content and the next sync restores central's version. Local sections
         are never overwritten by a sync, so nothing local is lost."""
         stored = self.pm.load(self.config["project_id"])
-        enabled = {ch: bool(stored["delivery"].get(ch, {}).get("enabled"))
-                   for ch in ("sftp", "cd_dvd")}
         collected = self.collect_config()
         for key in LOCAL_ONLY_KEYS:
             stored[key] = collected[key]
-        for channel, flag in enabled.items():
-            stored["delivery"].setdefault(channel, {})["enabled"] = flag
         self.config = self.pm.save(stored)
         self._bind_config()
         self.refresh_projects_keep_selection()
