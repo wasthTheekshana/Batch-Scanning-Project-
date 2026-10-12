@@ -2,11 +2,14 @@
 panels (HLD §16, §10.1)."""
 from __future__ import annotations
 
+import logging
+
 from PyQt6.QtCore import QSize, Qt, pyqtSlot
-from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QMainWindow, QPushButton,
-                             QTabWidget, QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QMainWindow, QMessageBox,
+                             QPushButton, QTabWidget, QVBoxLayout, QWidget)
 
 from core.central_sync import note_sync_result, restart_pending
+from core.project_runtime import ProjectUnavailable
 from core.rbac import Session
 from ui.admin_panel import AdminPanel
 from ui.image_viewer import ImageViewer
@@ -16,6 +19,8 @@ from ui.qc_review import QCReviewPanel
 from ui.scan_wizard import ScanWizard
 from ui.theme import ACCENT, icon, mark
 from ui.workflow_designer import WorkflowDesigner
+
+log = logging.getLogger(__name__)
 
 RESTART_NOTICE = "Restart to apply central updates"
 REENROLL_NOTICE = "Central: new enrollment code needed"
@@ -242,8 +247,19 @@ class MainWindow(QMainWindow):
     def start_batch(self, batch_id: str, jobs: list) -> None:
         user = Session.current_user()
         if self.pipeline is not None:
-            self.pipeline.submit_batch(
-                batch_id, jobs, operator=user.username if user else "unknown")
+            try:
+                self.pipeline.submit_batch(
+                    batch_id, jobs,
+                    operator=user.username if user else "unknown")
+            except (ProjectUnavailable, ValueError) as e:
+                # str(e) only: the chained cause can contain config values
+                log.warning("batch %s refused: %s", batch_id, e)
+                QMessageBox.critical(
+                    self, "Project not available",
+                    f"This batch was not started: {e}\n\nNothing was "
+                    "recorded. Check the project in the Workflow Designer, "
+                    "then scan again.")
+                return
         if self.audit:
             self.audit.log("scan", user.username if user else "unknown",
                            batch_id=batch_id, pages=len(jobs))

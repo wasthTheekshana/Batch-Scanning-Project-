@@ -18,6 +18,7 @@ from core.central_sync import (build_central, choose_pipeline_profile,
 from core.event_bus import EventBus
 from core.job_queue import Pipeline
 from core.profile_manager import ProfileManager
+from core.project_runtime import RuntimeResolver
 from core.rbac import Session
 from core.template_manager import TemplateManager
 from data.audit import AuditLogger
@@ -120,7 +121,8 @@ def main() -> int:
         export_fn=export_document,
         audit=audit,
         ocr_fn=ocr_fn,
-        working_dir=root / "staging")
+        working_dir=root / "staging",
+        resolver=RuntimeResolver(db))
     pipeline.subscribe(bus.publish_pipeline_event)
     pipeline.start()
     pipeline.recover()
