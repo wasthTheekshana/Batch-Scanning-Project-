@@ -607,6 +607,8 @@ def test_recovery_uses_each_batchs_own_project(env):
 
 
 def test_recovery_fails_a_batch_whose_project_is_unavailable_and_continues(env, caplog):
+    # batches.project_id is a foreign key: model "broken stored config", not "no row"
+    env.db.insert_project("proj-gone", "Gone", {"project_id": "proj-gone"})   # schema-invalid
     env.db.insert_batch("rec-x", "proj-gone", "op")
     for j in make_jobs(env.tmp, "rec-x", "proj-gone", ["text"]):
         env.db.upsert_job(j.job_id, j.batch_id, j.project_id, j.page_no, "in_progress", j.image_path)
@@ -647,6 +649,7 @@ def test_review_approved_document_uses_its_own_projects_settings(env):
 
 
 def test_resubmit_returns_false_when_the_documents_project_is_unavailable(env):
+    env.db.insert_project("proj-gone", "Gone", {"project_id": "proj-gone"})   # FK target, invalid config
     doc_id = _held_document(env, "held-x", "proj-gone")
     assert env.pipeline.resubmit_document(doc_id) is False
     assert delivered(env, "A") == [] and delivered(env, "B") == []
