@@ -397,3 +397,33 @@ def test_designer_zones_round_trip(qtbot, tmp_path):
     designer._bind_config()
     assert designer.zone_list.count() == 1
     db.close()
+
+
+def test_document_is_indexed_with_its_own_projects_zones(qtbot, env):
+    """The editor must not use the first project's zones for every
+    document: selecting a document switches the form to that document's
+    project, and the needs-indexing filter judges it by those zones."""
+    db, audit, _tmp = env
+    own = [{"name": "other_field", "regex": r"X"}]
+    seen = []
+
+    def lookup(project_id):
+        seen.append(project_id)
+        return (own, True) if project_id == "p1" else None
+
+    editor = IndexEditor(db, ZONES, audit, ADMIN, zones_for_project=lookup)
+    qtbot.addWidget(editor)
+    editor.doc_list.setCurrentRow(0)
+    assert editor.document_id == "d1"
+    assert list(editor._inputs) == ["other_field"]
+    assert editor.full_page is True
+    assert "p1" in seen
+
+
+def test_unknown_project_keeps_the_current_zones(qtbot, env):
+    db, audit, _tmp = env
+    editor = IndexEditor(db, ZONES, audit, ADMIN,
+                         zones_for_project=lambda pid: None)
+    qtbot.addWidget(editor)
+    editor.doc_list.setCurrentRow(0)
+    assert list(editor._inputs) == ["invoice_no"]

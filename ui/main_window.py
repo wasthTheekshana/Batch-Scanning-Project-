@@ -123,7 +123,8 @@ class MainWindow(QMainWindow):
             zones = cfg.get("ocr", {}).get("zones", [])
             ocr_mode = cfg.get("ocr", {}).get("mode", "zone")
         self.index_editor = IndexEditor(
-            db, zones, audit, user, full_page=(ocr_mode == "full_page"))
+            db, zones, audit, user, full_page=(ocr_mode == "full_page"),
+            zones_for_project=self._zones_for_project)
         self.tabs.addTab(self.index_editor, icon("fa5s.tags"), "Index")
 
         # Job monitor tab
@@ -186,6 +187,15 @@ class MainWindow(QMainWindow):
         self.reenroll_label.setVisible(
             self._central_state is not None
             and self._central_state.settings.auth_failed)
+
+    def _zones_for_project(self, project_id: str):
+        """(zones, full_page) of one project's stored config, or None."""
+        row = self.db.get_project(project_id)
+        cfg = load_config(row) if row is not None else None
+        if cfg is None:
+            return None
+        ocr = cfg.get("ocr", {})
+        return ocr.get("zones", []), ocr.get("mode", "zone") == "full_page"
 
     def _active_zones(self) -> list:
         for row in self.db.list_projects("active"):

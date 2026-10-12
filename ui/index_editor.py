@@ -24,8 +24,12 @@ class IndexEditor(QWidget):
     fields_saved = pyqtSignal(str, dict)  # document_id, fields
 
     def __init__(self, db, zones: list[dict], audit=None,
-                 current_user=None, parent=None, full_page: bool = False):
+                 current_user=None, parent=None, full_page: bool = False,
+                 zones_for_project=None):
         super().__init__(parent)
+        # project_id -> (zones, full_page) or None; lets each document be
+        # indexed with ITS project's zones, not the first project's
+        self._zones_for_project = zones_for_project
         self.db = db
         self.audit = audit
         self.current_user = current_user
@@ -109,6 +113,15 @@ class IndexEditor(QWidget):
         else:
             self.hint.setText("")
 
+    def _project_zones(self, project_id) -> tuple[list[dict], bool]:
+        """The zones/mode for a document's own project; the editor's
+        current zones when no lookup is wired or the project is unknown."""
+        if self._zones_for_project and project_id:
+            found = self._zones_for_project(project_id)
+            if found is not None:
+                return list(found[0] or []), bool(found[1])
+        return self.zones, self.full_page
+
     def _completer_for(self, field: str) -> QCompleter:
         return QCompleter(sorted(self.db.known_field_values(field)))
 
@@ -123,8 +136,9 @@ class IndexEditor(QWidget):
             return False
         if "low_confidence_index" in detail.get("flags", []):
             return True
-        return self.zones and not any(
-            fields.get(z["name"]) for z in self.zones)
+        zones, _full_page = self._project_zones(doc["project_id"])
+        return bool(zones) and not any(
+            fields.get(z["name"]) for z in zones)
 
     def refresh(self) -> None:
         self.doc_list.clear()
@@ -171,6 +185,9 @@ class IndexEditor(QWidget):
         if doc is None:
             return
         self.document_id = document_id
+        zones, full_page = self._project_zones(doc["project_id"])
+        if zones != self.zones or full_page != self.full_page:
+            self.set_zones(zones, full_page)
         self.title.setText(f"Document {document_id[:8]} · "
                            f"pages {doc['page_range']} · "
                            f"{doc['validation_status']}")
