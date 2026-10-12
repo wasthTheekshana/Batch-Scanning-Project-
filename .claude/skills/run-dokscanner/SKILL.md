@@ -52,10 +52,11 @@ PY .claude/skills/run-dokscanner/driver/check_central.py
 It starts the real central server (uvicorn on a free loopback port, throw-away SQLite DB,
 fresh admin `root`), drives the admin API like the future dashboard would, then runs the
 genuine app and clicks through: enrol with a one-time code, first sync, Workflow Designer
-on a managed project (local delivery/SFTP editable, central-owned editors disabled, a
+on a managed project (listed without a manual refresh, the Save button reads
+"Save local settings", local delivery/SFTP editable, central-owned editors disabled, a
 sneaked central-owned edit is NOT saved), a central edit arriving while the PC's local
-settings survive, key revoked (banner + polling stops), re-enrol, disconnect. 41 checks;
-screenshots in `.superpowers/run-dokscanner/shots/01-…06-*.png`. The server is stopped
+settings survive, key revoked (banner + polling stops), re-enrol, disconnect. 44 checks;
+the Central table's column headers are fully visible; screenshots in `.superpowers/run-dokscanner/shots/01-…06-*.png`. The server is stopped
 in a `finally`; server log: `.superpowers/run-dokscanner/central/server.log`.
 
 Both print a lot of timestamped `logging` lines first; filter them with
@@ -97,9 +98,6 @@ run prints only dots and no "N passed" line; `-o addopts=""` restores it.
 - **Pulled changes apply to scanning after a restart** (the pipeline binds one project at
   start-up); the Designer/wizard see them from the database. The status bar and Central tab
   say so.
-- **KNOWN GAP:** the Workflow Designer builds its project list once at start-up, so a project
-  that arrives from a sync is not listed until `designer.refresh_projects_keep_selection()`
-  is called (the driver calls it and prints a `[NOTE]`). Remove that workaround when fixed.
 - Offscreen fonts look odd (a fallback pixel font) — normal; layout and state are what matter.
 - The central server needs `CENTRAL_SESSION_SECRET` ≥ 32 characters or it refuses to start.
   `central.manage create-admin` prompts with `getpass`; the driver creates the admin
@@ -107,8 +105,6 @@ run prints only dots and no "N passed" line; `-o addopts=""` restores it.
 
 ## Troubleshooting
 
-- `StopIteration` while selecting a project in the Designer → the stale project list above;
-  call `refresh_projects_keep_selection()` first.
 - A screenshot that shows central notices on a never-enrolled app → you read hidden labels
   (see Gotchas), not a bug.
 - `check_central.py` says "central server did not start" → read

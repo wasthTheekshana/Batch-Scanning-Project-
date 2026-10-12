@@ -111,6 +111,7 @@ def main() -> int:
             return json.loads((appdir / "projects" / f"{PID}.json").read_text(encoding="utf-8"))
 
         def scenario(app, win):
+            from PyQt6.QtGui import QFontMetrics
             from PyQt6.QtWidgets import QLabel, QMessageBox, QTabWidget
             tab = win.admin_panel.central_tab
             state = tab.state
@@ -138,6 +139,13 @@ def main() -> int:
                          h.wait_for(app, lambda: tab.projects_table.rowCount() >= 1, 25))
             h.pump(app, 0.5)
             report.check("screenshot", h.shot(app, win, shots / "02-registered-and-synced.png"))
+            hdr = tab.projects_table.horizontalHeader()
+            fm = QFontMetrics(hdr.font())
+            cut = [tab.projects_table.horizontalHeaderItem(i).text()
+                   for i in range(tab.projects_table.columnCount())
+                   if hdr.sectionSize(i) < fm.horizontalAdvance(
+                       tab.projects_table.horizontalHeaderItem(i).text())]
+            report.check("Central table headers are fully visible", not cut, str(cut))
             report.check("API key is not in central.json",
                          "dsk_" not in (appdir / "central.json").read_text())
             report.check("restart notice in the status bar (every role)",
@@ -151,14 +159,13 @@ def main() -> int:
             win.tabs.setCurrentWidget(win.designer)
             d = win.designer
             listed = any(d.project_combo.itemData(i) == PID for i in range(d.project_combo.count()))
-            if not listed:
-                report.note("KNOWN GAP: the Designer's project list is built at start-up and is not "
-                            "refreshed after a sync; refreshing it by hand")
-            d.refresh_projects_keep_selection()
+            report.check("Designer lists the synced project without a manual refresh", listed)
             d.project_combo.setCurrentIndex(next(i for i in range(d.project_combo.count())
                                                  if d.project_combo.itemData(i) == PID))
             h.pump(app, 0.4)
             report.check("screenshot", h.shot(app, win, shots / "03-designer-managed.png"))
+            report.check("Save button says 'Save local settings' for the managed project",
+                         d.save_btn.text() == "Save local settings", d.save_btn.text())
             report.check("central-owned QC editor is disabled", not d.qc_enabled.isEnabled())
             report.check("local delivery folder is editable", d.delivery_path.isEnabled())
             report.check("SFTP 'Enabled' is editable", d.sftp_enabled.isEnabled())
