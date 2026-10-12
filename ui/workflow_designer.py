@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
 
 from core.config_overlay import LOCAL_ONLY_KEYS
 from core.profile_manager import ProjectConfigError
+from core.project_store import config_error_path
 from separation.rule_engine import RuleEngine, RuleSetError
 
 log = logging.getLogger(__name__)
@@ -36,6 +37,8 @@ MANAGED_BANNER = ("Managed centrally: only scanner / export / delivery "
                   "can be changed on this PC")
 CENTRAL_UPDATED_NOTICE = ("Updated by the central server - re-select this "
                           "project to load the new settings.")
+UNREADABLE_BANNER = ("This project's file could not be read - it cannot be "
+                     "edited here until it is repaired")
 SAVE_LABEL = "Save (new version)"
 SAVE_LOCAL_LABEL = "Save local settings"
 EXPORT_FORMATS = ["searchable_pdf", "image_pdf", "pdf_a", "tiff"]
@@ -51,6 +54,19 @@ QC_PRESETS = {
     "Lenient": {"pass_score": 65, "blur_warn_threshold": 60,
                "blur_fail_threshold": 15, "dpi_warn": 150, "dpi_fail": 100},
 }
+
+
+class StoredFileUnreadable(Exception):
+    """Loading the stored project file failed (no content in this error)."""
+
+
+def validation_text(exc: ProjectConfigError) -> str:
+    """Fixed text plus at most the field path - the schema message quotes
+    the offending value, so it is never shown."""
+    path = config_error_path(exc)
+    where = f" at {path}" if path else ""
+    return (f"The configuration is not valid{where}. Correct that field and "
+            "save again." if path else "The configuration is not valid.")
 
 
 class RuleDialog(QDialog):
@@ -216,6 +232,11 @@ class WorkflowDesigner(QWidget):
         self.managed_banner.setTextFormat(Qt.TextFormat.PlainText)
         self.managed_banner.hide()
         outer.addWidget(self.managed_banner)
+        self.unreadable_banner = QLabel(UNREADABLE_BANNER)
+        self.unreadable_banner.setWordWrap(True)
+        self.unreadable_banner.setTextFormat(Qt.TextFormat.PlainText)
+        self.unreadable_banner.hide()
+        outer.addWidget(self.unreadable_banner)
         self.central_notice = QLabel(CENTRAL_UPDATED_NOTICE)
         self.central_notice.setWordWrap(True)
         self.central_notice.setTextFormat(Qt.TextFormat.PlainText)
@@ -226,6 +247,7 @@ class WorkflowDesigner(QWidget):
         scroll.setWidgetResizable(True)
         body = QWidget()
         scroll.setWidget(body)
+        self.form_body = body
         outer.addWidget(scroll, stretch=1)
         layout = QVBoxLayout(body)
 
@@ -486,9 +508,50 @@ class WorkflowDesigner(QWidget):
         project_id = self.project_combo.currentData()
         if not project_id:
             return
-        self.config = self.pm.load(project_id)
+        try:
+            config = self.pm.load(project_id)
+        except (ProjectConfigError, ValueError, OSError) as exc:
+            # never show or log the error text: it can quote the file
+            log.warning("project %s could not be loaded in the designer (%s)",
+                        project_id, type(exc).__name__)
+            self._show_unreadable()
+            return
+        self.unreadable_banner.hide()
+        self.form_body.setEnabled(True)
+        for b in self._action_buttons():
+            b.setEnabled(self.can_edit)
+        self.config = config
         self._bind_config()
         self._update_managed_state()
+
+    def _action_buttons(self) -> tuple[QPushButton, ...]:
+        return (self.new_from_template_btn, self.clone_btn, self.rollback_btn,
+                self.save_btn, self.save_template_btn)
+
+    def _clear_form(self) -> None:
+        """Blank the free-text fields and lists so the previously shown
+        project's values (paths, SFTP login...) are not left under the
+        banner."""
+        for edit in (self.filename_template, self.output_path,
+                     self.delivery_path, self.sftp_host, self.sftp_user,
+                     self.sftp_password, self.sftp_key_file,
+                     self.sftp_remote_path):
+            edit.clear()
+        self.zone_list.clear()
+        self.rule_list.clear()
+
+    def _show_unreadable(self) -> None:
+        """The selected project's file cannot be read: nothing to edit, so
+        the form and the project actions stay off until it is repaired."""
+        self.config = None
+        self._clear_form()
+        self.version_label.setText("")
+        self.managed_banner.hide()
+        self.unreadable_banner.show()
+        self.form_body.setEnabled(False)
+        for b in self._action_buttons():
+            b.setEnabled(False)
+        self.new_from_template_btn.setEnabled(self.can_edit)  # needs no project
 
     def _is_managed(self) -> bool:
         """Evaluated on demand (never cached): central may assign or
@@ -735,7 +798,11 @@ class WorkflowDesigner(QWidget):
         load and the save below, this save is based on the older central
         content and the next sync restores central's version. Local sections
         are never overwritten by a sync, so nothing local is lost."""
-        stored = self.pm.load(self.config["project_id"])
+        try:
+            stored = self.pm.load(self.config["project_id"])
+        except (ProjectConfigError, ValueError):
+            # the error text quotes the stored file: never surface it
+            raise StoredFileUnreadable from None
         collected = self.collect_config()
         for key in LOCAL_ONLY_KEYS:
             stored[key] = collected[key]
@@ -747,12 +814,22 @@ class WorkflowDesigner(QWidget):
             "Saved this PC's scanner / export / delivery settings. "
             "Everything else is managed centrally and was not changed.")
 
+    def _warn_unreadable(self) -> None:
+        QMessageBox.warning(self, "Project unreadable", UNREADABLE_BANNER + ".")
+
     def save(self) -> None:
+        if self.config is None:
+            return
         if self._is_managed():
             try:
                 self._save_local_sections_only()
-            except ProjectConfigError as e:
-                QMessageBox.critical(self, "Invalid configuration", str(e))
+            except StoredFileUnreadable:
+                self._warn_unreadable()
+            except ProjectConfigError as e:     # the config being saved
+                QMessageBox.critical(self, "Invalid configuration",
+                                     validation_text(e))
+            except ValueError:            # the stored file is not valid JSON
+                self._warn_unreadable()
             except OSError as e:
                 self._write_failed(e)
             return
@@ -764,8 +841,13 @@ class WorkflowDesigner(QWidget):
             self.refresh_projects_keep_selection()
             QMessageBox.information(
                 self, "Saved", f"Saved as version {self.config['version']}.")
-        except (ProjectConfigError, RuleSetError) as e:
+        except ProjectConfigError as e:
+            QMessageBox.critical(self, "Invalid configuration",
+                                 validation_text(e))
+        except RuleSetError as e:   # the operator's own rule definitions
             QMessageBox.critical(self, "Invalid configuration", str(e))
+        except ValueError:          # the stored file went bad after loading
+            self._warn_unreadable()
         except OSError as e:
             self._write_failed(e)
 
@@ -786,6 +868,9 @@ class WorkflowDesigner(QWidget):
                 self.pm.clone(self.config["project_id"], name.strip())
             except OSError as e:
                 self._write_failed(e)
+                return
+            except (ProjectConfigError, ValueError):   # source file unreadable
+                self._warn_unreadable()
                 return
             self.refresh_projects()
 
@@ -810,7 +895,12 @@ class WorkflowDesigner(QWidget):
                                         "New project name:")
         if not (ok and name.strip()):
             return
-        cfg = tm.build_project_config(template["template_id"])
+        try:
+            cfg = tm.build_project_config(template["template_id"])
+        except ValueError:                  # template went unreadable meanwhile
+            QMessageBox.warning(self, "Template unreadable",
+                                "This template could not be read.")
+            return
         try:
             new_cfg = self.pm.create(name.strip(), config=cfg)
         except OSError as e:
@@ -856,6 +946,9 @@ class WorkflowDesigner(QWidget):
                                             int(version))
             except OSError as e:
                 self._write_failed(e)
+                return
+            except (ProjectConfigError, ValueError):   # a file is unreadable
+                self._warn_unreadable()
                 return
             self.config = restored
             self._bind_config()

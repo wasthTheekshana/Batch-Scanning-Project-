@@ -31,6 +31,14 @@ Known limitations of plan 2 (updated 2026-10-12, per-project pipeline):
    **FIXED.** The wizard's project drives that batch's settings, export,
    delivery and filing (`tests/test_wizard_project_e2e.py`).
 
+3. ~~A corrupt stored project or template row crashes startup, the wizard, the
+   Index tab, central sync or the Designer.~~ **FIXED.** `core/project_store.load_config`
+   skips unreadable rows (logs the id only, never content). The wizard lists the
+   readable projects and warns once about the rest; a central entry whose local
+   copy is unreadable is skipped and reported (never overwritten); an unreadable
+   template is skipped and an unreadable built-in is re-seeded; the Designer shows
+   a banner instead of failing (`tests/test_corrupt_row_guard.py`).
+
 Remaining follow-ups of the per-project pipeline:
 
 - Index tab zones / OCR mode per document project (still uses the startup project).
