@@ -176,3 +176,99 @@ def test_without_a_resolver_everything_is_as_before(tmp_path):
     finally:
         p.shutdown()
         db.close()
+
+
+def _persist_unprocessed(env, batch, batch_row_pid, job_pid):
+    """Simulate a crash: batch row + persisted-but-unprocessed jobs."""
+    env.db.insert_batch(batch, batch_row_pid, "op")
+    for j in make_jobs(env.tmp, batch, job_pid, ["text"]):
+        env.db.upsert_job(j.job_id, j.batch_id, j.project_id, j.page_no,
+                          "in_progress", j.image_path)
+
+
+def test_recovery_uses_each_batchs_own_project(env):
+    _persist_unprocessed(env, "rec-a", "proj-a", "proj-a")
+    _persist_unprocessed(env, "rec-b", "proj-b", "proj-b")
+    recovered = env.pipeline.recover()
+    assert len(recovered) == 2
+    assert wait_for(lambda: docs_done(env, "rec-a", 1) and docs_done(env, "rec-b", 1), 60)
+    assert delivered(env, "A") == ["rec-a_0001.pdf"]
+    assert delivered(env, "B") == ["rec-b_0001.tif"]
+
+
+def test_recovered_batch_is_processed_entirely_under_its_jobs_project(env):
+    # legacy data: the batch row says proj-a, its jobs say proj-b
+    _persist_unprocessed(env, "rec-mixed", "proj-a", "proj-b")
+    env.pipeline.recover()
+    assert wait_for(lambda: docs_done(env, "rec-mixed", 1), 60)
+    assert {d["project_id"] for d in env.db.list_documents("rec-mixed")} == {"proj-b"}
+    assert delivered(env, "B") == ["rec-mixed_0001.tif"]
+    assert delivered(env, "A") == []
+
+
+def test_recovery_fails_a_batch_whose_project_is_unavailable_and_continues(env, caplog):
+    secret = "S3CRET-VALUE-123"
+    bad = copy.deepcopy(env.a)
+    bad["project_id"] = "proj-gone"
+    bad["export"]["format"] = secret                    # schema-invalid enum value
+    # batches.project_id is a foreign key: model "broken stored config", not "no row"
+    env.db.insert_project("proj-gone", "Gone", bad)
+    _persist_unprocessed(env, "rec-x", "proj-gone", "proj-gone")
+    _persist_unprocessed(env, "rec-a", "proj-a", "proj-a")
+    events = []
+    env.pipeline.subscribe(events.append)
+    with caplog.at_level(logging.INFO, logger="core.job_queue"):
+        recovered = env.pipeline.recover()                  # must not raise
+    assert [j.batch_id for j in recovered] == ["rec-a"]
+    assert wait_for(lambda: docs_done(env, "rec-a", 1))
+    statuses = {r["status"] for r in env.db.conn.execute(
+        "SELECT status FROM jobs WHERE batch_id='rec-x'")}
+    assert statuses == {"failed"}
+    assert any(e["stage"] == "recover" and e["status"] == "failed"
+               and e.get("batch_id") == "rec-x" for e in events)
+    assert "proj-gone" in caplog.text
+    assert secret not in caplog.text
+    assert not any(r.exc_info for r in caplog.records)
+    assert all(secret not in str(e) for e in events)
+
+
+def _held_document(env, batch, pid):
+    """A pending_qc document whose pages exist on disk, ready for review approval."""
+    pages = make_jobs(env.tmp, batch, pid, ["text"])
+    env.db.insert_batch(batch, pid, "op")
+    env.db.insert_document(f"doc-{batch}", batch, pid, page_range="1-1",
+                           enhancement_profile="default", extracted_fields={},
+                           validation_status="pending_qc", qc_score=50,
+                           qc_detail={"pages": {"1": {"working_path": pages[0].image_path,
+                                                      "original_path": pages[0].image_path,
+                                                      "ocr_text": ""}}},
+                           duplicate_of=None)
+    return f"doc-{batch}"
+
+
+def test_review_approved_document_uses_its_own_projects_settings(env):
+    doc_id = _held_document(env, "held-b", "proj-b")          # pipeline default is proj-a
+    assert env.pipeline.resubmit_document(doc_id) is True
+    assert wait_for(lambda: delivered(env, "B") == ["held-b_0001.tif"])
+    assert delivered(env, "A") == []
+
+
+def test_review_approved_document_in_a_live_batch_uses_the_batchs_snapshot(env):
+    doc_id = _held_document(env, "held-s", "proj-a")
+    env.pipeline._batches["held-s"] = {"expected": 1, "pages": [], "counter": 0,
+                                       "operator": "op",
+                                       "runtime": env.pipeline._resolve("proj-a")}
+    cfg = copy.deepcopy(env.a)
+    cfg["export"]["format"] = "tiff"
+    env.db.update_project("proj-a", "Alpha", cfg, version=2)   # edit after the snapshot
+    assert env.pipeline.resubmit_document(doc_id) is True
+    assert wait_for(lambda: delivered(env, "A") == ["held-s_0001.pdf"])
+
+
+def test_resubmit_returns_false_when_the_documents_project_is_unavailable(env, caplog):
+    env.db.insert_project("proj-gone", "Gone", {"project_id": "proj-gone"})   # FK target, invalid config
+    doc_id = _held_document(env, "held-x", "proj-gone")
+    with caplog.at_level(logging.WARNING, logger="core.job_queue"):
+        assert env.pipeline.resubmit_document(doc_id) is False
+    assert "proj-gone" in caplog.text
+    assert delivered(env, "A") == [] and delivered(env, "B") == []

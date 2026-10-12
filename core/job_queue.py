@@ -198,9 +198,22 @@ class Pipeline:
             by_batch.setdefault(job.batch_id, []).append(job)
         recovered = []
         for batch_id, jobs in by_batch.items():
+            project_ids = {j.project_id for j in jobs}
+            try:
+                if len(project_ids) != 1:
+                    raise ProjectUnavailable("recovered batch spans several projects")
+                runtime = self._resolve(next(iter(project_ids)))
+            except ProjectUnavailable as e:
+                # message only: the chained cause can contain config values
+                log.warning("cannot recover batch %s: %s", batch_id, e)
+                for job in jobs:
+                    self.db.mark_job(job.job_id, "failed")
+                self._emit("recover", "failed", batch_id=batch_id, error=str(e))
+                continue
             with self._lock:
                 self._batches[batch_id] = {"expected": len(jobs), "pages": [],
-                                           "counter": 0, "operator": "recovery"}
+                                           "counter": 0, "operator": "recovery",
+                                           "runtime": runtime}
             for job in jobs:
                 self.db.mark_job(job.job_id, "queued")
                 self.ingest_q.put(job)
@@ -589,6 +602,11 @@ class Pipeline:
         document is unknown or predates path recording."""
         row = self.db.get_document(document_id)
         if row is None:
+            return False
+        try:
+            self._resolve(row["project_id"])
+        except ProjectUnavailable as e:
+            log.warning("cannot re-export %s: %s", document_id, e)
             return False
         detail = json.loads(row["qc_detail"] or "{}")
         pages = detail.get("pages", {})
