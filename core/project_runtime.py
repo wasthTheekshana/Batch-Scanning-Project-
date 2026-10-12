@@ -14,6 +14,8 @@ import logging
 import threading
 from dataclasses import dataclass
 
+import jsonschema
+
 from core.profile_manager import ProfileManager, ProjectConfigError
 from delivery.registry import active_channels
 
@@ -21,7 +23,11 @@ log = logging.getLogger(__name__)
 
 
 class ProjectUnavailable(Exception):
-    """The project cannot be used for processing (never silently substituted)."""
+    """The project cannot be used for processing (never silently substituted).
+
+    The message is value-free (field path / exception type only). Callers must
+    not log the chained cause (``__cause__``): it can contain config values.
+    """
 
 
 @dataclass(frozen=True)
@@ -61,8 +67,12 @@ class RuntimeResolver:
         try:
             ProfileManager.validate(profile)
         except ProjectConfigError as e:
+            cause = e.__cause__
+            path = ("/".join(map(str, cause.absolute_path))
+                    if isinstance(cause, jsonschema.ValidationError) else "")
+            where = f" at {path}" if path else ""
             raise ProjectUnavailable(
-                f"project {project_id!r}: stored config is invalid ({e})") from e
+                f"project {project_id!r}: stored config is invalid{where}") from e
         try:
             channels = active_channels(profile.get("delivery", {}))
         except Exception as e:

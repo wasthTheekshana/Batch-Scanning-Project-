@@ -4,7 +4,7 @@ import threading
 
 import pytest
 
-from core.profile_manager import DEFAULT_PROJECT, ProfileManager
+from core.profile_manager import DEFAULT_PROJECT, ProfileManager, ProjectConfigError
 from core.project_runtime import ProjectRuntime, ProjectUnavailable, RuntimeResolver
 from data.db import Database
 
@@ -184,3 +184,43 @@ def test_concurrent_cold_resolves_build_exactly_once(db, resolver, tmp_path, mon
     t2.join(10)
     assert len(results) == 2 and results[0] is results[1]
     assert len(builds) == 1
+
+
+SECRET = "S3CRET-VALUE-123"
+
+
+@pytest.mark.parametrize("path, mutate", [
+    ("export/format", lambda c: c["export"].update(format=SECRET)),
+    ("scanner/dpi", lambda c: c["scanner"].update(dpi=SECRET)),
+    ("scanner/sdk", lambda c: c["scanner"].update(sdk=SECRET)),
+])
+def test_invalid_config_message_has_the_path_but_never_the_value(db, resolver, tmp_path, path, mutate):
+    cfg = valid_profile("proj-s", "Secret", tmp_path / "out", tmp_path / "deliv")
+    mutate(cfg)
+    db.insert_project("proj-s", "Secret", cfg)
+    with pytest.raises(ProjectUnavailable) as ei:
+        resolver.resolve("proj-s")
+    assert path in str(ei.value)
+    assert SECRET not in str(ei.value)
+    assert isinstance(ei.value.__cause__, ProjectConfigError)   # detail stays on the chain
+
+
+def test_unreadable_json_message_does_not_echo_the_raw_text(db, resolver):
+    db.insert_project("bad-json", "Bad", {"placeholder": True})
+    db.conn.execute("UPDATE projects SET config_json=? WHERE project_id='bad-json'",
+                    ("{" + SECRET,))
+    db.conn.commit()
+    with pytest.raises(ProjectUnavailable) as ei:
+        resolver.resolve("bad-json")
+    assert SECRET not in str(ei.value)
+
+
+def test_returned_runtime_is_the_cached_object_even_after_a_caller_mutates_it(db, resolver, tmp_path):
+    """Callers must treat runtime.profile as read-only: the cache hands out the
+    very same object, so a mutation is visible to the next batch."""
+    put(db, tmp_path)
+    rt = resolver.resolve("proj-a")
+    rt.profile["export"]["format"] = "tiff"
+    again = resolver.resolve("proj-a")
+    assert again is rt
+    assert again.profile["export"]["format"] == "tiff"
