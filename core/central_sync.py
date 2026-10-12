@@ -19,7 +19,6 @@ reaches an audit entry, a log line or a SyncResult.
 from __future__ import annotations
 
 import copy
-import json
 import logging
 import threading
 from dataclasses import dataclass, field
@@ -34,6 +33,7 @@ from core.config_overlay import (LOCAL_ONLY_KEYS, PulledProjectError,
                                  default_local_sections, overlay,
                                  validate_entry)
 from core.profile_manager import ProfileManager, ProjectConfigError
+from core.project_store import load_config
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +41,13 @@ ACTOR = "central-sync"
 MAX_PROJECTS = 500          # entries processed per pull; the rest are skipped
 MAX_TEXT = 200
 _CHANGED = "registration changed during sync"
+UNREADABLE_LOCAL_REASON = ("local copy unreadable - repair or re-save the "
+                           "project, then sync again")
+
+
+class LocalCopyUnreadable(Exception):
+    """The PC's stored copy of a project cannot be read; the entry is
+    skipped (fixed text, never content)."""
 
 
 @dataclass
@@ -202,7 +209,8 @@ class CentralSyncService:
             try:
                 validate_entry(entry)
                 self._apply_entry(entry, defaults, result)
-            except (PulledProjectError, ProjectConfigError) as e:
+            except (PulledProjectError, ProjectConfigError,
+                    LocalCopyUnreadable) as e:
                 self._skip(result, key, str(e))
             except Exception as e:        # one bad project must not stop the rest
                 self._skip(result, key, f"{type(e).__name__}: {e}")
@@ -227,10 +235,12 @@ class CentralSyncService:
         for row in self.db.list_projects("active"):
             if row["project_id"] in managed:
                 continue
+            cfg = load_config(row)
+            if cfg is None:             # already logged (id only)
+                continue
             try:
-                cfg = json.loads(row["config_json"])
                 return {k: copy.deepcopy(cfg[k]) for k in LOCAL_ONLY_KEYS}
-            except (ValueError, KeyError, TypeError):
+            except KeyError:
                 log.warning("project %s unusable as a local-settings seed",
                             _clean(row["project_id"]))
                 continue
@@ -245,7 +255,13 @@ class CentralSyncService:
             result.unchanged += 1
             return
         row = self.db.get_project(pid)
-        local = json.loads(row["config_json"]) if row is not None else None
+        local = None
+        if row is not None:
+            local = load_config(row)
+            if local is None:
+                # Never overwrite (or re-seed over) a copy we cannot read:
+                # that would silently replace this PC's own settings.
+                raise LocalCopyUnreadable(UNREADABLE_LOCAL_REASON)
         cfg = overlay(entry, local, defaults)
         self.pm.adopt(cfg)
         self.db.set_central_project(pid, version, managed=True)
@@ -378,7 +394,9 @@ def choose_pipeline_profile(db, fallback: Callable[[], dict]) -> dict:
                db.list_central_projects(managed_only=True)}
     for row in db.list_projects("active"):
         if row["project_id"] in managed:
-            return json.loads(row["config_json"])
+            cfg = load_config(row)
+            if cfg is not None:
+                return cfg
     return fallback()
 
 

@@ -19,6 +19,7 @@ from core.event_bus import EventBus
 from core.job_queue import Pipeline
 from core.profile_manager import ProfileManager
 from core.project_runtime import RuntimeResolver
+from core.project_store import load_config
 from core.rbac import Session
 from core.template_manager import TemplateManager
 from data.audit import AuditLogger
@@ -63,10 +64,10 @@ def build_default_project(pm: ProfileManager, db: Database,
                           root: Path) -> dict:
     """First run: create a general-purpose project so the app is usable
     immediately (HLD §20: start with a general profile, refine later)."""
-    projects = db.list_projects("active")
-    if projects:
-        import json
-        return json.loads(projects[0]["config_json"])
+    for row in db.list_projects("active"):
+        existing = load_config(row)
+        if existing is not None:      # a corrupt row is skipped, not fatal
+            return existing
     cfg = pm.create("General Documents")
     cfg["export"]["output_path"] = str(root / "output")
     cfg["delivery"]["local_folder"]["path"] = str(root / "delivered")
