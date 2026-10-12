@@ -55,9 +55,9 @@ genuine app and clicks through: enrol with a one-time code, first sync, Workflow
 on a managed project (listed without a manual refresh, the Save button reads
 "Save local settings", local delivery/SFTP editable, central-owned editors disabled, a
 sneaked central-owned edit is NOT saved), a central edit arriving while the PC's local
-settings survive, key revoked (banner + polling stops), re-enrol, disconnect. 44 checks;
-the Central table's column headers are fully visible; screenshots in `.superpowers/run-dokscanner/shots/01-…06-*.png`. The server is stopped
-in a `finally`; server log: `.superpowers/run-dokscanner/central/server.log`.
+settings survive, key revoked (banner + polling stops), re-enrol, disconnect. It also checks that the Central table's column headers are fully visible.
+There are 45 checks; screenshots land in `.superpowers/run-dokscanner/shots/01-…06-*.png`.
+The server is stopped in a `finally`; server log: `.superpowers/run-dokscanner/central/server.log`.
 
 Both print a lot of timestamped `logging` lines first; filter them with
 `| grep -v "^20[0-9][0-9]-"` to see only the check results.

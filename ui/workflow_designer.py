@@ -424,12 +424,15 @@ class WorkflowDesigner(QWidget):
     def _fill_combo(self) -> None:
         """Rebuild the combo items from the database without emitting
         signals (the caller decides whether the form is rebound)."""
+        rows = self.db.list_projects()          # may raise: read before blocking
         self.project_combo.blockSignals(True)
-        self.project_combo.clear()
-        for row in self.db.list_projects():
-            self.project_combo.addItem(
-                f"{row['name']} (v{row['version']})", row["project_id"])
-        self.project_combo.blockSignals(False)
+        try:
+            self.project_combo.clear()
+            for row in rows:
+                self.project_combo.addItem(
+                    f"{row['name']} (v{row['version']})", row["project_id"])
+        finally:
+            self.project_combo.blockSignals(False)
 
     def refresh_projects(self) -> None:
         self._fill_combo()
@@ -442,6 +445,13 @@ class WorkflowDesigner(QWidget):
         """A sync adopted or unassigned projects: refresh ONLY the project
         list and the managed state. The form is never rebound, so edits the
         operator has not saved yet survive."""
+        try:
+            self._apply_central_sync(result)
+        except Exception as exc:        # a Qt slot must never raise
+            log.warning("designer refresh after central sync failed: %s",
+                        type(exc).__name__)
+
+    def _apply_central_sync(self, result) -> None:
         applied, unassigned = list(result.applied), list(result.unassigned)
         if not applied and not unassigned:
             return
@@ -456,8 +466,10 @@ class WorkflowDesigner(QWidget):
             self.load_selected()
             return
         self.project_combo.blockSignals(True)
-        self.project_combo.setCurrentIndex(idx)
-        self.project_combo.blockSignals(False)
+        try:
+            self.project_combo.setCurrentIndex(idx)
+        finally:
+            self.project_combo.blockSignals(False)
         if current in applied:
             self.central_notice.show()
         if current in applied or current in unassigned:

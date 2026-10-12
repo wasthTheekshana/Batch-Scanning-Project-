@@ -1,9 +1,12 @@
 """The Workflow Designer follows projects that arrive from a central sync
 without ever discarding the operator's unsaved edits."""
 import copy
+import logging
+import sqlite3
 import threading
 
 import pytest
+from PyQt6.QtCore import QThread
 from PyQt6.QtTest import QSignalSpy
 
 from core.central_sync import SyncResult
@@ -136,17 +139,28 @@ def test_result_with_nothing_applied_or_unassigned_does_not_touch_the_ui(qtbot, 
     assert d.central_notice.isHidden()
 
 
-def test_sync_from_a_background_thread_updates_the_combo_on_the_ui_thread(qtbot, env):
+def test_sync_from_a_background_thread_updates_the_combo_on_the_ui_thread(qtbot, env, monkeypatch):
     bus = EventBus()
     env.pm.create("Alpha local")
     d = _designer(qtbot, env, bus)
     _adopt(env, "Zulu synced", "zzzz")
-    t = threading.Thread(
-        target=lambda: bus.central_synced.emit(SyncResult("ok", applied=["zzzz"])))
+    ran_on = []
+    real = d._fill_combo
+    monkeypatch.setattr(d, "_fill_combo",
+                        lambda: (ran_on.append(QThread.currentThread()), real())[1])
+    emitter = []
+
+    def emit():
+        emitter.append(QThread.currentThread())
+        bus.central_synced.emit(SyncResult("ok", applied=["zzzz"]))
+
+    t = threading.Thread(target=emit)
     t.start()
-    qtbot.waitUntil(lambda: "zzzz" in _items(d), timeout=3000)
+    qtbot.waitUntil(lambda: bool(ran_on), timeout=3000)
     t.join(5)
-    assert not t.is_alive()
+    assert ran_on[0] is d.thread()
+    assert ran_on[0] is not emitter[0]
+    assert "zzzz" in _items(d)
 
 
 def test_empty_designer_selects_and_loads_the_first_synced_project(qtbot, env):
@@ -190,3 +204,78 @@ def test_save_button_label_flips_back_when_the_project_is_unassigned_by_a_sync(q
     env.db.unmanage_central_project(pid)
     bus.central_synced.emit(SyncResult("ok", unassigned=[pid]))
     assert d.save_btn.text() == "Save (new version)"
+
+
+# ---- review round 1 -----------------------------------------------------------------------
+def test_combo_stays_usable_after_a_successful_sync(qtbot, env):
+    bus = EventBus()
+    local = env.pm.create("Alpha local")
+    d = _designer(qtbot, env, bus)
+    other = _adopt(env, "Zulu synced", "zzzz")
+    _store_new_delivery_path(env, other, "D:/other/project")
+    d.delivery_path.setText("D:/typed/not/saved")
+    bus.central_synced.emit(SyncResult("ok", applied=[other]))
+    assert not d.project_combo.signalsBlocked()
+    assert d.project_combo.currentData() == local["project_id"]
+    d.project_combo.setCurrentIndex(d.project_combo.findData(other))
+    assert d.config["project_id"] == other
+    assert d.delivery_path.text() == "D:/other/project"
+
+
+def _locked(*a, **k):
+    raise sqlite3.OperationalError("database is locked secret-detail")
+
+
+def test_database_error_during_a_sync_is_logged_and_leaves_the_designer_usable(
+        qtbot, env, monkeypatch, caplog):
+    bus = EventBus()
+    local = env.pm.create("Alpha local")
+    other = _adopt(env, "Zulu synced", "zzzz")
+    _store_new_delivery_path(env, other, "D:/other/project")
+    d = _designer(qtbot, env, bus)
+    d.project_combo.setCurrentIndex(d.project_combo.findData(local["project_id"]))
+    d.delivery_path.setText("D:/typed/not/saved")
+    monkeypatch.setattr(env.db, "list_projects", _locked)
+    with caplog.at_level(logging.WARNING, logger="ui.workflow_designer"):
+        bus.central_synced.emit(SyncResult("ok", applied=[other]))      # must not raise
+    records = [r for r in caplog.records if r.name == "ui.workflow_designer"]
+    assert len(records) == 1 and "OperationalError" in records[0].getMessage()
+    assert "secret-detail" not in caplog.text
+    assert not d.project_combo.signalsBlocked()
+    assert d.delivery_path.text() == "D:/typed/not/saved"
+    assert d.project_combo.currentData() == local["project_id"]
+    monkeypatch.undo()
+    d.project_combo.setCurrentIndex(d.project_combo.findData(other))
+    assert d.config["project_id"] == other
+    assert d.delivery_path.text() == "D:/other/project"
+
+
+def test_fill_combo_failing_midway_never_leaves_the_combo_blocked(qtbot, env, monkeypatch):
+    env.pm.create("Alpha local")
+    env.pm.create("Beta local")
+    d = _designer(qtbot, env, None)
+    calls = []
+
+    def boom(*a, **k):
+        calls.append(1)
+        if len(calls) == 2:
+            raise RuntimeError("addItem failed")
+
+    monkeypatch.setattr(d.project_combo, "addItem", boom)
+    with pytest.raises(RuntimeError):
+        d._fill_combo()
+    assert not d.project_combo.signalsBlocked()
+
+
+def test_unmanaged_project_that_becomes_managed_by_a_sync_locks_central_fields(qtbot, env):
+    bus = EventBus()
+    pid = env.pm.create("Alpha local")["project_id"]
+    d = _designer(qtbot, env, bus)
+    assert all(b.isEnabled() for b in d._central_boxes())
+    assert d.save_btn.text() == "Save (new version)"
+    d.pass_score.setValue(11)
+    env.db.set_central_project(pid, 1)
+    bus.central_synced.emit(SyncResult("ok", applied=[pid]))
+    assert not any(b.isEnabled() for b in d._central_boxes())
+    assert d.pass_score.value() == 11
+    assert d.save_btn.text() == "Save local settings"
