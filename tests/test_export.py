@@ -125,3 +125,47 @@ def test_batch_exporter_flags_after_max_attempts(page_files, tmp_path):
     with pytest.raises(ExportError):
         future.result(timeout=30)
     exporter.shutdown()
+
+
+@pytest.mark.parametrize("bad", ["../evil", "D:/evil", "\\\\h\\s", "C:evil",
+                                 "a/../../evil"])
+def test_export_document_rejects_escaping_output_folder(page_files, tmp_path, bad):
+    root = tmp_path / "root"
+    cfg = {"format": "tiff", "filename_template": "{batch_id}_{counter:04d}",
+           "output_path": str(root / "exports")}
+    before = {p for p in tmp_path.rglob("*")}
+    with pytest.raises(ValueError, match="unsafe output folder"):
+        export_document(page_files, cfg, {"batch_id": "b1", "counter": 1,
+                                          "output_folder": bad})
+    assert {p for p in tmp_path.rglob("*")} == before  # nothing written anywhere
+
+
+def test_export_document_rejects_a_reserved_device_file_name(page_files, tmp_path):
+    cfg = {"format": "image_pdf", "filename_template": "CON",
+           "output_path": str(tmp_path / "out")}
+    before = {p for p in tmp_path.rglob("*")}
+    with pytest.raises(ValueError, match="unsafe output file name"):
+        export_document(page_files, cfg, {"batch_id": "b1", "counter": 1})
+    assert {p for p in tmp_path.rglob("*")} == before
+
+
+def test_export_document_verifies_the_composed_path_stays_in_the_output_dir(
+        page_files, tmp_path, monkeypatch):
+    # defence in depth: even if the renderer ever let a separator through
+    monkeypatch.setattr("export.batch_exporter.render",
+                        lambda template, ctx: "../escaped")
+    cfg = {"format": "image_pdf", "filename_template": "x",
+           "output_path": str(tmp_path / "out")}
+    before = {p for p in tmp_path.rglob("*")}
+    with pytest.raises(ValueError, match="unsafe output file name"):
+        export_document(page_files, cfg, {})
+    assert {p for p in tmp_path.rglob("*")} == before
+    assert not (tmp_path / "escaped.pdf").exists()
+
+
+def test_export_document_still_writes_a_normal_name_inside_the_output_dir(
+        page_files, tmp_path):
+    cfg = {"format": "image_pdf", "filename_template": "report..final",
+           "output_path": str(tmp_path / "out")}
+    out = export_document(page_files, cfg, {})
+    assert out.parent == tmp_path / "out" and out.exists()

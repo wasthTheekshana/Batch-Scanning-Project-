@@ -1,6 +1,6 @@
 {
   "errors": [],
-  "generated_at": "2026-10-08T08:51:14Z",
+  "generated_at": "2026-10-09T09:16:34Z",
   "metrics": {
     ".\\central\\__init__.py": {
       "CONFIDENCE.HIGH": 0,
@@ -50,7 +50,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 67,
+      "loc": 79,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -89,7 +89,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 42,
+      "loc": 48,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -115,7 +115,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 77,
+      "loc": 112,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -128,7 +128,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 224,
+      "loc": 230,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -141,7 +141,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 83,
+      "loc": 84,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -236,6 +236,58 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    ".\\core\\central_client.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 141,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    ".\\core\\central_state.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 111,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    ".\\core\\central_sync.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 306,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    ".\\core\\config_overlay.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 74,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     ".\\core\\event_bus.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -245,7 +297,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 19,
+      "loc": 20,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -284,7 +336,7 @@
       "SEVERITY.LOW": 1,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 154,
+      "loc": 196,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -298,6 +350,19 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 121,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    ".\\core\\safe_paths.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 39,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -401,7 +466,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 2,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 414,
+      "loc": 450,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -414,7 +479,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 54,
+      "loc": 82,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -479,7 +544,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 36,
+      "loc": 40,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -505,7 +570,7 @@
       "SEVERITY.LOW": 1,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 109,
+      "loc": 116,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -531,7 +596,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 61,
+      "loc": 62,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -674,7 +739,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 114,
+      "loc": 131,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1168,7 +1233,20 @@
       "SEVERITY.LOW": 3,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 278,
+      "loc": 285,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    ".\\ui\\central_tab.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 178,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1246,7 +1324,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 182,
+      "loc": 187,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1324,7 +1402,7 @@
       "SEVERITY.LOW": 3,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 627,
+      "loc": 644,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1350,14 +1428,14 @@
       "SEVERITY.LOW": 15,
       "SEVERITY.MEDIUM": 6,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 8268,
+      "loc": 9342,
       "nosec": 0,
       "skipped_tests": 0
     }
   },
   "results": [
     {
-      "code": "45         \"dpi_fail\": 150,\n46         \"pass_score\": 80,\n47     },\n48     \"ocr\": {\"lang\": \"eng\", \"zones\": [], \"confidence_threshold\": 0.75},\n49     \"export\": {\n50         \"format\": \"searchable_pdf\",\n51         \"pdf_a\": False,\n52         \"filename_template\": \"{date}_{batch_id}_{counter:04d}\",\n53         \"output_path\": \"\",\n54     },\n55     \"delivery\": {\n",
+      "code": "59         \"dpi_fail\": 150,\n60         \"pass_score\": 80,\n61     },\n62     \"ocr\": {\"lang\": \"eng\", \"zones\": [], \"confidence_threshold\": 0.75},\n63     \"export\": {\n64         \"format\": \"searchable_pdf\",\n65         \"pdf_a\": False,\n66         \"filename_template\": \"{date}_{batch_id}_{counter:04d}\",\n67         \"output_path\": \"\",\n68     },\n69     \"delivery\": {\n",
       "col_offset": 8,
       "end_col_offset": 20,
       "filename": ".\\core\\profile_manager.py",
@@ -1368,17 +1446,17 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Possible hardcoded password: '80'",
-      "line_number": 46,
+      "line_number": 60,
       "line_range": [
-        39,
-        40,
-        41,
-        42,
-        43,
-        44,
-        45,
-        46,
-        47
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html",
       "test_id": "B105",
@@ -1447,7 +1525,7 @@
       "test_name": "hardcoded_sql_expressions"
     },
     {
-      "code": "276             self.conn.execute(\n277                 f\"INSERT INTO documents ({cols}) VALUES ({marks})\",\n278                 tuple(base.values()))\n",
+      "code": "319             self.conn.execute(\n320                 f\"INSERT INTO documents ({cols}) VALUES ({marks})\",\n321                 tuple(base.values()))\n",
       "col_offset": 16,
       "end_col_offset": 66,
       "filename": ".\\data\\db.py",
@@ -1458,16 +1536,16 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Possible SQL injection vector through string-based query construction.",
-      "line_number": 277,
+      "line_number": 320,
       "line_range": [
-        277
+        320
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html",
       "test_id": "B608",
       "test_name": "hardcoded_sql_expressions"
     },
     {
-      "code": "290             self.conn.execute(\n291                 f\"UPDATE documents SET {', '.join(sets)} WHERE document_id=?\",\n292                 tuple(vals))\n",
+      "code": "333             self.conn.execute(\n334                 f\"UPDATE documents SET {', '.join(sets)} WHERE document_id=?\",\n335                 tuple(vals))\n",
       "col_offset": 16,
       "end_col_offset": 77,
       "filename": ".\\data\\db.py",
@@ -1478,9 +1556,9 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Possible SQL injection vector through string-based query construction.",
-      "line_number": 291,
+      "line_number": 334,
       "line_range": [
-        291
+        334
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html",
       "test_id": "B608",
@@ -1528,7 +1606,7 @@
       "test_name": "subprocess_without_shell_equals_true"
     },
     {
-      "code": "117                 transport.close()\n118             except Exception:\n119                 pass\n120 \n",
+      "code": "124                 transport.close()\n125             except Exception:\n126                 pass\n127 \n",
       "col_offset": 12,
       "end_col_offset": 20,
       "filename": ".\\delivery\\sftp_channel.py",
@@ -1539,10 +1617,10 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Try, Except, Pass detected.",
-      "line_number": 118,
+      "line_number": 125,
       "line_range": [
-        118,
-        119
+        125,
+        126
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",

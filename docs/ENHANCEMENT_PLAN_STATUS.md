@@ -1,7 +1,7 @@
 # Enhancement Plan Status
 
 Tracks implementation status against `docs/DOK_Scanner_Enhancement_Plan (1).docx`.
-Last updated: 2026-10-04.
+Last updated: 2026-10-09.
 
 ## Done (4 of 16 items)
 
@@ -19,8 +19,17 @@ Spec `docs/superpowers/specs/2026-08-29-central-admin-dashboard-design.md` is no
 | Plan | Status |
 |---|---|
 | 1. Central backend API (`central/`) | **Built** on branch `central-api` (not yet merged): admin login/CSRF/lockout, PC enrollment (one-time codes), Bearer-key PC auth, versioned project/template config with credential scanning, push/assign, config pull, audit, threat model + SAST triage. |
-| 2. Sync client in DOKScanner.exe | Not started — contract and error semantics are written in `docs/superpowers/plans/2026-10-04-central-api.md` ("Cross-plan contracts"); one user decision pending (PC-local `delivery`/`export`/`scanner` overlay). |
+| 2. Sync client in DOKScanner.exe | **Built** on branch `central-sync` (state, HTTPS client, config overlay, safe paths, sync service/worker, startup sync, Admin > Central tab, Workflow Designer limited to scanner/export/delivery for managed projects). End-to-end tests against the real central app: `tests/test_central_integration.py`. PC-local `scanner`/`export`/`delivery` stay local, are seeded from the PC's previous project and are editable in the Designer. |
 | 3. React admin dashboard | Not started — needs admin password reset/disable, session revoke-all, PC deletion and an audit-log read API first (listed in `central/README.md`). |
+
+Known limitations of plan 2:
+
+1. **Changes apply on restart.** The pipeline binds one project at startup, so
+   a project synced from central drives scanning only after the next DOKScanner
+   restart.
+2. **The scan wizard's project choice is not applied to the pipeline**
+   (pre-existing: `Pipeline.profile` is fixed at startup). A separate plan is
+   needed before multi-project PCs are meaningful.
 
 ## Remaining — grouped by why it's not done
 

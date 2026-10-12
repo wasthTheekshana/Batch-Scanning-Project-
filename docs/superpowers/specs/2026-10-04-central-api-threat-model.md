@@ -188,3 +188,72 @@ configured reverse proxy; items 1-3 are conditions of that configuration.
     `central/requirements.txt`; Starlette's SessionMiddleware behaviour (cookie
     re-signed only when the session changes) underpins the absolute 8 h expiry
     and must be re-checked on any Starlette upgrade.
+
+## 7. Client side (DOKScanner.exe)
+
+The PC-side sync client (`core/central_client.py`, `central_sync.py`,
+`central_state.py`, `config_overlay.py`, `safe_paths.py`) treats the central
+server and everything it returns as untrusted input. End-to-end tests against
+the real app: `tests/test_central_integration.py`.
+
+**Mitigations**
+
+- Transport: HTTPS only (plain HTTP solely to loopback when an explicit
+  environment switch is set); TLS always verified; redirects never followed;
+  response body capped at 5 MB; non-JSON, non-object, NaN/Infinity and
+  malformed replies are rejected as "unavailable".
+- Credentials: the API key is stored DPAPI-protected, sent only in the
+  Authorization header, and never logged or put in error text. `pc_id` and the
+  key must be printable ASCII, 1-256 chars. Central never sends credentials
+  (the API rejects them with 422); delivery credentials live only in a
+  PC-local section (`delivery`) that central values never overwrite.
+- `project_id` safety: it becomes a file name, so only safe ids are accepted
+  (no separators, `..`, control characters or Windows reserved names such as
+  CON/NUL/COM1); unsafe entries are skipped, not fatal.
+- Local-only sections: `scanner`, `export` and `delivery` are never taken from
+  central; the PC keeps its own. A project new to the PC is seeded from the
+  project the PC used before enrollment (else app defaults), and an operator
+  can edit these three sections for a managed project in the Workflow Designer
+  (nothing else is saved for it).
+- Rule-action path guard: `set_folder` / `set_filename` values containing
+  `..`, absolute paths, drive letters or control characters cause the project
+  to be skipped. `safe_join` is applied again at export and local delivery (and the same
+  sub-path check at SFTP), so a value that slipped through cannot leave the root.
+- Availability: the startup sync uses a 5 s limit per socket operation
+  (connect/read; name resolution is not covered, so a slow DNS lookup can
+  delay startup longer) and never blocks scanning;
+  an unreachable server leaves the last-known projects untouched. A revoked key
+  (401/403) is persisted as `auth_failed` and polling stops until
+  re-enrolment. Updates apply on the next restart (the pipeline is never
+  changed under a running batch).
+- Consistency: state writes are generation-guarded, so a sync that started
+  before a register/disconnect cannot overwrite the new registration; apply
+  and register/disconnect are serialised by one lock, with no network call
+  held under it. Server-supplied text is stripped of control characters and
+  truncated before it reaches the audit trail or logs.
+
+**Residual risks**
+
+1. A compromised central (or a stolen admin session) can push arbitrary
+   processing configuration, including rules, to every assigned PC. The path
+   guards limit the damage to the PC's own output tree, not to what the
+   configuration does with documents. Concretely, through rules and config it
+   can still: bypass QC (`skip_stage`), approve documents without review
+   (`set_validation_status: auto_approved`), and change `features.*` and
+   `ocr.*` settings. `trigger_delivery` can only use channels that are already
+   configured locally; central cannot add a destination or credentials.
+   Credentials of local channels stay in the PC-local `delivery` section.
+2. Configs are not signed; TLS to the server is the only integrity control.
+3. `X-Operator-Id` is self-asserted (see item 8 above).
+4. A persistently invalid project is re-skipped, and re-audited, on every
+   poll; this audit noise is not throttled.
+5. The pipeline binds one project at startup, so a change applies only after
+   a restart; a PC with several managed projects runs the first active one.
+6. The Workflow Designer decides "managed" when the operator clicks Save; a
+   sync that applies a new central version between that check and the file
+   write is a narrow window. Only the local sections are saved for a managed
+   project and a sync never overwrites them, so nothing local is lost; the
+   next sync restores central's content.
+7. Enrollment is per Windows account: the key is DPAPI-protected (user-bound)
+   and the data lives under that user's `%LOCALAPPDATA%`, so another Windows
+   account on the same PC must enrol separately.

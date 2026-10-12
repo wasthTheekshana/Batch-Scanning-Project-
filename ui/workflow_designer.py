@@ -8,17 +8,23 @@ ProfileManager.save which versions + archives automatically.
 from __future__ import annotations
 
 import json
+import logging
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSlot
 from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                              QFormLayout, QGroupBox, QHBoxLayout,
                              QInputDialog, QLabel, QLineEdit, QListWidget,
                              QListWidgetItem, QMessageBox, QPushButton,
                              QScrollArea, QSpinBox, QVBoxLayout, QWidget)
 
+from core.config_overlay import LOCAL_ONLY_KEYS
 from core.profile_manager import ProjectConfigError
 from separation.rule_engine import RuleEngine, RuleSetError
 
+log = logging.getLogger(__name__)
+
+WRITE_FAILED_TEXT = ("The project file could not be written. Close other "
+                     "programs using it and try again.")
 QC_STAGES = ["punch_hole", "rotation", "margin", "color", "advanced"]
 STRATEGIES = ["barcode", "blank_page", "zone", "fixed_pages"]
 OPERATORS = ["eq", "neq", "contains", "not_contains", "is_empty",
@@ -26,6 +32,12 @@ OPERATORS = ["eq", "neq", "contains", "not_contains", "is_empty",
 ACTIONS = ["set_folder", "set_filename", "set_validation_status",
            "add_flag", "set_metadata_field", "trigger_delivery",
            "skip_stage"]
+MANAGED_BANNER = ("Managed centrally: only scanner / export / delivery "
+                  "can be changed on this PC")
+CENTRAL_UPDATED_NOTICE = ("Updated by the central server - re-select this "
+                          "project to load the new settings.")
+SAVE_LABEL = "Save (new version)"
+SAVE_LOCAL_LABEL = "Save local settings"
 EXPORT_FORMATS = ["searchable_pdf", "image_pdf", "pdf_a", "tiff"]
 
 # QC strictness presets (Enhancement Plan §4.3) - one-click threshold sets
@@ -162,7 +174,8 @@ class RuleDialog(QDialog):
 
 
 class WorkflowDesigner(QWidget):
-    def __init__(self, db, profile_manager, current_user, parent=None):
+    def __init__(self, db, profile_manager, current_user, parent=None,
+                 bus=None):
         super().__init__(parent)
         self.db = db
         self.pm = profile_manager
@@ -184,7 +197,7 @@ class WorkflowDesigner(QWidget):
         self.new_from_template_btn.clicked.connect(self.new_from_template)
         self.rollback_btn = QPushButton("Version history…")
         self.rollback_btn.clicked.connect(self.rollback_dialog)
-        self.save_btn = QPushButton("Save (new version)")
+        self.save_btn = QPushButton(SAVE_LABEL)
         self.save_btn.clicked.connect(self.save)
         self.save_template_btn = QPushButton("Save as template…")
         self.save_template_btn.clicked.connect(self.save_as_template)
@@ -198,6 +211,16 @@ class WorkflowDesigner(QWidget):
 
         self.version_label = QLabel("")
         outer.addWidget(self.version_label)
+        self.managed_banner = QLabel(MANAGED_BANNER)
+        self.managed_banner.setWordWrap(True)
+        self.managed_banner.setTextFormat(Qt.TextFormat.PlainText)
+        self.managed_banner.hide()
+        outer.addWidget(self.managed_banner)
+        self.central_notice = QLabel(CENTRAL_UPDATED_NOTICE)
+        self.central_notice.setWordWrap(True)
+        self.central_notice.setTextFormat(Qt.TextFormat.PlainText)
+        self.central_notice.hide()
+        outer.addWidget(self.central_notice)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -207,7 +230,7 @@ class WorkflowDesigner(QWidget):
         layout = QVBoxLayout(body)
 
         # feature toggles
-        feature_box = QGroupBox("Feature toggles")
+        feature_box = self.feature_box = QGroupBox("Feature toggles")
         f_layout = QVBoxLayout(feature_box)
         self.feature_checks: dict[str, QCheckBox] = {}
         for key in ("auto_index", "duplicate_check", "sftp", "cd_burn"):
@@ -218,7 +241,7 @@ class WorkflowDesigner(QWidget):
         layout.addWidget(feature_box)
 
         # separation strategies
-        sep_box = QGroupBox("Separation strategy")
+        sep_box = self.sep_box = QGroupBox("Separation strategy")
         s_layout = QVBoxLayout(sep_box)
         self.strategy_checks: dict[str, QCheckBox] = {}
         for key in STRATEGIES:
@@ -236,7 +259,7 @@ class WorkflowDesigner(QWidget):
         layout.addWidget(sep_box)
 
         # QC config
-        qc_box = QGroupBox("QC pipeline")
+        qc_box = self.qc_box = QGroupBox("QC pipeline")
         q_layout = QFormLayout(qc_box)
         self.qc_preset = QComboBox()
         self.qc_preset.addItems(["Custom", *QC_PRESETS.keys()])
@@ -273,7 +296,7 @@ class WorkflowDesigner(QWidget):
         layout.addWidget(qc_box)
 
         # scanner + export
-        exp_box = QGroupBox("Scanner & export")
+        exp_box = self.exp_box = QGroupBox("Scanner & export")
         e_layout = QFormLayout(exp_box)
         self.dpi = QSpinBox()
         self.dpi.setRange(75, 1200)
@@ -297,7 +320,7 @@ class WorkflowDesigner(QWidget):
         layout.addWidget(exp_box)
 
         # index zones (auto-index fields)
-        zone_box = QGroupBox("Index zones (auto-index fields)")
+        zone_box = self.zone_box = QGroupBox("Index zones (auto-index fields)")
         z_layout = QVBoxLayout(zone_box)
         z_layout.addWidget(QLabel(
             "Each zone reads one field from the page. Zone-based: drag a "
@@ -331,8 +354,11 @@ class WorkflowDesigner(QWidget):
         layout.addWidget(zone_box)
 
         # SFTP delivery (Phase 3)
-        sftp_box = QGroupBox("SFTP delivery (LAN)")
+        sftp_box = self.sftp_box = QGroupBox("SFTP delivery (LAN)")
         sftp_layout = QFormLayout(sftp_box)
+        self.sftp_enabled = QCheckBox("Enabled")
+        self.sftp_enabled.setEnabled(self.can_edit)
+        sftp_layout.addRow(self.sftp_enabled)
         self.sftp_host = QLineEdit()
         self.sftp_port = QSpinBox()
         self.sftp_port.setRange(1, 65535)
@@ -352,12 +378,27 @@ class WorkflowDesigner(QWidget):
         sftp_layout.addRow("Password", self.sftp_password)
         sftp_layout.addRow("Key file (optional)", self.sftp_key_file)
         sftp_layout.addRow("Remote path", self.sftp_remote_path)
-        sftp_layout.addRow(QLabel(
-            "Enable via the 'sftp' feature toggle above."))
+        sftp_layout.addRow(QLabel("Tick Enabled to deliver via SFTP."))
         layout.addWidget(sftp_box)
 
+        # CD/DVD delivery: local to this PC, like SFTP
+        cd_box = self.cd_box = QGroupBox("CD/DVD delivery")
+        cd_layout = QVBoxLayout(cd_box)
+        self.cd_enabled = QCheckBox("Enabled")
+        self.cd_enabled.setEnabled(self.can_edit)
+        cd_layout.addWidget(self.cd_enabled)
+        cd_layout.addWidget(QLabel("Tick Enabled to deliver to CD/DVD."))
+        layout.addWidget(cd_box)
+
+        # on an unmanaged project the shorthand toggles still drive the
+        # checkboxes (the user may then change a checkbox independently)
+        self.feature_checks["sftp"].toggled.connect(
+            self.sftp_enabled.setChecked)
+        self.feature_checks["cd_burn"].toggled.connect(
+            self.cd_enabled.setChecked)
+
         # rules
-        rule_box = QGroupBox("Rules (IF / THEN)")
+        rule_box = self.rule_box = QGroupBox("Rules (IF / THEN)")
         r_layout = QVBoxLayout(rule_box)
         self.rule_list = QListWidget()
         r_layout.addWidget(self.rule_list)
@@ -376,25 +417,94 @@ class WorkflowDesigner(QWidget):
         layout.addStretch(1)
 
         self.refresh_projects()
+        if bus is not None:
+            bus.central_synced.connect(self.on_central_synced)
 
     # -- project selection --------------------------------------------------------
-    def refresh_projects(self) -> None:
+    def _fill_combo(self) -> None:
+        """Rebuild the combo items from the database without emitting
+        signals (the caller decides whether the form is rebound)."""
+        rows = self.db.list_projects()          # may raise: read before blocking
         self.project_combo.blockSignals(True)
-        self.project_combo.clear()
-        for row in self.db.list_projects():
-            self.project_combo.addItem(
-                f"{row['name']} (v{row['version']})", row["project_id"])
-        self.project_combo.blockSignals(False)
+        try:
+            self.project_combo.clear()
+            for row in rows:
+                self.project_combo.addItem(
+                    f"{row['name']} (v{row['version']})", row["project_id"])
+        finally:
+            self.project_combo.blockSignals(False)
+
+    def refresh_projects(self) -> None:
+        self._fill_combo()
         if self.project_combo.count():
             self.project_combo.setCurrentIndex(0)
             self.load_selected()
 
+    @pyqtSlot(object)
+    def on_central_synced(self, result) -> None:
+        """A sync adopted or unassigned projects: refresh ONLY the project
+        list and the managed state. The form is never rebound, so edits the
+        operator has not saved yet survive."""
+        try:
+            self._apply_central_sync(result)
+        except Exception as exc:        # a Qt slot must never raise
+            log.warning("designer refresh after central sync failed: %s",
+                        type(exc).__name__)
+
+    def _apply_central_sync(self, result) -> None:
+        applied, unassigned = list(result.applied), list(result.unassigned)
+        if not applied and not unassigned:
+            return
+        current = self.project_combo.currentData()
+        self._fill_combo()
+        if not self.project_combo.count():
+            return
+        idx = self.project_combo.findData(current) if current else -1
+        if idx < 0:
+            # nothing was selected before (or it vanished): nothing to lose
+            self.project_combo.setCurrentIndex(0)
+            self.load_selected()
+            return
+        self.project_combo.blockSignals(True)
+        try:
+            self.project_combo.setCurrentIndex(idx)
+        finally:
+            self.project_combo.blockSignals(False)
+        if current in applied:
+            self.central_notice.show()
+        if current in applied or current in unassigned:
+            self._update_managed_state()
+
     def load_selected(self) -> None:
+        self.central_notice.hide()
         project_id = self.project_combo.currentData()
         if not project_id:
             return
         self.config = self.pm.load(project_id)
         self._bind_config()
+        self._update_managed_state()
+
+    def _is_managed(self) -> bool:
+        """Evaluated on demand (never cached): central may assign or
+        unassign the shown project at any time."""
+        if not self.config:
+            return False
+        rec = self.db.get_central_project(self.config["project_id"])
+        return rec is not None and bool(rec["managed"])
+
+    def _update_managed_state(self) -> None:
+        """A managed project: only the PC-local sections (scanner, export,
+        delivery = 'Scanner & export' and 'SFTP delivery') stay editable.
+        Everything else belongs to central and is shown read-only."""
+        managed = self._is_managed()
+        self.managed_banner.setVisible(managed)
+        self.save_btn.setText(SAVE_LOCAL_LABEL if managed else SAVE_LABEL)
+        for box in self._central_boxes():
+            box.setEnabled(not managed)
+
+    def _central_boxes(self) -> tuple[QGroupBox, ...]:
+        return (self.feature_box, self.sep_box, self.qc_box, self.zone_box,
+                self.rule_box)
 
     def _apply_qc_preset(self, text: str) -> None:
         """Fill all five QC threshold fields at once from a named
@@ -458,6 +568,10 @@ class WorkflowDesigner(QWidget):
         for zone in cfg.get("ocr", {}).get("zones", []):
             self._append_zone(zone)
         sftp = cfg["delivery"].get("sftp", {})
+        # after the feature toggles above (their signals also set these)
+        self.sftp_enabled.setChecked(bool(sftp.get("enabled")))
+        self.cd_enabled.setChecked(
+            bool(cfg["delivery"].get("cd_dvd", {}).get("enabled")))
         self.sftp_host.setText(sftp.get("host", ""))
         self.sftp_port.setValue(int(sftp.get("port", 22)))
         self.sftp_user.setText(sftp.get("username", ""))
@@ -497,9 +611,10 @@ class WorkflowDesigner(QWidget):
         cfg["export"]["filename_template"] = self.filename_template.text()
         cfg["export"]["output_path"] = self.output_path.text()
         cfg["delivery"]["local_folder"]["path"] = self.delivery_path.text()
-        # sync shorthand toggles to delivery blocks (HLD Appendix B)
-        cfg["delivery"]["sftp"]["enabled"] = cfg["features"]["sftp"]
-        cfg["delivery"]["cd_dvd"]["enabled"] = cfg["features"]["cd_burn"]
+        # delivery on/off comes from the Enabled checkboxes (local to this
+        # PC); the feature toggles only pre-set them in the form
+        cfg["delivery"]["sftp"]["enabled"] = self.sftp_enabled.isChecked()
+        cfg["delivery"]["cd_dvd"]["enabled"] = self.cd_enabled.isChecked()
         cfg["delivery"]["sftp"].update({
             "host": self.sftp_host.text().strip(),
             "port": self.sftp_port.value(),
@@ -583,7 +698,58 @@ class WorkflowDesigner(QWidget):
                 item.setData(Qt.ItemDataRole.UserRole, zone)
                 item.setText(self._zone_label(zone, self._is_full_page_mode()))
 
+    def _refuse_if_managed(self) -> bool:
+        """True (after telling the user) when the shown project is managed
+        by the central server: used for actions that would change
+        central-owned content (a rollback restores an old central config)."""
+        if not self._is_managed():
+            return False
+        QMessageBox.warning(
+            self, "Managed centrally",
+            "This project is managed by the central server; local changes "
+            "would be overwritten at the next sync. Change it in the "
+            "central dashboard instead.")
+        return True
+
+    def _write_failed(self, exc: OSError) -> None:
+        """A project-file write failed (file locked by another program, disk
+        error...): tell the user, log only the exception type, change nothing
+        in the form. Qt slots must never let an exception escape."""
+        log.error("project file write failed: %s", type(exc).__name__)
+        QMessageBox.critical(self, "Could not save", WRITE_FAILED_TEXT)
+
+    def _save_local_sections_only(self) -> None:
+        """Managed project: persist ONLY scanner/export/delivery. The stored
+        config is the base, so nothing edited in a central-owned part of the
+        form (rules, ocr, qc, features, name...) can reach disk. The delivery
+        on/off flags stay as stored: the shorthand feature toggles that
+        collect_config copies them from belong to central.
+
+        Narrow race: if a sync applies a new central version between the
+        load and the save below, this save is based on the older central
+        content and the next sync restores central's version. Local sections
+        are never overwritten by a sync, so nothing local is lost."""
+        stored = self.pm.load(self.config["project_id"])
+        collected = self.collect_config()
+        for key in LOCAL_ONLY_KEYS:
+            stored[key] = collected[key]
+        self.config = self.pm.save(stored)
+        self._bind_config()
+        self.refresh_projects_keep_selection()
+        QMessageBox.information(
+            self, "Saved",
+            "Saved this PC's scanner / export / delivery settings. "
+            "Everything else is managed centrally and was not changed.")
+
     def save(self) -> None:
+        if self._is_managed():
+            try:
+                self._save_local_sections_only()
+            except ProjectConfigError as e:
+                QMessageBox.critical(self, "Invalid configuration", str(e))
+            except OSError as e:
+                self._write_failed(e)
+            return
         try:
             cfg = self.collect_config()
             RuleEngine(cfg["rules"])          # validate DSL before saving
@@ -594,6 +760,8 @@ class WorkflowDesigner(QWidget):
                 self, "Saved", f"Saved as version {self.config['version']}.")
         except (ProjectConfigError, RuleSetError) as e:
             QMessageBox.critical(self, "Invalid configuration", str(e))
+        except OSError as e:
+            self._write_failed(e)
 
     def refresh_projects_keep_selection(self) -> None:
         current = self.project_combo.currentData()
@@ -608,7 +776,11 @@ class WorkflowDesigner(QWidget):
         name, ok = QInputDialog.getText(self, "Clone project",
                                         "New project name:")
         if ok and name.strip():
-            self.pm.clone(self.config["project_id"], name.strip())
+            try:
+                self.pm.clone(self.config["project_id"], name.strip())
+            except OSError as e:
+                self._write_failed(e)
+                return
             self.refresh_projects()
 
     def new_from_template(self) -> None:
@@ -633,7 +805,11 @@ class WorkflowDesigner(QWidget):
         if not (ok and name.strip()):
             return
         cfg = tm.build_project_config(template["template_id"])
-        new_cfg = self.pm.create(name.strip(), config=cfg)
+        try:
+            new_cfg = self.pm.create(name.strip(), config=cfg)
+        except OSError as e:
+            self._write_failed(e)
+            return
         self.refresh_projects()
         idx = self.project_combo.findData(new_cfg["project_id"])
         if idx >= 0:
@@ -658,7 +834,7 @@ class WorkflowDesigner(QWidget):
                                 f"Saved as template “{name.strip()}”.")
 
     def rollback_dialog(self) -> None:
-        if self.config is None:
+        if self.config is None or self._refuse_if_managed():
             return
         versions = self.pm.list_versions(self.config["project_id"])
         if not versions:
@@ -669,8 +845,13 @@ class WorkflowDesigner(QWidget):
             self, "Rollback", "Restore version:",
             [str(v) for v in versions], len(versions) - 1, False)
         if ok:
-            self.config = self.pm.rollback(self.config["project_id"],
-                                           int(version))
+            try:
+                restored = self.pm.rollback(self.config["project_id"],
+                                            int(version))
+            except OSError as e:
+                self._write_failed(e)
+                return
+            self.config = restored
             self._bind_config()
             self.refresh_projects_keep_selection()
 

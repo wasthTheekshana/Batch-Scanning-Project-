@@ -1,7 +1,9 @@
 import copy
+import json
 
 import pytest
 
+import core.profile_manager
 from core.profile_manager import (DEFAULT_PROJECT, ProfileManager,
                                   ProjectConfigError)
 
@@ -57,3 +59,40 @@ def test_rollback_missing_version_raises(pm):
     cfg = pm.create("P")
     with pytest.raises(ProjectConfigError):
         pm.rollback(cfg["project_id"], 99)
+
+
+# ---- atomic writes ---------------------------------------------------------------------
+def _fail_replace(monkeypatch):
+    def boom(src, dst):
+        raise OSError("simulated exit mid-write")
+    monkeypatch.setattr(core.profile_manager.os, "replace", boom)
+
+
+def test_failed_write_leaves_the_original_project_file_intact(pm, monkeypatch):
+    cfg = pm.create("P")
+    path = pm._path(cfg["project_id"])
+    original = path.read_text(encoding="utf-8")
+    _fail_replace(monkeypatch)
+    cfg["scanner"]["dpi"] = 600
+    with pytest.raises(OSError):
+        pm._write(cfg)                        # the project-file write itself
+    assert path.read_text(encoding="utf-8") == original
+    assert json.loads(original)["scanner"]["dpi"] == 300
+    assert list(pm.projects_dir.rglob("*.tmp")) == []
+
+
+def test_failed_archive_write_leaves_no_partial_or_temp_file(pm, monkeypatch):
+    cfg = pm.create("P")
+    _fail_replace(monkeypatch)
+    with pytest.raises(OSError):
+        pm.save(cfg)                          # archiving v1 is the first write
+    assert list(pm.projects_dir.rglob("*.tmp")) == []
+    assert not (pm.archive_dir / cfg["project_id"] / "v1.json").exists()
+    assert pm.load(cfg["project_id"])["version"] == 1
+
+
+def test_successful_write_leaves_no_temp_file(pm):
+    cfg = pm.create("P")
+    pm.save(cfg)
+    assert list(pm.projects_dir.rglob("*.tmp")) == []
+    assert pm.load(cfg["project_id"])["version"] == 2

@@ -306,7 +306,8 @@ class BurnTab(QWidget):
 
 class AdminPanel(QWidget):
     def __init__(self, db, current_user, backup_service=None,
-                 cddvd_channel=None, parent=None):
+                 cddvd_channel=None, central_state=None, central_service=None,
+                 central_worker=None, bus=None, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         tabs = QTabWidget()
@@ -316,4 +317,10 @@ class AdminPanel(QWidget):
         tabs.addTab(self.users_tab, "Users")
         tabs.addTab(self.backup_tab, "Backup")
         tabs.addTab(self.burn_tab, "CD/DVD")
+        if central_state is not None:
+            from ui.central_tab import CentralTab
+            self.central_tab = CentralTab(central_state, central_service,
+                                          central_worker, current_user,
+                                          bus=bus)
+            tabs.addTab(self.central_tab, "Central")
         layout.addWidget(tabs)

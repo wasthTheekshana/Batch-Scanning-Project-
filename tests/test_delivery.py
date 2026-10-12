@@ -1,3 +1,5 @@
+import pytest
+
 from delivery.cddvd_channel import CDDVDChannel
 from delivery.local_folder import LocalFolderChannel
 from delivery.registry import active_channels, build_channels
@@ -59,3 +61,27 @@ def test_status_values():
     assert LocalFolderChannel({}).status_value == "delivered_local"
     assert SFTPChannel({}).status_value == "delivered_sftp"
     assert CDDVDChannel({}).status_value == "burned_to_disc"
+
+
+@pytest.mark.parametrize("bad", ["../evil", "D:/evil", "\\\\h\\s", "C:evil",
+                                 "a/../../evil", "CON"])
+def test_local_delivery_refuses_escaping_output_folder(tmp_path, bad):
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"x")
+    ch = LocalFolderChannel({"enabled": True, "path": str(tmp_path / "out")})
+    before = {p for p in tmp_path.rglob("*")}
+    result = ch.deliver(str(src), {"output_folder": bad})
+    assert not result.success
+    assert "unsafe output folder" in result.detail["error"]
+    assert {p for p in tmp_path.rglob("*")} == before
+
+
+@pytest.mark.parametrize("bad", ["../evil", "/abs", "C:evil"])
+def test_sftp_refuses_escaping_output_folder_without_connecting(tmp_path, bad):
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"x")
+    ch = SFTPChannel({"enabled": True, "host": "h", "username": "u"})
+    ch._connect = lambda: pytest.fail("must not connect for an unsafe folder")
+    result = ch.deliver(str(src), {"output_folder": bad})
+    assert not result.success
+    assert "unsafe output folder" in result.detail["error"]

@@ -2,10 +2,11 @@
 panels (HLD §16, §10.1)."""
 from __future__ import annotations
 
-from PyQt6.QtCore import QSize
+from PyQt6.QtCore import QSize, Qt, pyqtSlot
 from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QMainWindow, QPushButton,
                              QTabWidget, QVBoxLayout, QWidget)
 
+from core.central_sync import note_sync_result, restart_pending
 from core.rbac import Session
 from ui.admin_panel import AdminPanel
 from ui.image_viewer import ImageViewer
@@ -16,6 +17,9 @@ from ui.scan_wizard import ScanWizard
 from ui.theme import ACCENT, icon, mark
 from ui.workflow_designer import WorkflowDesigner
 
+RESTART_NOTICE = "Restart to apply central updates"
+REENROLL_NOTICE = "Central: new enrollment code needed"
+
 ROLE_LABELS = {"admin": "Administrator", "operator": "Operator",
                "qc_officer": "QC Officer", "viewer": "Viewer"}
 
@@ -23,7 +27,8 @@ ROLE_LABELS = {"admin": "Administrator", "operator": "Operator",
 class MainWindow(QMainWindow):
     def __init__(self, db, profile_manager, bus, pipeline=None, audit=None,
                  staging_dir="staging", backup_service=None,
-                 cddvd_channel=None, parent=None):
+                 cddvd_channel=None, central_state=None, sync_service=None,
+                 sync_worker=None, parent=None):
         super().__init__(parent)
         self.db = db
         self.profile_manager = profile_manager
@@ -129,7 +134,8 @@ class MainWindow(QMainWindow):
 
         # Workflow designer — project.edit only (HLD §17.5 role gate)
         if user is not None and user.can("project.edit"):
-            self.designer = WorkflowDesigner(db, profile_manager, user)
+            self.designer = WorkflowDesigner(db, profile_manager, user,
+                                            bus=bus)
             self.tabs.addTab(self.designer, icon("fa5s.project-diagram"),
                              "Projects")
 
@@ -137,7 +143,11 @@ class MainWindow(QMainWindow):
         if user is not None and user.can("user.manage"):
             self.admin_panel = AdminPanel(db, user,
                                           backup_service=backup_service,
-                                          cddvd_channel=cddvd_channel)
+                                          cddvd_channel=cddvd_channel,
+                                          central_state=central_state,
+                                          central_service=sync_service,
+                                          central_worker=sync_worker,
+                                          bus=bus)
             self.tabs.addTab(self.admin_panel, icon("fa5s.user-shield"),
                              "Admin")
 
@@ -149,10 +159,32 @@ class MainWindow(QMainWindow):
                              "Custody")
 
         bus.qc_ready.connect(lambda _doc_id: self.qc_panel.refresh())
+        # Central notices are for every role (the Central tab is admin-only).
+        self._central_state = central_state
+        self.restart_label = QLabel(RESTART_NOTICE)
+        self.reenroll_label = QLabel(REENROLL_NOTICE)
+        for label in (self.restart_label, self.reenroll_label):
+            label.setTextFormat(Qt.TextFormat.PlainText)
+            label.hide()
+            self.statusBar().addPermanentWidget(label)
+        if central_state is not None:
+            bus.central_synced.connect(self._on_central_synced)
+            self._refresh_central_notices()
         self.statusBar().showMessage(
             f"Signed in as {user.username} "
             f"({ROLE_LABELS.get(user.role, user.role)})" if user else
             "Not signed in")
+
+    @pyqtSlot(object)
+    def _on_central_synced(self, result) -> None:
+        note_sync_result(result)
+        self._refresh_central_notices()
+
+    def _refresh_central_notices(self) -> None:
+        self.restart_label.setVisible(restart_pending())
+        self.reenroll_label.setVisible(
+            self._central_state is not None
+            and self._central_state.settings.auth_failed)
 
     def _active_zones(self) -> list:
         import json

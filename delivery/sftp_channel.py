@@ -18,6 +18,7 @@ import posixpath
 import time
 from pathlib import Path
 
+from core.safe_paths import is_safe_relative_subpath
 from delivery.base import BaseDeliveryChannel, DeliveryResult
 
 log = logging.getLogger(__name__)
@@ -64,6 +65,12 @@ class SFTPChannel(BaseDeliveryChannel):
         if not self.is_available():
             return DeliveryResult(success=False, channel=self.name,
                                   detail={"error": "SFTP not configured"})
+        if not is_safe_relative_subpath(
+                (metadata.get("output_folder") or "")):
+            return DeliveryResult(
+                success=False, channel=self.name,
+                detail={"error": "unsafe output folder: "
+                                 f"{metadata.get('output_folder')!r}"})
         src = Path(doc_path)
         last_error = "unknown"
         for attempt in range(1, self.max_attempts + 1):

@@ -13,6 +13,7 @@ class EventBus(QObject):
     qc_ready = pyqtSignal(str)          # document_id entering review queue
     batch_complete = pyqtSignal(str)    # batch_id
     login_changed = pyqtSignal(object)  # User | None
+    central_synced = pyqtSignal(object)  # SyncResult (emitted from the sync thread)
 
     def publish_pipeline_event(self, event: dict) -> None:
         """Adapter for Pipeline.subscribe — fan out to typed signals."""

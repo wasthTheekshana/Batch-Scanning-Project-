@@ -1,22 +1,22 @@
-Run started:2026-10-08 08:51:15.869705+00:00
+Run started:2026-10-09 09:16:36.993628+00:00
 
 Test results:
 >> Issue: [B105:hardcoded_password_string] Possible hardcoded password: '80'
    Severity: Low   Confidence: Medium
    CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
    More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
-   Location: .\core\profile_manager.py:46:8
-45	        "dpi_fail": 150,
-46	        "pass_score": 80,
-47	    },
-48	    "ocr": {"lang": "eng", "zones": [], "confidence_threshold": 0.75},
-49	    "export": {
-50	        "format": "searchable_pdf",
-51	        "pdf_a": False,
-52	        "filename_template": "{date}_{batch_id}_{counter:04d}",
-53	        "output_path": "",
-54	    },
-55	    "delivery": {
+   Location: .\core\profile_manager.py:60:8
+59	        "dpi_fail": 150,
+60	        "pass_score": 80,
+61	    },
+62	    "ocr": {"lang": "eng", "zones": [], "confidence_threshold": 0.75},
+63	    "export": {
+64	        "format": "searchable_pdf",
+65	        "pdf_a": False,
+66	        "filename_template": "{date}_{batch_id}_{counter:04d}",
+67	        "output_path": "",
+68	    },
+69	    "delivery": {
 
 --------------------------------------------------
 >> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
@@ -55,20 +55,20 @@ Test results:
    Severity: Medium   Confidence: Medium
    CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
    More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
-   Location: .\data\db.py:277:16
-276	            self.conn.execute(
-277	                f"INSERT INTO documents ({cols}) VALUES ({marks})",
-278	                tuple(base.values()))
+   Location: .\data\db.py:320:16
+319	            self.conn.execute(
+320	                f"INSERT INTO documents ({cols}) VALUES ({marks})",
+321	                tuple(base.values()))
 
 --------------------------------------------------
 >> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
    Severity: Medium   Confidence: Medium
    CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
    More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
-   Location: .\data\db.py:291:16
-290	            self.conn.execute(
-291	                f"UPDATE documents SET {', '.join(sets)} WHERE document_id=?",
-292	                tuple(vals))
+   Location: .\data\db.py:334:16
+333	            self.conn.execute(
+334	                f"UPDATE documents SET {', '.join(sets)} WHERE document_id=?",
+335	                tuple(vals))
 
 --------------------------------------------------
 >> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
@@ -96,11 +96,11 @@ Test results:
    Severity: Low   Confidence: High
    CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
    More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
-   Location: .\delivery\sftp_channel.py:118:12
-117	                transport.close()
-118	            except Exception:
-119	                pass
-120	
+   Location: .\delivery\sftp_channel.py:125:12
+124	                transport.close()
+125	            except Exception:
+126	                pass
+127	
 
 --------------------------------------------------
 >> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
@@ -241,7 +241,7 @@ Test results:
 --------------------------------------------------
 
 Code scanned:
-	Total lines of code: 8268
+	Total lines of code: 9342
 	Total lines skipped (#nosec): 0
 	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
 
