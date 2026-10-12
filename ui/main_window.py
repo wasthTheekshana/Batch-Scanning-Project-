@@ -21,6 +21,8 @@ from ui.workflow_designer import WorkflowDesigner
 
 log = logging.getLogger(__name__)
 
+_MAX_REFUSED_LINES = 10
+
 REENROLL_NOTICE = "Central: new enrollment code needed"
 
 ROLE_LABELS = {"admin": "Administrator", "operator": "Operator",
@@ -238,6 +240,22 @@ class MainWindow(QMainWindow):
         wizard.batch_ready.connect(self.start_batch)
         wizard.exec()
 
+    def report_refused_batches(self, refused: list) -> None:
+        """Tell the operator which interrupted batches were not resumed at
+        startup (Pipeline.refused_batches: (batch_id, message) pairs, both
+        value-free). Shows nothing for an empty list."""
+        if not refused:
+            return
+        lines = [f"{batch_id}: {message}"
+                 for batch_id, message in refused[:_MAX_REFUSED_LINES]]
+        if len(refused) > _MAX_REFUSED_LINES:
+            lines.append(f"and {len(refused) - _MAX_REFUSED_LINES} more")
+        QMessageBox.warning(
+            self, "Batches not recovered",
+            "\n".join(lines) + "\n\nThese batches were interrupted and "
+            "their project is not available, so they were not resumed. Fix "
+            "the project and rescan.")
+
     def start_batch(self, batch_id: str, jobs: list) -> None:
         user = Session.current_user()
         if self.pipeline is not None:
@@ -248,11 +266,17 @@ class MainWindow(QMainWindow):
             except (ProjectUnavailable, ValueError) as e:
                 # str(e) only: the chained cause can contain config values
                 log.warning("batch %s refused: %s", batch_id, e)
-                QMessageBox.critical(
-                    self, "Project not available",
-                    f"This batch was not started: {e}\n\nNothing was "
-                    "recorded. Check the project in the Workflow Designer, "
-                    "then scan again.")
+                if isinstance(e, ProjectUnavailable):
+                    QMessageBox.critical(
+                        self, "Project not available",
+                        f"This batch was not started: {e}\n\nNothing was "
+                        "recorded. Check the project in the Workflow "
+                        "Designer, then scan again.")
+                else:
+                    QMessageBox.critical(
+                        self, "Batch not started",
+                        f"This batch could not be started: {e}\n\nNothing "
+                        "was recorded.")
                 return
         if self.audit:
             self.audit.log("scan", user.username if user else "unknown",

@@ -360,13 +360,20 @@ class Database:
         with self._lock:
             return self.conn.execute(q + " ORDER BY created_at", tuple(args)).fetchall()
 
-    def known_field_values(self, field_name: str) -> set[str]:
+    def known_field_values(self, field_name: str,
+                           project_id: str | None = None) -> set[str]:
         """Distinct previously-indexed values for an extracted field, used
-        for autocomplete and lookup-table validation (HLD §4 Layer 5)."""
+        for autocomplete and lookup-table validation (HLD §4 Layer 5).
+        Restricted to one project's documents when project_id is given."""
         values: set[str] = set()
         with self._lock:
-            rows = self.conn.execute(
-                "SELECT extracted_fields FROM documents").fetchall()
+            if project_id is None:
+                rows = self.conn.execute(
+                    "SELECT extracted_fields FROM documents").fetchall()
+            else:
+                rows = self.conn.execute(
+                    "SELECT extracted_fields FROM documents WHERE project_id=?",
+                    (project_id,)).fetchall()
         for row in rows:
             try:
                 v = json.loads(row["extracted_fields"] or "{}").get(field_name)

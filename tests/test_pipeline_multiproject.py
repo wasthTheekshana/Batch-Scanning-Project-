@@ -100,12 +100,14 @@ def test_edit_mid_flight_does_not_change_a_running_batch(env):
         return None
 
     env.pipeline.ocr_fn = gated_ocr
-    env.pipeline.submit_batch("fly", make_jobs(env.tmp, "fly", "proj-a", ["text"]))
-    assert gate_in.wait(30)
-    cfg = copy.deepcopy(env.a)
-    cfg["export"]["format"] = "tiff"
-    env.db.update_project("proj-a", "Alpha", cfg, version=2)
-    release.set()
+    try:
+        env.pipeline.submit_batch("fly", make_jobs(env.tmp, "fly", "proj-a", ["text"]))
+        assert gate_in.wait(30)
+        cfg = copy.deepcopy(env.a)
+        cfg["export"]["format"] = "tiff"
+        env.db.update_project("proj-a", "Alpha", cfg, version=2)
+    finally:
+        release.set()
     assert wait_for(lambda: docs_done(env, "fly", 1))
     assert delivered(env, "A") == ["fly_0001.pdf"]       # still the snapshot (image_pdf)
 
@@ -155,6 +157,8 @@ def test_project_unavailable_in_a_stage_logs_the_message_but_never_the_cause(env
         env.pipeline.submit_batch("susp", make_jobs(env.tmp, "susp", "proj-a", ["text"]))
         assert wait_for(lambda: any(e["status"] == "failed" for e in events))
     assert "stage ingest failed: project 'proj-a': stored config is invalid" in caplog.text
+    assert {r["status"] for r in env.db.conn.execute(
+        "SELECT status FROM jobs WHERE batch_id='susp'")} == {"failed"}
     assert secret not in caplog.text
     assert "Traceback" not in caplog.text
     assert not any(r.exc_info for r in caplog.records)
@@ -272,3 +276,140 @@ def test_resubmit_returns_false_when_the_documents_project_is_unavailable(env, c
         assert env.pipeline.resubmit_document(doc_id) is False
     assert "proj-gone" in caplog.text
     assert delivered(env, "A") == [] and delivered(env, "B") == []
+
+
+# -- final-review fixes: recovery visibility, legacy mode, atomic submit -----------
+
+def _persist_two_project_batch(env, batch):
+    """A crashed batch whose jobs carry two different project ids."""
+    env.db.insert_batch(batch, "proj-a", "op")
+    for pid in ("proj-a", "proj-b"):
+        for j in make_jobs(env.tmp, f"{batch}-{pid}", pid, ["text"]):
+            env.db.upsert_job(j.job_id, batch, pid, 1 if pid == "proj-a" else 2,
+                              "in_progress", j.image_path)
+
+
+def _broken_project(env, project_id="proj-gone", secret="S3CRET-VALUE-123"):
+    bad = copy.deepcopy(env.a)
+    bad["project_id"] = project_id
+    bad["export"]["format"] = secret                    # schema-invalid enum value
+    env.db.insert_project(project_id, "Gone", bad)
+    return secret
+
+
+def test_failed_recovery_marks_the_batch_row_failed(env):
+    _broken_project(env)
+    _persist_unprocessed(env, "rec-x", "proj-gone", "proj-gone")
+    env.pipeline.recover()
+    assert env.db.get_batch("rec-x")["status"] == "failed"
+
+
+def test_refused_recovery_is_recorded_value_free_and_reset_per_call(env):
+    secret = _broken_project(env)
+    _persist_unprocessed(env, "rec-x", "proj-gone", "proj-gone")
+    _persist_unprocessed(env, "rec-a", "proj-a", "proj-a")
+    env.pipeline.recover()
+    refused = env.pipeline.refused_batches
+    assert [b for b, _m in refused] == ["rec-x"]
+    assert "proj-gone" in refused[0][1]
+    assert secret not in refused[0][1]
+    assert wait_for(lambda: docs_done(env, "rec-a", 1))
+    env.pipeline.recover()                      # nothing left to recover
+    assert env.pipeline.refused_batches == []
+
+
+def test_recovery_with_a_resolver_fails_a_batch_spanning_several_projects(env):
+    _persist_two_project_batch(env, "rec-mix")
+    _persist_unprocessed(env, "rec-a", "proj-a", "proj-a")
+    events = []
+    env.pipeline.subscribe(events.append)
+    recovered = env.pipeline.recover()
+    assert [j.batch_id for j in recovered] == ["rec-a"]
+    assert {r["status"] for r in env.db.conn.execute(
+        "SELECT status FROM jobs WHERE batch_id='rec-mix'")} == {"failed"}
+    assert any(e["stage"] == "recover" and e["status"] == "failed"
+               and e.get("batch_id") == "rec-mix" for e in events)
+    assert env.db.get_batch("rec-mix")["status"] == "failed"
+    assert env.pipeline.refused_batches == [
+        ("rec-mix", "recovered batch spans several projects")]
+    assert wait_for(lambda: docs_done(env, "rec-a", 1))
+
+
+def test_recovery_without_a_resolver_ignores_the_projects_of_the_jobs(env):
+    _persist_two_project_batch(env, "rec-mix")
+    legacy = Pipeline(env.db, env.a,
+                      [LocalFolderChannel(env.a["delivery"]["local_folder"])],
+                      export_document, working_dir=env.tmp / "legacy-staging")
+    events = []
+    legacy.subscribe(events.append)
+    recovered = legacy.recover()                # workers not started: jobs just queue
+    assert len(recovered) == 2
+    assert legacy.ingest_q.qsize() == 2
+    assert not any(e["status"] == "failed" for e in events)
+    assert legacy.refused_batches == []
+    assert {r["status"] for r in env.db.conn.execute(
+        "SELECT status FROM jobs WHERE batch_id='rec-mix'")} == {"queued"}
+    assert env.db.get_batch("rec-mix")["status"] == "in_progress"
+
+
+def test_a_db_error_in_submit_leaves_no_in_memory_batch_and_enqueues_nothing(env, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("db is down")
+
+    monkeypatch.setattr(env.db, "insert_batch", boom)
+    with pytest.raises(RuntimeError):
+        env.pipeline.submit_batch("nope", make_jobs(env.tmp, "nope", "proj-a", ["text"]))
+    assert "nope" not in env.pipeline._batches
+    assert env.pipeline.ingest_q.empty()
+    assert env.db.conn.execute("SELECT COUNT(*) FROM jobs WHERE batch_id='nope'").fetchone()[0] == 0
+
+
+# -- can_resubmit ----------------------------------------------------------------
+
+def test_can_resubmit_reports_the_reason_without_side_effects(env):
+    ok_id = _held_document(env, "cr-ok", "proj-a")
+    assert env.pipeline.can_resubmit(ok_id) == (True, "")
+    assert env.pipeline.can_resubmit("no-such-doc") == (False, "unknown document")
+
+    env.db.insert_project("proj-gone", "Gone", {"project_id": "proj-gone"})
+    gone_id = _held_document(env, "cr-gone", "proj-gone")
+    ok, reason = env.pipeline.can_resubmit(gone_id)
+    assert ok is False
+    assert reason.startswith("project not available: ")
+    assert "proj-gone" in reason
+
+    nopages = _held_document(env, "cr-nopages", "proj-a")
+    env.db.update_document(nopages, qc_detail={"pages": {}})
+    assert env.pipeline.can_resubmit(nopages) == (False, "page images unavailable")
+    assert env.pipeline.delivery_q.empty()
+
+
+# -- M2: lookup validation is scoped to the project ---------------------------------
+
+def _doc_with_field(env, n, pid, value):
+    batch = f"lk-{pid}-{n}"
+    env.db.insert_batch(batch, pid, "op")
+    env.db.insert_document(f"doc-{batch}", batch, pid, page_range="1-1",
+                           enhancement_profile="default",
+                           extracted_fields={"invoice": value},
+                           validation_status="auto_approved", qc_score=100,
+                           qc_detail={}, duplicate_of=None)
+
+
+def test_lookup_history_of_one_project_does_not_gate_another(env):
+    for i in range(6):
+        _doc_with_field(env, i, "proj-a", f"A-{i}")
+    assert env.pipeline._fails_lookup("invoice", "B-new", "proj-a") is True
+    assert env.pipeline._fails_lookup("invoice", "B-new", "proj-b") is False   # B has no history yet
+    for i in range(5):
+        _doc_with_field(env, i, "proj-b", f"B-{i}")
+    assert env.pipeline._fails_lookup("invoice", "B-3", "proj-b") is False     # known in B
+    assert env.pipeline._fails_lookup("invoice", "A-3", "proj-b") is True      # A's value unknown to B
+    assert env.pipeline._fails_lookup("invoice", "B-new", "proj-b") is True
+
+
+def test_known_field_values_default_is_still_across_all_projects(env):
+    _doc_with_field(env, 0, "proj-a", "A-0")
+    _doc_with_field(env, 0, "proj-b", "B-0")
+    assert env.db.known_field_values("invoice") == {"A-0", "B-0"}
+    assert env.db.known_field_values("invoice", project_id="proj-b") == {"B-0"}

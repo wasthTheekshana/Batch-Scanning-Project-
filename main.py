@@ -137,6 +137,7 @@ def main() -> int:
                         sync_service=sync_service,
                         sync_worker=sync_worker)
     window.show()
+    window.report_refused_batches(pipeline.refused_batches)
     code = app.exec()
 
     shutdown_central(sync_worker)

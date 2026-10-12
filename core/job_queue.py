@@ -92,6 +92,9 @@ class Pipeline:
         self._threads: list[threading.Thread] = []
         self._ocr_workers = ocr_workers
         self._started = False
+        # (batch_id, message) of every batch the last recover() refused;
+        # messages are str(ProjectUnavailable) only (value-free)
+        self.refused_batches: list[tuple[str, str]] = []
 
     # -- events ----------------------------------------------------------------
     def subscribe(self, fn) -> None:
@@ -176,11 +179,12 @@ class Pipeline:
             if self.db.get_project(self.profile["project_id"]) is None:
                 self.db.insert_project(self.profile["project_id"],
                                        self.profile["name"], self.profile)
+        # insert first: a DB error must not leave an in-memory entry behind
+        self.db.insert_batch(batch_id, runtime.project_id, operator)
         with self._lock:
             self._batches[batch_id] = {"expected": len(jobs), "pages": [],
                                        "counter": 0, "operator": operator,
                                        "runtime": runtime}
-        self.db.insert_batch(batch_id, runtime.project_id, operator)
         for job in jobs:
             self.db.upsert_job(job.job_id, job.batch_id, job.project_id,
                                job.page_no, "queued", job.image_path)
@@ -188,7 +192,9 @@ class Pipeline:
 
     def recover(self) -> list[ScanJob]:
         """Re-queue unfinished jobs from a previous run (HLD §14.2).
-        Recovered jobs are grouped per batch and resubmitted."""
+        Recovered jobs are grouped per batch and resubmitted. Batches that
+        cannot be resumed are failed and listed in ``refused_batches``."""
+        self.refused_batches = []
         rows = self.db.get_incomplete_jobs()
         by_batch: dict[str, list[ScanJob]] = {}
         for r in rows:
@@ -200,14 +206,16 @@ class Pipeline:
         for batch_id, jobs in by_batch.items():
             project_ids = {j.project_id for j in jobs}
             try:
-                if len(project_ids) != 1:
+                if self.resolver is not None and len(project_ids) != 1:
                     raise ProjectUnavailable("recovered batch spans several projects")
-                runtime = self._resolve(next(iter(project_ids)))
+                runtime = self._resolve(next(iter(project_ids), ""))
             except ProjectUnavailable as e:
                 # message only: the chained cause can contain config values
                 log.warning("cannot recover batch %s: %s", batch_id, e)
                 for job in jobs:
                     self.db.mark_job(job.job_id, "failed")
+                self.db.update_batch_status(batch_id, "failed")
+                self.refused_batches.append((batch_id, str(e)))
                 self._emit("recover", "failed", batch_id=batch_id, error=str(e))
                 continue
             with self._lock:
@@ -332,15 +340,17 @@ class Pipeline:
             record.extracted_fields[name] = fv.value
             if not fv.value or fv.confidence < threshold:
                 record.low_conf_fields.append(name)
-            elif self._fails_lookup(name, fv.value):
+            elif self._fails_lookup(name, fv.value, rt.project_id):
                 record.low_conf_fields.append(name)
 
-    def _fails_lookup(self, field_name: str, value: str) -> bool:
+    def _fails_lookup(self, field_name: str, value: str,
+                      project_id: str | None = None) -> bool:
         """True if the value doesn't match this field's lookup table of
         previously-indexed values (HLD §4 Layer 5: "validated against
         lookup tables in SQLite"). Only enforced once the field has
-        enough history to be a trustworthy lookup set."""
-        known = self.db.known_field_values(field_name)
+        enough history to be a trustworthy lookup set. History is the
+        project's own: another project's documents never open the gate."""
+        known = self.db.known_field_values(field_name, project_id)
         return len(known) >= _LOOKUP_MIN_SAMPLES and value not in known
 
     def _enhance_worker(self) -> None:
@@ -595,19 +605,16 @@ class Pipeline:
         return {"md5": md5, "phash": phash,
                 "barcode": document.get("barcode")}
 
-    def resubmit_document(self, document_id: str) -> bool:
-        """Push an operator-approved review document into the delivery
-        stage (QC review 'Accept → export'). Page images come from the
-        paths recorded in qc_detail during QC. Returns False when the
-        document is unknown or predates path recording."""
+    def _resubmit_inputs(self, document_id: str):
+        """(row, page records, reason). reason is "" when the document can be
+        re-exported, else a short operator-readable refusal (value-free)."""
         row = self.db.get_document(document_id)
         if row is None:
-            return False
+            return None, [], "unknown document"
         try:
             self._resolve(row["project_id"])
         except ProjectUnavailable as e:
-            log.warning("cannot re-export %s: %s", document_id, e)
-            return False
+            return row, [], f"project not available: {e}"
         detail = json.loads(row["qc_detail"] or "{}")
         pages = detail.get("pages", {})
         records = []
@@ -623,8 +630,23 @@ class Pipeline:
             records.append(PageRecord(job=job, working_path=working,
                                       ocr_text=info.get("ocr_text", "")))
         if not records:
-            log.warning("cannot re-export %s: page images unavailable",
-                        document_id)
+            return row, [], "page images unavailable"
+        return row, records, ""
+
+    def can_resubmit(self, document_id: str) -> tuple[bool, str]:
+        """Whether resubmit_document would accept this document, and if not
+        why. No side effects."""
+        _row, _records, reason = self._resubmit_inputs(document_id)
+        return (not reason, reason)
+
+    def resubmit_document(self, document_id: str) -> bool:
+        """Push an operator-approved review document into the delivery
+        stage (QC review 'Accept → export'). Page images come from the
+        paths recorded in qc_detail during QC. Returns False when the
+        document is unknown or predates path recording."""
+        row, records, reason = self._resubmit_inputs(document_id)
+        if reason:
+            log.warning("cannot re-export %s: %s", document_id, reason)
             return False
         fields = json.loads(row["extracted_fields"] or "{}")
         document = {
