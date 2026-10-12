@@ -6,20 +6,60 @@
       "lang": "eng",
       "confidence_threshold": 0.75,
       "zones": [
-        {"name": "invoice_number", "regex": ":\\s*(\\S+)"},
-        {"name": "vendor_name", "regex": ":\\s*(.+)"},
-        {"name": "invoice_date", "regex": ":\\s*(\\S+)"},
-        {"name": "amount", "regex": ":\\s*(\\S+)"},
-        {"name": "po_reference", "regex": ":\\s*(\\S+)"}
+        {
+          "name": "invoice_number",
+          "regex": "(?i)invoice\\s*(?:no\\.?|number|#)\\s*[:.]?\\s*([A-Z0-9][A-Z0-9\\-/]{3,})"
+        },
+        {
+          "name": "vendor_name",
+          "regex": "^\\s*([A-Z][A-Za-z&.,' ]{2,60}?(?:\\(PVT\\)\\s*)?(?:LTD|LIMITED|PLC|INC)\\.?)"
+        },
+        {
+          "name": "invoice_date",
+          "regex": "(?i)(?:invoice\\s*)?date\\s*[:.]?\\s*(\\d{1,2}[ /.-](?:[A-Za-z]{3}|\\d{1,2})[ /.-]\\d{2,4})"
+        },
+        {
+          "name": "amount",
+          "regex": "(?i)(?<!sub )(?<!sub)(?:grand\\s*)?total(?:\\s*(?:lkr|amount|due))?\\s*[:.]?\\s*([\\d,]+\\.\\d{2})"
+        },
+        {
+          "name": "po_reference",
+          "regex": "(?i)(?:po\\b|purchase\\s*order|your\\s*ref)\\w*\\s*#?\\s*[:.]?\\s*([A-Z0-9][A-Z0-9\\-/]{3,})"
+        }
       ]
     },
-    "separation": {"strategy": ["blank_page"], "blank_threshold": 0.02},
-    "qc": {"enabled": true, "stages": ["punch_hole", "rotation", "margin",
-          "color", "advanced"], "pass_score": 80, "blur_warn_threshold": 80,
-          "blur_fail_threshold": 30, "dpi_warn": 200, "dpi_fail": 150},
-    "enhancement_profile": {"deskew": true, "crop": true, "clahe": true,
-                            "despeckle": true, "whiten_bg": true,
-                            "target_dpi": 300},
-    "features": {"auto_index": true, "duplicate_check": true}
+    "separation": {
+      "strategy": [
+        "blank_page"
+      ],
+      "blank_threshold": 0.02
+    },
+    "qc": {
+      "enabled": true,
+      "stages": [
+        "punch_hole",
+        "rotation",
+        "margin",
+        "color",
+        "advanced"
+      ],
+      "pass_score": 80,
+      "blur_warn_threshold": 80,
+      "blur_fail_threshold": 30,
+      "dpi_warn": 200,
+      "dpi_fail": 150
+    },
+    "enhancement_profile": {
+      "deskew": true,
+      "crop": true,
+      "clahe": true,
+      "despeckle": true,
+      "whiten_bg": true,
+      "target_dpi": 300
+    },
+    "features": {
+      "auto_index": true,
+      "duplicate_check": true
+    }
   }
 }

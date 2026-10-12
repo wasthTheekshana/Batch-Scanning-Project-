@@ -81,7 +81,7 @@ def main() -> int:
     key = KeyStore(root / "keys" / "master.bin").get_or_create()
     db = open_database(root, key)
     audit = AuditLogger(db, root / "logs")
-    pm = ProfileManager(root / "projects", db)
+    pm = ProfileManager(root / "projects", db, data_root=root)
     try:
         TemplateManager(db).seed_built_ins()
     except Exception:

@@ -92,7 +92,9 @@ class ProjectConfigError(Exception):
 
 
 class ProfileManager:
-    def __init__(self, projects_dir: str | Path, db=None):
+    def __init__(self, projects_dir: str | Path, db=None,
+                 data_root: str | Path | None = None):
+        self.data_root = Path(data_root) if data_root else None
         self.projects_dir = Path(projects_dir)
         self.archive_dir = self.projects_dir / "archive"
         self.projects_dir.mkdir(parents=True, exist_ok=True)
@@ -108,6 +110,19 @@ class ProfileManager:
                 f"invalid project config at {'/'.join(map(str, e.absolute_path))}: "
                 f"{e.message}") from e
 
+    def _fill_blank_paths(self, cfg: dict) -> None:
+        """A blank export path would write into the process working
+        directory and a blank local-delivery path silently skips delivery;
+        default both under the data root (never overwrites a set value)."""
+        if self.data_root is None:
+            return
+        export = cfg.get("export")
+        if isinstance(export, dict) and not export.get("output_path"):
+            export["output_path"] = str(self.data_root / "output")
+        local = (cfg.get("delivery") or {}).get("local_folder")
+        if isinstance(local, dict) and local.get("enabled")                 and not local.get("path"):
+            local["path"] = str(self.data_root / "delivered")
+
     # -- operations ----------------------------------------------------------
     def create(self, name: str, config: dict | None = None) -> dict:
         cfg = copy.deepcopy(config or DEFAULT_PROJECT)
@@ -117,6 +132,7 @@ class ProfileManager:
         cfg["created"] = datetime.now(timezone.utc).isoformat()
         if not cfg["rules"].get("rule_set_id"):
             cfg["rules"]["rule_set_id"] = str(uuid.uuid4())
+        self._fill_blank_paths(cfg)
         self.validate(cfg)
         self._write(cfg)
         if self.db:
@@ -134,6 +150,8 @@ class ProfileManager:
 
     def _save_file(self, config: dict) -> dict:
         """The file half of save(): validate, archive the old file, write."""
+        config = copy.deepcopy(config)
+        self._fill_blank_paths(config)
         self.validate(config)
         current = self._path(config["project_id"])
         if current.exists():
