@@ -93,15 +93,18 @@ Record pass/fail + notes per item; all must pass before go-live sign-off.
       batch; a batch already running keeps the settings it started with
 - [ ] Refusing a broken batch (developer-assisted; needs the repo and its
       Python): close the app, then from the repo root run
-      `python -c "import os; from pathlib import Path; from data.db import Database; from data.keystore import KeyStore; r = Path(os.environ['LOCALAPPDATA']) / 'DOKScanner'; db = Database(r / 'dokscanner.db', key=KeyStore(r / 'keys' / 'master.bin').get_or_create()); db.conn.execute(\"UPDATE projects SET config_json = '{oops' WHERE project_id = '<project_id>'\"); db.conn.commit(); db.close()"`
+      `python -c "import os; from pathlib import Path; from data.db import Database; from data.keystore import KeyStore; r = Path(os.environ['LOCALAPPDATA']) / 'DOKScanner'; db = Database(r / 'dokscanner.db', key=KeyStore(r / 'keys' / 'master.bin').get_or_create()); db.conn.execute(\"UPDATE projects SET config_json = json_set(config_json, '$.export.format', 'bogus') WHERE project_id = '<project_id>'\"); db.conn.commit(); db.close()"`
       (the database row is what the pipeline reads; the project's `.json` file
-      is not, so editing the file does not break it). Start the app, choose that
+      is not, so editing the file does not break it. The value stays valid JSON
+      but fails the project schema, which is what the pipeline refuses; do NOT
+      store malformed JSON here: the UI parses every project row and would crash
+      before the refusal can be shown). Start the app, choose that
       project in the scan wizard and start a scan: a "Project not available"
       message appears, it shows the project id and the reason only (no
       configuration values) and no batch or audit entry is created. Saving the
       project in the Workflow Designer or a central sync repairs it
 - [ ] Interrupted batch of a broken project: start a scan, kill the app while
-      it runs, break the project as above, restart: a "Batches not recovered"
+      it runs, break the project as above (schema-invalid, still valid JSON), restart: a "Batches not recovered"
       box lists the batch; the batch shows as failed
 - [ ] Duplicate detection is cross-project: scan the same page into two
       projects (duplicate check on) and confirm the second document is held for
