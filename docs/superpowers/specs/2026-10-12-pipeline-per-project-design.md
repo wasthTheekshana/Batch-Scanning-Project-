@@ -98,6 +98,9 @@ class RuntimeResolver:
 ### Non-goals / follow-ups
 
 - Index tab zones / OCR mode per document project; CD/DVD burn tab for every project's queue.
+  Only the startup project's disc queue can be burned in the Admin tab; do not enable CD/DVD delivery on other projects yet.
+- Duplicate detection stays global: an identical page scanned into two projects is held for review.
+- A refused batch closes the wizard and leaves its staged copies under `staging_dir`.
 - Hot-folder watchers (none exist as a submit path today); moving documents between projects.
 
 ## Testing

@@ -34,7 +34,14 @@ Known limitations of plan 2 (updated 2026-10-12, per-project pipeline):
 Remaining follow-ups of the per-project pipeline:
 
 - Index tab zones / OCR mode per document project (still uses the startup project).
-- CD/DVD burn tab per project (still the startup project's channel).
+- CD/DVD burn tab per project (still the startup project's channel). Only the startup project's disc queue can be burned in the Admin tab; do not enable CD/DVD delivery on other projects yet. A
+  non-startup project with CD/DVD enabled stages into its own `staging_dir`, and
+  those documents stay `pending` with no screen to burn them.
+- Duplicate detection compares across projects: an identical page scanned into
+  two projects is held for review (deliberately global).
+- The Index tab still uses the first project's zones / OCR mode.
+- The scan wizard closes after a refused batch and its staged copies stay under
+  `staging_dir` (no clean-up of refused batches yet).
 - A dedicated exception type for batch refusal (today `ProjectUnavailable` and
   `ValueError` are both caught in `MainWindow.start_batch`).
 

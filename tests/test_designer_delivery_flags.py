@@ -104,3 +104,12 @@ def test_hints_no_longer_point_at_the_feature_toggle(qtbot, env):
         text = " ".join(lbl.text() for lbl in box.findChildren(QLabel))
         assert "feature toggle" not in text
         assert "Tick Enabled" in text
+
+
+def test_cd_dvd_box_warns_that_only_the_startup_projects_queue_can_be_burned(qtbot, env):
+    from PyQt6.QtCore import Qt
+    d, _pid = _make(qtbot, env, managed=False)
+    assert d.cd_hint.textFormat() == Qt.TextFormat.PlainText
+    assert d.cd_hint.text() == ("Only the startup project's disc queue can be "
+                                "burned from Admin; enable this on one project only.")
+    assert d.cd_hint.parent() is d.cd_box

@@ -369,9 +369,11 @@ def startup_sync(service: CentralSyncService,
 
 
 def choose_pipeline_profile(db, fallback: Callable[[], dict]) -> dict:
-    """The pipeline binds to ONE project at startup. A PC that is managed
-    centrally uses its first active managed project; otherwise (or if none
-    is usable) the existing first-run behaviour applies."""
+    """The startup profile. With the per-batch resolver it only feeds the
+    pipeline's default runtime and the Admin burn tab's channel; every batch
+    resolves its own project. A PC that is managed centrally uses its first
+    active managed project; otherwise (or if none is usable) the existing
+    first-run behaviour applies."""
     managed = {r["project_id"] for r in
                db.list_central_projects(managed_only=True)}
     for row in db.list_projects("active"):

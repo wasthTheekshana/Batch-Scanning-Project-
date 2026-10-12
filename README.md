@@ -46,7 +46,9 @@ Tesseract 5 must be on PATH for OCR features (bundled in the packaged EXE).
   scaffolding (drop vendor DLLs into `vendor_sdks/`).
 - **Phase 3 (new modules)** — complete: real SFTP delivery (paramiko, LAN
   only, retry + size verification), CD/DVD burn queue with checksum verify
-  and disc log (configure `burner_cmd` for ImgBurn/cdrecord), multi-channel
+  and disc log (configure `burner_cmd` for ImgBurn/cdrecord; note: only the
+  startup project's disc queue can be burned in the Admin tab, so do not
+  enable CD/DVD delivery on other projects yet), multi-channel
   delivery incl. rule-triggered channels, benchmark suite
   (`python scripts/benchmark.py --pages 100 [--ocr]`; dev machine:
   141 pages/min no-OCR, 115 pages/min with OCR).
