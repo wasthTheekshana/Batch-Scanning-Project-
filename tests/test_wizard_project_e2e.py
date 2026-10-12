@@ -94,7 +94,8 @@ def done(db, batch_id):
 
 def test_second_project_chosen_in_the_wizard_is_delivered_as_that_project(
         qtbot, make, tmp_path):
-    db, pm, _a, _p, win, _cfg_b = make()
+    env = make()
+    db, win = env[0], env[4]
     batch = scan_via_wizard(qtbot, win, db, tmp_path, "proj-b", "one")
     assert wait_for(lambda: done(db, batch))
     assert delivered(tmp_path, "B") == [".tif"]        # Bravo's folder + format
