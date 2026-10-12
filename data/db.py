@@ -289,6 +289,11 @@ class Database:
                 (batch_id, project_id, operator_user, now, 0,
                  "in_progress", now))
 
+    def get_batch(self, batch_id: str) -> sqlite3.Row | None:
+        with self._lock:
+            return self.conn.execute(
+                "SELECT * FROM batches WHERE batch_id=?", (batch_id,)).fetchone()
+
     def update_batch_status(self, batch_id: str, status: str,
                             page_count: int | None = None) -> None:
         with self._lock, self.conn:
