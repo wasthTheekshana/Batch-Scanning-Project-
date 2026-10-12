@@ -1,6 +1,6 @@
 {
   "errors": [],
-  "generated_at": "2026-10-09T09:16:34Z",
+  "generated_at": "2026-10-12T07:48:19Z",
   "metrics": {
     ".\\central\\__init__.py": {
       "CONFIDENCE.HIGH": 0,
@@ -271,7 +271,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 306,
+      "loc": 347,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -284,7 +284,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 74,
+      "loc": 71,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -310,7 +310,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 519,
+      "loc": 586,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -336,7 +336,20 @@
       "SEVERITY.LOW": 1,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 196,
+      "loc": 226,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    ".\\core\\project_runtime.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 70,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -362,7 +375,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 39,
+      "loc": 66,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -466,7 +479,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 2,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 450,
+      "loc": 454,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1246,7 +1259,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 178,
+      "loc": 201,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1324,7 +1337,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 187,
+      "loc": 217,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1402,7 +1415,7 @@
       "SEVERITY.LOW": 3,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 644,
+      "loc": 789,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1428,14 +1441,14 @@
       "SEVERITY.LOW": 15,
       "SEVERITY.MEDIUM": 6,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 9342,
+      "loc": 9776,
       "nosec": 0,
       "skipped_tests": 0
     }
   },
   "results": [
     {
-      "code": "59         \"dpi_fail\": 150,\n60         \"pass_score\": 80,\n61     },\n62     \"ocr\": {\"lang\": \"eng\", \"zones\": [], \"confidence_threshold\": 0.75},\n63     \"export\": {\n64         \"format\": \"searchable_pdf\",\n65         \"pdf_a\": False,\n66         \"filename_template\": \"{date}_{batch_id}_{counter:04d}\",\n67         \"output_path\": \"\",\n68     },\n69     \"delivery\": {\n",
+      "code": "67         \"dpi_fail\": 150,\n68         \"pass_score\": 80,\n69     },\n70     \"ocr\": {\"lang\": \"eng\", \"zones\": [], \"confidence_threshold\": 0.75},\n71     \"export\": {\n72         \"format\": \"searchable_pdf\",\n73         \"pdf_a\": False,\n74         \"filename_template\": \"{date}_{batch_id}_{counter:04d}\",\n75         \"output_path\": \"\",\n76     },\n77     \"delivery\": {\n",
       "col_offset": 8,
       "end_col_offset": 20,
       "filename": ".\\core\\profile_manager.py",
@@ -1446,17 +1459,17 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Possible hardcoded password: '80'",
-      "line_number": 60,
+      "line_number": 68,
       "line_range": [
-        53,
-        54,
-        55,
-        56,
-        57,
-        58,
-        59,
-        60,
-        61
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html",
       "test_id": "B105",
@@ -1525,7 +1538,7 @@
       "test_name": "hardcoded_sql_expressions"
     },
     {
-      "code": "319             self.conn.execute(\n320                 f\"INSERT INTO documents ({cols}) VALUES ({marks})\",\n321                 tuple(base.values()))\n",
+      "code": "324             self.conn.execute(\n325                 f\"INSERT INTO documents ({cols}) VALUES ({marks})\",\n326                 tuple(base.values()))\n",
       "col_offset": 16,
       "end_col_offset": 66,
       "filename": ".\\data\\db.py",
@@ -1536,16 +1549,16 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Possible SQL injection vector through string-based query construction.",
-      "line_number": 320,
+      "line_number": 325,
       "line_range": [
-        320
+        325
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html",
       "test_id": "B608",
       "test_name": "hardcoded_sql_expressions"
     },
     {
-      "code": "333             self.conn.execute(\n334                 f\"UPDATE documents SET {', '.join(sets)} WHERE document_id=?\",\n335                 tuple(vals))\n",
+      "code": "338             self.conn.execute(\n339                 f\"UPDATE documents SET {', '.join(sets)} WHERE document_id=?\",\n340                 tuple(vals))\n",
       "col_offset": 16,
       "end_col_offset": 77,
       "filename": ".\\data\\db.py",
@@ -1556,9 +1569,9 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Possible SQL injection vector through string-based query construction.",
-      "line_number": 334,
+      "line_number": 339,
       "line_range": [
-        334
+        339
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html",
       "test_id": "B608",
@@ -1820,7 +1833,7 @@
       "test_name": "hardcoded_password_string"
     },
     {
-      "code": "34 QC_PRESETS = {\n35     \"Strict\": {\"pass_score\": 90, \"blur_warn_threshold\": 100,\n36               \"blur_fail_threshold\": 50, \"dpi_warn\": 250, \"dpi_fail\": 200},\n37     \"Standard\": {\"pass_score\": 80, \"blur_warn_threshold\": 80,\n",
+      "code": "46 QC_PRESETS = {\n47     \"Strict\": {\"pass_score\": 90, \"blur_warn_threshold\": 100,\n48               \"blur_fail_threshold\": 50, \"dpi_warn\": 250, \"dpi_fail\": 200},\n49     \"Standard\": {\"pass_score\": 80, \"blur_warn_threshold\": 80,\n",
       "col_offset": 15,
       "end_col_offset": 27,
       "filename": ".\\ui\\workflow_designer.py",
@@ -1831,17 +1844,17 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Possible hardcoded password: '90'",
-      "line_number": 35,
+      "line_number": 47,
       "line_range": [
-        35,
-        36
+        47,
+        48
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html",
       "test_id": "B105",
       "test_name": "hardcoded_password_string"
     },
     {
-      "code": "36               \"blur_fail_threshold\": 50, \"dpi_warn\": 250, \"dpi_fail\": 200},\n37     \"Standard\": {\"pass_score\": 80, \"blur_warn_threshold\": 80,\n38                 \"blur_fail_threshold\": 30, \"dpi_warn\": 200, \"dpi_fail\": 150},\n39     \"Lenient\": {\"pass_score\": 65, \"blur_warn_threshold\": 60,\n",
+      "code": "48               \"blur_fail_threshold\": 50, \"dpi_warn\": 250, \"dpi_fail\": 200},\n49     \"Standard\": {\"pass_score\": 80, \"blur_warn_threshold\": 80,\n50                 \"blur_fail_threshold\": 30, \"dpi_warn\": 200, \"dpi_fail\": 150},\n51     \"Lenient\": {\"pass_score\": 65, \"blur_warn_threshold\": 60,\n",
       "col_offset": 17,
       "end_col_offset": 29,
       "filename": ".\\ui\\workflow_designer.py",
@@ -1852,17 +1865,17 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Possible hardcoded password: '80'",
-      "line_number": 37,
+      "line_number": 49,
       "line_range": [
-        37,
-        38
+        49,
+        50
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html",
       "test_id": "B105",
       "test_name": "hardcoded_password_string"
     },
     {
-      "code": "38                 \"blur_fail_threshold\": 30, \"dpi_warn\": 200, \"dpi_fail\": 150},\n39     \"Lenient\": {\"pass_score\": 65, \"blur_warn_threshold\": 60,\n40                \"blur_fail_threshold\": 15, \"dpi_warn\": 150, \"dpi_fail\": 100},\n41 }\n",
+      "code": "50                 \"blur_fail_threshold\": 30, \"dpi_warn\": 200, \"dpi_fail\": 150},\n51     \"Lenient\": {\"pass_score\": 65, \"blur_warn_threshold\": 60,\n52                \"blur_fail_threshold\": 15, \"dpi_warn\": 150, \"dpi_fail\": 100},\n53 }\n",
       "col_offset": 16,
       "end_col_offset": 28,
       "filename": ".\\ui\\workflow_designer.py",
@@ -1873,10 +1886,10 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Possible hardcoded password: '65'",
-      "line_number": 39,
+      "line_number": 51,
       "line_range": [
-        39,
-        40
+        51,
+        52
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html",
       "test_id": "B105",

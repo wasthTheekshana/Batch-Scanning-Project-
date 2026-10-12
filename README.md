@@ -91,8 +91,8 @@ Tesseract 5 must be on PATH for OCR features (bundled in the packaged EXE).
 - **Central sync client** — complete: Admin > Central enrols the PC with a
   one-time code (enrollment is per Windows account: the key is DPAPI-protected
   and the data lives under that user's `%LOCALAPPDATA%`). Assigned projects are
-  pulled in the background and apply after a restart (a status-bar notice
-  shows for every role). Central owns processing settings; the PC keeps its own
+  pulled in the background and apply to the next scan batch (no restart;
+  the Central tab says so). Central owns processing settings; the PC keeps its own
   scanner / export / delivery. A project new to the PC has those three sections
   seeded from the PC's previous project (the first active project that central
   does not manage), so scans keep going to the same place, and they stay

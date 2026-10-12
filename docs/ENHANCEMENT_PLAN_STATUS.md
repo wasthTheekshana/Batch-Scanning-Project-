@@ -22,14 +22,21 @@ Spec `docs/superpowers/specs/2026-08-29-central-admin-dashboard-design.md` is no
 | 2. Sync client in DOKScanner.exe | **Built** on branch `central-sync` (state, HTTPS client, config overlay, safe paths, sync service/worker, startup sync, Admin > Central tab, Workflow Designer limited to scanner/export/delivery for managed projects). End-to-end tests against the real central app: `tests/test_central_integration.py`. PC-local `scanner`/`export`/`delivery` stay local, are seeded from the PC's previous project and are editable in the Designer. |
 | 3. React admin dashboard | Not started — needs admin password reset/disable, session revoke-all, PC deletion and an audit-log read API first (listed in `central/README.md`). |
 
-Known limitations of plan 2:
+Known limitations of plan 2 (updated 2026-10-12, per-project pipeline):
 
-1. **Changes apply on restart.** The pipeline binds one project at startup, so
-   a project synced from central drives scanning only after the next DOKScanner
-   restart.
-2. **The scan wizard's project choice is not applied to the pipeline**
-   (pre-existing: `Pipeline.profile` is fixed at startup). A separate plan is
-   needed before multi-project PCs are meaningful.
+1. ~~Changes apply on restart.~~ **REMOVED.** The pipeline resolves each batch's
+   project from the database when the batch starts, so a synced or
+   Designer-saved change applies to the next scan batch (no restart notice).
+2. ~~The scan wizard's project choice is not applied to the pipeline.~~
+   **FIXED.** The wizard's project drives that batch's settings, export,
+   delivery and filing (`tests/test_wizard_project_e2e.py`).
+
+Remaining follow-ups of the per-project pipeline:
+
+- Index tab zones / OCR mode per document project (still uses the startup project).
+- CD/DVD burn tab per project (still the startup project's channel).
+- A dedicated exception type for batch refusal (today `ProjectUnavailable` and
+  `ValueError` are both caught in `MainWindow.start_batch`).
 
 ## Remaining — grouped by why it's not done
 

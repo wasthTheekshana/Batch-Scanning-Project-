@@ -73,6 +73,19 @@ def central_project_config(tmp: Path) -> dict:
     return ProfileManager(tmp / "pm").create("Seed")
 
 
+def make_page_png(path: Path, variant: int = 0) -> None:
+    """A real one-page scan: a white page with a heading and rows of dark text bars
+    (dense enough that the default blank-page separation keeps it as a document)."""
+    import cv2
+    import numpy as np
+    page = np.full((1000, 800), 255, np.uint8)
+    for i in range(12):        # `variant` changes the layout: the duplicate check must not fire
+        cv2.rectangle(page, (100 + variant * 30 * (i % 3), 100 + i * 60),
+                      (700 - variant * 40 * (i % 2), 118 + i * 60), 0, -1)
+    cv2.putText(page, f"INVOICE INV-123{variant}", (100, 60), cv2.FONT_HERSHEY_SIMPLEX, 1.2, 0, 3)
+    cv2.imwrite(str(path), page)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", type=Path, default=h.DEFAULT_OUT)
@@ -109,6 +122,8 @@ def main() -> int:
 
         def stored():
             return json.loads((appdir / "projects" / f"{PID}.json").read_text(encoding="utf-8"))
+
+        local_delivery = str(appdir / "delivered_bank")     # PC-local, inside the sandbox
 
         def scenario(app, win):
             from PyQt6.QtGui import QFontMetrics
@@ -148,8 +163,12 @@ def main() -> int:
             report.check("Central table headers are fully visible", not cut, str(cut))
             report.check("API key is not in central.json",
                          "dsk_" not in (appdir / "central.json").read_text())
-            report.check("restart notice in the status bar (every role)",
-                         any("restart" in t.lower() for t in bar()), str(bar()))
+            central_text = " ".join(w.text() for w in tab.findChildren(QLabel)
+                                    if not w.isHidden())
+            report.check("Central tab says projects apply to the next scan batch",
+                         "apply to the next scan batch" in central_text, central_text[:120])
+            report.check("status bar shows NO restart notice",
+                         not any("restart" in t.lower() for t in bar()), str(bar()))
             cfg_local = stored()
             report.check("central content applied", cfg_local["name"] == "Invoices" and cfg_local["ocr"]["lang"] == "eng")
             report.check("local sections seeded under this PC's own data dir",
@@ -173,16 +192,41 @@ def main() -> int:
                 report.check("local delivery folder is editable", d.delivery_path.isEnabled())
                 report.check("SFTP 'Enabled' is editable", d.sftp_enabled.isEnabled())
                 before = stored()
-                d.delivery_path.setText(r"D:\bank\delivered")
+                d.delivery_path.setText(local_delivery)
                 d.sftp_enabled.setChecked(True)
                 d.sftp_host.setText("sftp.bank.local")
                 d.qc_enabled.setChecked(not d.qc_enabled.isChecked())      # sneak a central-owned edit
                 d.save()
                 after = stored()
-                report.check("local delivery path saved", after["delivery"]["local_folder"]["path"] == r"D:\bank\delivered")
+                report.check("local delivery path saved", after["delivery"]["local_folder"]["path"] == local_delivery)
                 report.check("SFTP enabled saved", after["delivery"]["sftp"]["enabled"] is True)
                 report.check("central-owned qc NOT changed", after["qc"] == before["qc"])
                 report.check("central-owned ocr NOT changed", after["ocr"] == before["ocr"])
+
+            print("\n== app: a scan batch for the managed project (the REAL pipeline)", flush=True)
+            from scanning.file_import import import_files
+
+            def scan_batch(batch_id: str, variant: int) -> list:
+                png = out / f"{batch_id}.png"
+                make_page_png(png, variant)
+                jobs = import_files([png], batch_id, PID, out / "wizard-staging")
+                win.start_batch(batch_id, jobs)
+                h.wait_for(app, lambda: any(
+                    r["delivery_status"] == "delivered_local"
+                    for r in win.db.list_documents(batch_id)), 60)
+                return win.db.list_documents(batch_id)
+
+            docs1 = scan_batch("e2e-batch-1", 0)
+            delivered_dir = Path(local_delivery)
+            report.check("batch 1: the document was delivered", len(docs1) == 1
+                         and docs1[0]["delivery_status"] == "delivered_local",
+                         str([dict(r) for r in docs1])[:150])
+            report.check("batch 1: file is in the managed project's PC-local delivery folder",
+                         delivered_dir.is_dir() and any(delivered_dir.iterdir()), str(delivered_dir))
+            report.check("batch 1: batch row carries the managed project's id",
+                         win.db.get_batch("e2e-batch-1")["project_id"] == PID)
+            report.check("batch 1: document row carries the managed project's id",
+                         bool(docs1) and docs1[0]["project_id"] == PID)
 
             print("\n== central edit reaches the PC, local settings survive", flush=True)
             srv = admin.call("GET", f"/admin/projects/{PID}")[1]["config"]
@@ -194,8 +238,18 @@ def main() -> int:
                          h.wait_for(app, lambda: stored()["ocr"]["lang"] == "deu", 25))
             now = stored()
             report.check("PC-local delivery survived the update",
-                         now["delivery"]["local_folder"]["path"] == r"D:\bank\delivered"
+                         now["delivery"]["local_folder"]["path"] == local_delivery
                          and now["delivery"]["sftp"]["enabled"] is True)
+            report.check("next batch will use the new version (resolver sees lang=deu, no restart)",
+                         win.pipeline.resolver.resolve(PID).profile["ocr"]["lang"] == "deu")
+            n_before = len(list(delivered_dir.iterdir()))
+            docs2 = scan_batch("e2e-batch-2", 3)
+            report.check("batch 2 after the central edit is delivered without a restart",
+                         len(docs2) == 1 and docs2[0]["delivery_status"] == "delivered_local"
+                         and len(list(delivered_dir.iterdir())) == n_before + 1,
+                         str([dict(r) for r in docs2])[:150])
+            report.check("batch 2 is filed under the managed project",
+                         win.db.get_batch("e2e-batch-2")["project_id"] == PID)
 
             print("\n== admin revokes the PC's key", flush=True)
             report.check("revoked on the server", admin.call("DELETE", f"/admin/pcs/{pc['pc_id']}/key")[0] == 204)

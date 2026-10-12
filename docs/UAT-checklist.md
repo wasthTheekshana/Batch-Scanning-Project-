@@ -74,11 +74,24 @@ Record pass/fail + notes per item; all must pass before go-live sign-off.
 - [ ] Admin > Central > Disconnect: the projects stay and become editable
 - [ ] A project whose rule has a `..` set_folder value (publish via the
       central API) is skipped (listed as skipped), other projects still apply
-- [ ] After enrollment and restart, scans are delivered to the same place as
+- [ ] After enrollment (no restart), scans are delivered to the same place as
       before (output folder, SFTP/local delivery, scanner)
-- [ ] After a sync that applied something, the status bar shows "restart
-      DOKScanner to apply" for every role (also for an operator) and keeps
-      showing it after later syncs until the app is restarted
+- [ ] After a sync that applied something, the Central tab says the updated
+      settings apply to the next scan batch and the status bar shows no
+      restart notice (also for an operator); scan again WITHOUT restarting and
+      confirm the new central settings are used
+- [ ] Per-project scanning: with two projects that have different export
+      formats and delivery folders, pick the SECOND project in the scan wizard
+      and confirm the document is exported in that project's format, delivered
+      to that project's folder (the first project's folder stays empty) and
+      filed under that project in the batch/document lists
+- [ ] Edit a project (Workflow Designer, or on central) and scan again WITHOUT
+      restarting: the new settings (e.g. export format) are used by the next
+      batch; a batch already running keeps the settings it started with
+- [ ] Refusing a broken batch: make a project unusable (e.g. corrupt its
+      stored config in the database) and start a scan for it: a
+      "Project not available" message appears, the message shows the field
+      path only (no configuration values) and no batch or audit entry is created
 
 ## Sign-off
 | Role | Name | Date | Signature |

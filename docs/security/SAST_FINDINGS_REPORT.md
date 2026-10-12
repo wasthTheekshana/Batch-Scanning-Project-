@@ -306,3 +306,20 @@ The client-side threat model is section 7 of
   independent tester each cycle — a one-time internal scan (this report)
   does not satisfy the plan's "independence of testing" requirement, which
   needs a separate QA/security function or an external tester
+
+## Per-project pipeline (`core/project_runtime.py`, `core/job_queue.py`)
+
+**Re-scan #5 (2026-10-12):** re-run via `scripts/security_scan.py` after the
+pipeline started resolving each batch's project at batch start.
+
+**Result for the new/changed files: 0 findings** (High 0, Medium 0, Low 0, no
+`#nosec`) in `core/project_runtime.py` and `core/job_queue.py`; the changed
+`ui/main_window.py` and `ui/central_tab.py` are also clean. Repository-wide
+totals are unchanged from re-scan #4: High 0 / Medium 6 / Low 15; the raw
+reports differ only by line-number shifts in already-triaged findings.
+
+**Disposition: nothing to fix, nothing to accept.** Not covered by a static
+scan: `ProjectUnavailable` messages carry only field paths and ids (covered by
+`tests/test_project_runtime.py` and `tests/test_main_window_batch.py`), and
+recovery fails closed (covered by `tests/test_pipeline_multiproject.py`); see
+section 7 of the central-API threat model.

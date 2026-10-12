@@ -1,6 +1,6 @@
 # Per-Project Pipeline Configuration — Design Spec
 
-Status: approved by user 2026-10-12 (decisions below), ready for implementation planning.
+Status: IMPLEMENTED 2026-10-12 (branch `per-project-pipeline`; end to end in `tests/test_wizard_project_e2e.py` and the run-dokscanner `check_central.py` driver). Approved by user 2026-10-12.
 Follows from `docs/ENHANCEMENT_PLAN_STATUS.md` ("the scan wizard's project choice is not
 applied to the pipeline") and the central-sync work, whose "restart to apply" limitation
 comes from the same cause.

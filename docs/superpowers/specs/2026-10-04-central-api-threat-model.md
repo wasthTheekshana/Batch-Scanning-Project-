@@ -224,8 +224,15 @@ the real app: `tests/test_central_integration.py`.
   delay startup longer) and never blocks scanning;
   an unreachable server leaves the last-known projects untouched. A revoked key
   (401/403) is persisted as `auth_failed` and polling stops until
-  re-enrolment. Updates apply on the next restart (the pipeline is never
-  changed under a running batch).
+  re-enrolment. Updates apply to the next scan batch (the pipeline resolves a
+  batch's project once, when the batch starts, and a running batch is never
+  changed).
+- Per-batch project resolution: `RuntimeResolver` reads the stored project and
+  validates it each time a batch starts. `ProjectUnavailable` messages carry
+  only field paths and the project id, never configuration values (the chained
+  cause is neither shown nor logged). Crash recovery resolves per batch and
+  fails closed: an unusable project is not run under another project's
+  settings.
 - Consistency: state writes are generation-guarded, so a sync that started
   before a register/disconnect cannot overwrite the new registration; apply
   and register/disconnect are serialised by one lock, with no network call
@@ -247,8 +254,10 @@ the real app: `tests/test_central_integration.py`.
 3. `X-Operator-Id` is self-asserted (see item 8 above).
 4. A persistently invalid project is re-skipped, and re-audited, on every
    poll; this audit noise is not throttled.
-5. The pipeline binds one project at startup, so a change applies only after
-   a restart; a PC with several managed projects runs the first active one.
+5. (Removed 2026-10-12.) A change now applies to the next scan batch and each
+   batch runs under its own project; the Index tab zones/OCR mode and the
+   CD/DVD burn tab still follow the startup project (see
+   `docs/ENHANCEMENT_PLAN_STATUS.md`).
 6. The Workflow Designer decides "managed" when the operator clicks Save; a
    sync that applies a new central version between that check and the file
    write is a narrow window. Only the local sections are saved for a managed

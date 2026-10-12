@@ -54,9 +54,12 @@ fresh admin `root`), drives the admin API like the future dashboard would, then 
 genuine app and clicks through: enrol with a one-time code, first sync, Workflow Designer
 on a managed project (listed without a manual refresh, the Save button reads
 "Save local settings", local delivery/SFTP editable, central-owned editors disabled, a
-sneaked central-owned edit is NOT saved), a central edit arriving while the PC's local
-settings survive, key revoked (banner + polling stops), re-enrol, disconnect. It also checks that the Central table's column headers are fully visible.
-There are 45 checks; screenshots land in `.superpowers/run-dokscanner/shots/01-…06-*.png`.
+sneaked central-owned edit is NOT saved), a real one-page scan batch for the managed project
+through `win.start_batch` (the app's REAL pipeline: delivered into the PC-local delivery folder
+inside the sandbox, batch and document rows carry the project id), a central edit arriving while
+the PC's local settings survive and a second batch scanned afterwards with no restart (the
+resolver already serves the new version), key revoked (banner + polling stops), re-enrol, disconnect. It also checks that the Central table's column headers are fully visible.
+There are 53 checks; screenshots land in `.superpowers/run-dokscanner/shots/01-…06-*.png`.
 The server is stopped in a `finally`; server log: `.superpowers/run-dokscanner/central/server.log`.
 
 Both print a lot of timestamped `logging` lines first; filter them with
@@ -88,16 +91,17 @@ run prints only dots and no "N passed" line; `-o addopts=""` restores it.
   warning/question box must monkeypatch it first (the drivers do:
   `QMessageBox.information = staticmethod(lambda *a, **k: None)`).
 - **`findChildren(QLabel)` returns hidden labels too.** The main window's status bar always
-  contains its restart/re-enrol notices, hidden until needed; filter with
+  contains its re-enrol notice, hidden until needed; filter with
   `not w.isHidden()` or you will "see" notices that are not shown.
 - **The app only trusts `%LOCALAPPDATA%`.** `main.data_dir()` reads it, so the drivers point it
   at a sandbox; the central client keeps its API key as a DPAPI blob in
   `<appdata>/DOKScanner/keys/central_api_key.bin`, settings in `central.json`.
 - **The central client is https-only.** Loopback `http://` works only with
   `DOKSCANNER_CENTRAL_ALLOW_LOOPBACK_HTTP=1` (set by `setup_env(..., allow_loopback_http=True)`).
-- **Pulled changes apply to scanning after a restart** (the pipeline binds one project at
-  start-up); the Designer/wizard see them from the database. The status bar and Central tab
-  say so.
+- **Pulled and Designer-saved changes apply to the next scan batch** (the pipeline resolves
+  the batch's project from the database when the batch starts; no restart). The Central tab
+  says so and the status bar shows no restart notice. A second, identical test page is flagged
+  as a duplicate and not delivered, so the driver's batches use differently laid-out pages.
 - Offscreen fonts look odd (a fallback pixel font) — normal; layout and state are what matter.
 - The central server needs `CENTRAL_SESSION_SECRET` ≥ 32 characters or it refuses to start.
   `central.manage create-admin` prompts with `getpass`; the driver creates the admin
