@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSlot
 from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                              QFormLayout, QGroupBox, QHBoxLayout,
                              QInputDialog, QLabel, QLineEdit, QListWidget,
@@ -34,6 +34,10 @@ ACTIONS = ["set_folder", "set_filename", "set_validation_status",
            "skip_stage"]
 MANAGED_BANNER = ("Managed centrally: only scanner / export / delivery "
                   "can be changed on this PC")
+CENTRAL_UPDATED_NOTICE = ("Updated by the central server - re-select this "
+                          "project to load the new settings.")
+SAVE_LABEL = "Save (new version)"
+SAVE_LOCAL_LABEL = "Save local settings"
 EXPORT_FORMATS = ["searchable_pdf", "image_pdf", "pdf_a", "tiff"]
 
 # QC strictness presets (Enhancement Plan §4.3) - one-click threshold sets
@@ -170,7 +174,8 @@ class RuleDialog(QDialog):
 
 
 class WorkflowDesigner(QWidget):
-    def __init__(self, db, profile_manager, current_user, parent=None):
+    def __init__(self, db, profile_manager, current_user, parent=None,
+                 bus=None):
         super().__init__(parent)
         self.db = db
         self.pm = profile_manager
@@ -192,7 +197,7 @@ class WorkflowDesigner(QWidget):
         self.new_from_template_btn.clicked.connect(self.new_from_template)
         self.rollback_btn = QPushButton("Version history…")
         self.rollback_btn.clicked.connect(self.rollback_dialog)
-        self.save_btn = QPushButton("Save (new version)")
+        self.save_btn = QPushButton(SAVE_LABEL)
         self.save_btn.clicked.connect(self.save)
         self.save_template_btn = QPushButton("Save as template…")
         self.save_template_btn.clicked.connect(self.save_as_template)
@@ -211,6 +216,11 @@ class WorkflowDesigner(QWidget):
         self.managed_banner.setTextFormat(Qt.TextFormat.PlainText)
         self.managed_banner.hide()
         outer.addWidget(self.managed_banner)
+        self.central_notice = QLabel(CENTRAL_UPDATED_NOTICE)
+        self.central_notice.setWordWrap(True)
+        self.central_notice.setTextFormat(Qt.TextFormat.PlainText)
+        self.central_notice.hide()
+        outer.addWidget(self.central_notice)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -407,20 +417,54 @@ class WorkflowDesigner(QWidget):
         layout.addStretch(1)
 
         self.refresh_projects()
+        if bus is not None:
+            bus.central_synced.connect(self.on_central_synced)
 
     # -- project selection --------------------------------------------------------
-    def refresh_projects(self) -> None:
+    def _fill_combo(self) -> None:
+        """Rebuild the combo items from the database without emitting
+        signals (the caller decides whether the form is rebound)."""
         self.project_combo.blockSignals(True)
         self.project_combo.clear()
         for row in self.db.list_projects():
             self.project_combo.addItem(
                 f"{row['name']} (v{row['version']})", row["project_id"])
         self.project_combo.blockSignals(False)
+
+    def refresh_projects(self) -> None:
+        self._fill_combo()
         if self.project_combo.count():
             self.project_combo.setCurrentIndex(0)
             self.load_selected()
 
+    @pyqtSlot(object)
+    def on_central_synced(self, result) -> None:
+        """A sync adopted or unassigned projects: refresh ONLY the project
+        list and the managed state. The form is never rebound, so edits the
+        operator has not saved yet survive."""
+        applied, unassigned = list(result.applied), list(result.unassigned)
+        if not applied and not unassigned:
+            return
+        current = self.project_combo.currentData()
+        self._fill_combo()
+        if not self.project_combo.count():
+            return
+        idx = self.project_combo.findData(current) if current else -1
+        if idx < 0:
+            # nothing was selected before (or it vanished): nothing to lose
+            self.project_combo.setCurrentIndex(0)
+            self.load_selected()
+            return
+        self.project_combo.blockSignals(True)
+        self.project_combo.setCurrentIndex(idx)
+        self.project_combo.blockSignals(False)
+        if current in applied:
+            self.central_notice.show()
+        if current in applied or current in unassigned:
+            self._update_managed_state()
+
     def load_selected(self) -> None:
+        self.central_notice.hide()
         project_id = self.project_combo.currentData()
         if not project_id:
             return
@@ -442,6 +486,7 @@ class WorkflowDesigner(QWidget):
         Everything else belongs to central and is shown read-only."""
         managed = self._is_managed()
         self.managed_banner.setVisible(managed)
+        self.save_btn.setText(SAVE_LOCAL_LABEL if managed else SAVE_LABEL)
         for box in self._central_boxes():
             box.setEnabled(not managed)
 
