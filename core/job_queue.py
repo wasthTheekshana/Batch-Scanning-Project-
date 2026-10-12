@@ -44,6 +44,10 @@ _SENTINEL = object()
 # documents would flag every field as unknown.
 _LOOKUP_MIN_SAMPLES = 5
 
+# Pipeline.can_resubmit reason for a document whose page images are gone
+# (the one refusal the QC review still lets an approval through).
+REASON_NO_PAGE_IMAGES = "page images unavailable"
+
 
 class Pipeline:
     """Wires the six workers to a project profile.
@@ -630,7 +634,7 @@ class Pipeline:
             records.append(PageRecord(job=job, working_path=working,
                                       ocr_text=info.get("ocr_text", "")))
         if not records:
-            return row, [], "page images unavailable"
+            return row, [], REASON_NO_PAGE_IMAGES
         return row, records, ""
 
     def can_resubmit(self, document_id: str) -> tuple[bool, str]:
