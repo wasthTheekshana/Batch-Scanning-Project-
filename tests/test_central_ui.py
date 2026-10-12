@@ -6,6 +6,7 @@ import threading
 import pytest
 from PyQt6 import sip
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtWidgets import QListWidgetItem, QMessageBox
 
 import ui.central_tab
@@ -172,6 +173,16 @@ def test_projects_table_lists_managed_state(qtbot, env):
     assert t.projects_table.rowCount() == 1
     assert t.projects_table.item(0, 0).text() == "Invoices"
     assert "3" in t.projects_table.item(0, 1).text()
+
+
+def test_projects_table_headers_are_fully_visible(qtbot, env):
+    t = tab(env, qtbot=qtbot)
+    t.show()
+    header = t.projects_table.horizontalHeader()
+    metrics = QFontMetrics(header.font())
+    for i in range(t.projects_table.columnCount()):
+        text = t.projects_table.horizontalHeaderItem(i).text()
+        assert header.sectionSize(i) >= metrics.horizontalAdvance(text), text
 
 
 def test_disconnect_asks_for_confirmation(qtbot, env, monkeypatch):
@@ -381,6 +392,18 @@ def test_main_window_forwards_bus_to_central_tab(qtbot, env):
     assert "restart" in win.admin_panel.central_tab.status_label.text().lower()
 
 
+def test_main_window_designer_follows_projects_arriving_from_a_sync(qtbot, env):
+    env.pm.create("Default Project")
+    win = _admin_window(qtbot, env)
+    cfg = copy.deepcopy(DEFAULT_PROJECT)
+    cfg.update(project_id="zzzz", name="Zulu synced",
+               created="2026-10-09T00:00:00+00:00")
+    cfg["rules"]["rule_set_id"] = "r"
+    env.pm.adopt(cfg)
+    win.bus.central_synced.emit(SyncResult("ok", applied=["zzzz"]))
+    assert win.designer.project_combo.findData("zzzz") >= 0
+
+
 # ---- Workflow Designer guard -------------------------------------------------------------
 def _designer(qtbot, env, name="Managed", managed=True):
     cfg = env.pm.create(name)
@@ -546,7 +569,7 @@ def test_main_window_restart_label_stays_until_exit_for_every_role(qtbot, env, u
     assert win.restart_label.isHidden()                         # nothing applied: no notice
     win.bus.central_synced.emit(SyncResult("ok", applied=["p1"]))
     assert not win.restart_label.isHidden()
-    assert "restart DOKScanner" in win.restart_label.text()
+    assert "Restart to apply" in win.restart_label.text()
     win.bus.central_synced.emit(SyncResult("ok", unchanged=1))
     assert not win.restart_label.isHidden()                     # still pending
     assert win.restart_label.parent() is win.statusBar()
@@ -571,6 +594,27 @@ def test_main_window_shows_reenrollment_notice_only_after_auth_failure(qtbot, en
     env.state.update(auth_failed=False)                         # re-enrolled
     win.bus.central_synced.emit(SyncResult("ok"))
     assert win.reenroll_label.isHidden()
+
+
+def test_status_bar_notices_are_short_and_leave_room_for_the_signed_in_message(qtbot, env):
+    env.pm.create("Default Project")
+    env.state.register_result("https://central.example", "pc-1", "k", 600)
+    env.state.update(auth_failed=True)
+    Session._current = ADMIN
+    win = MainWindow(env.db, env.pm, EventBus(), staging_dir=env.root / "staging",
+                     central_state=env.state, sync_service=env.svc,
+                     sync_worker=env.worker)
+    qtbot.addWidget(win)
+    win.show()
+    win.bus.central_synced.emit(SyncResult("auth_failed", applied=["p1"]))
+    assert not win.restart_label.isHidden() and not win.reenroll_label.isHidden()
+    bar = win.statusBar()
+    message = bar.currentMessage()
+    assert message.startswith("Signed in as")
+    needed = QFontMetrics(bar.font()).horizontalAdvance(message)
+    room = bar.width() - win.restart_label.width() - win.reenroll_label.width()
+    assert needed <= room, (needed, room)
+    assert len(win.restart_label.text()) + len(win.reenroll_label.text()) <= 70
 
 
 def test_main_window_without_central_objects_has_no_notices(qtbot, env):

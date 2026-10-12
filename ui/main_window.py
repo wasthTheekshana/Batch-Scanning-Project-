@@ -17,9 +17,8 @@ from ui.scan_wizard import ScanWizard
 from ui.theme import ACCENT, icon, mark
 from ui.workflow_designer import WorkflowDesigner
 
-RESTART_NOTICE = ("Updated project settings received - restart DOKScanner "
-                  "to apply")
-REENROLL_NOTICE = "Central: this PC needs a new enrollment code"
+RESTART_NOTICE = "Restart to apply central updates"
+REENROLL_NOTICE = "Central: new enrollment code needed"
 
 ROLE_LABELS = {"admin": "Administrator", "operator": "Operator",
                "qc_officer": "QC Officer", "viewer": "Viewer"}
@@ -135,7 +134,8 @@ class MainWindow(QMainWindow):
 
         # Workflow designer — project.edit only (HLD §17.5 role gate)
         if user is not None and user.can("project.edit"):
-            self.designer = WorkflowDesigner(db, profile_manager, user)
+            self.designer = WorkflowDesigner(db, profile_manager, user,
+                                            bus=bus)
             self.tabs.addTab(self.designer, icon("fa5s.project-diagram"),
                              "Projects")
 

@@ -13,8 +13,8 @@ import threading
 from typing import Callable
 
 from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot
-from PyQt6.QtWidgets import (QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-                             QMessageBox, QPushButton, QTableWidget,
+from PyQt6.QtWidgets import (QFormLayout, QHBoxLayout, QHeaderView, QLabel,
+                             QLineEdit, QMessageBox, QPushButton, QTableWidget,
                              QTableWidgetItem, QVBoxLayout, QWidget)
 
 from core.central_client import (CentralRegistrationError, CentralUnavailable)
@@ -79,6 +79,12 @@ class CentralTab(QWidget):
         self.projects_table = QTableWidget(0, 3)
         self.projects_table.setHorizontalHeaderLabels(
             ["Project", "Central version", "Managed"])
+        header = self.projects_table.horizontalHeader()
+        header.setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(
+            1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setStretchLastSection(True)
         self.projects_table.setEditTriggers(
             QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self.projects_table, stretch=1)
