@@ -22,3 +22,4 @@ logs/
 # packages — per-plan working state, not part of the shipped codebase.
 .superpowers/
 Routed/
+demo_kit/
