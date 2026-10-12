@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QMainWindow, QMessageBox,
                              QPushButton, QTabWidget, QVBoxLayout, QWidget)
 
 from core.project_runtime import ProjectUnavailable
+from core.project_store import load_config, readable_projects
 from core.rbac import Session
 from ui.admin_panel import AdminPanel
 from ui.image_viewer import ImageViewer
@@ -116,10 +117,9 @@ class MainWindow(QMainWindow):
         # Index tab (zones from the first active project, if any)
         zones = []
         ocr_mode = "zone"
-        projects = [dict(p) for p in db.list_projects("active")]
-        if projects:
-            import json
-            cfg = json.loads(projects[0]["config_json"])
+        readable, _unreadable = readable_projects(db.list_projects("active"))
+        if readable:
+            cfg = readable[0][1]
             zones = cfg.get("ocr", {}).get("zones", [])
             ocr_mode = cfg.get("ocr", {}).get("mode", "zone")
         self.index_editor = IndexEditor(
@@ -188,9 +188,10 @@ class MainWindow(QMainWindow):
             and self._central_state.settings.auth_failed)
 
     def _active_zones(self) -> list:
-        import json
         for row in self.db.list_projects("active"):
-            cfg = json.loads(row["config_json"])
+            cfg = load_config(row)
+            if cfg is None:
+                continue
             zones = cfg.get("ocr", {}).get("zones", [])
             if zones:
                 return zones
@@ -201,9 +202,10 @@ class MainWindow(QMainWindow):
         mirroring _active_zones()'s "first active project" logic — kept
         as a separate lookup so the two can disagree on which project
         each pulls from without changing _active_zones()'s return type."""
-        import json
         for row in self.db.list_projects("active"):
-            cfg = json.loads(row["config_json"])
+            cfg = load_config(row)
+            if cfg is None:
+                continue
             zones = cfg.get("ocr", {}).get("zones", [])
             if zones:
                 return cfg.get("ocr", {}).get("mode", "zone")
@@ -230,15 +232,30 @@ class MainWindow(QMainWindow):
         self.close()
 
     def open_scan_wizard(self) -> None:
-        projects = []
-        import json
-        for row in self.db.list_projects("active"):
-            cfg = json.loads(row["config_json"])
-            projects.append({"project_id": row["project_id"],
-                             "name": row["name"], "config": cfg})
+        readable, unreadable = readable_projects(
+            self.db.list_projects("active"))
+        projects = [{"project_id": row["project_id"], "name": row["name"],
+                     "config": cfg} for row, cfg in readable]
+        if unreadable:
+            self._warn_unreadable_projects(unreadable)
+        if not projects and unreadable:
+            return
         wizard = ScanWizard(projects, self.staging_dir, self)
         wizard.batch_ready.connect(self.start_batch)
         wizard.exec()
+
+    def _warn_unreadable_projects(self, names: list[str]) -> None:
+        """ONE warning naming the projects that could not be read (names
+        only, never config content), as plain text."""
+        shown = ", ".join(names[:_MAX_REFUSED_LINES])
+        if len(names) > _MAX_REFUSED_LINES:
+            shown += f" and {len(names) - _MAX_REFUSED_LINES} more"
+        box = QMessageBox(
+            QMessageBox.Icon.Warning, "Projects not listed",
+            f"{len(names)} project(s) are unreadable and are not listed: "
+            f"{shown}. Open the Workflow Designer to repair them.", parent=self)
+        box.setTextFormat(Qt.TextFormat.PlainText)
+        box.exec()
 
     def report_refused_batches(self, refused: list) -> None:
         """Tell the operator which interrupted batches were not resumed at

@@ -17,6 +17,7 @@ from pathlib import Path
 
 from core.models import new_id
 from core.profile_manager import DEFAULT_PROJECT
+from core.project_store import load_config
 
 log = logging.getLogger(__name__)
 
@@ -30,16 +31,24 @@ class TemplateManager:
     def __init__(self, db):
         self.db = db
 
-    def _to_dict(self, row) -> dict:
+    def _to_dict(self, row) -> dict | None:
+        """None when the stored config is unreadable (logged by id only)."""
+        config = load_config(row, kind="template")
+        if config is None:
+            return None
         d = dict(row)
-        d["config"] = json.loads(d.pop("config_json"))
+        d.pop("config_json")
+        d["config"] = config
         d["built_in"] = bool(d["built_in"])
         return d
 
     def list_templates(self) -> list[dict]:
-        return [self._to_dict(row) for row in self.db.list_templates()]
+        """Readable templates only: one corrupt row never breaks the list."""
+        dicts = (self._to_dict(row) for row in self.db.list_templates())
+        return [d for d in dicts if d is not None]
 
     def get(self, template_id: str) -> dict | None:
+        """None when the template does not exist or is unreadable."""
         row = self.db.get_template(template_id)
         if row is None:
             return None
@@ -64,6 +73,8 @@ class TemplateManager:
         schema-required key (export.output_path, delivery, scanner, ...)
         is present even though the template itself never stores them."""
         template = self.get(template_id)
+        if template is None:
+            raise ValueError("template not found or unreadable")
         cfg = copy.deepcopy(DEFAULT_PROJECT)
         for key, value in template["config"].items():
             if isinstance(value, dict) and isinstance(cfg.get(key), dict):
@@ -79,8 +90,15 @@ class TemplateManager:
         templates_dir = templates_dir or (Path(__file__).parent / "templates")
         if not templates_dir.is_dir():
             return
-        existing_built_ins = {t["name"]: t for t in self.list_templates()
-                              if t["built_in"]}
+        # Read the raw rows: an unreadable built-in must still be found so it
+        # is repaired in place (config None never equals the shipped config).
+        existing_built_ins = {}
+        for row in self.db.list_templates():
+            if row["built_in"]:
+                parsed = self._to_dict(row)
+                existing_built_ins[row["name"]] = {
+                    "template_id": row["template_id"],
+                    "config": parsed["config"] if parsed else None}
         for path in sorted(templates_dir.glob("*.json")):
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
