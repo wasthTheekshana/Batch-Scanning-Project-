@@ -32,6 +32,9 @@ Record pass/fail + notes per item; all must pass before go-live sign-off.
 - [ ] Local folder delivery: file present, checksum in delivery_detail
 - [ ] SFTP (if in scope): document arrives on LAN SFTP server; size and
       MD5 recorded; unplugging network mid-batch → retry then flagged
+- [ ] CD/DVD limit: Only the startup project's disc queue can be burned in the Admin tab; do not enable CD/DVD delivery on other projects yet.
+      Confirm the Workflow Designer shows the same hint under the CD/DVD
+      "Enabled" box.
 - [ ] CD/DVD (if in scope): stage batch → Admin → CD/DVD → burn; disc
       checksum verify passes; burn_log.json entry written
 
@@ -74,11 +77,35 @@ Record pass/fail + notes per item; all must pass before go-live sign-off.
 - [ ] Admin > Central > Disconnect: the projects stay and become editable
 - [ ] A project whose rule has a `..` set_folder value (publish via the
       central API) is skipped (listed as skipped), other projects still apply
-- [ ] After enrollment and restart, scans are delivered to the same place as
+- [ ] After enrollment (no restart), scans are delivered to the same place as
       before (output folder, SFTP/local delivery, scanner)
-- [ ] After a sync that applied something, the status bar shows "restart
-      DOKScanner to apply" for every role (also for an operator) and keeps
-      showing it after later syncs until the app is restarted
+- [ ] After a sync that applied something, the Central tab says the updated
+      settings apply to the next scan batch and the status bar shows no
+      restart notice (also for an operator); scan again WITHOUT restarting and
+      confirm the new central settings are used
+- [ ] Per-project scanning: with two projects that have different export
+      formats and delivery folders, pick the SECOND project in the scan wizard
+      and confirm the document is exported in that project's format, delivered
+      to that project's folder (the first project's folder stays empty) and
+      filed under that project in the batch/document lists
+- [ ] Edit a project (Workflow Designer, or on central) and scan again WITHOUT
+      restarting: the new settings (e.g. export format) are used by the next
+      batch; a batch already running keeps the settings it started with
+- [ ] Refusing a broken batch (developer-assisted; needs the repo and its
+      Python): close the app, then from the repo root run
+      `python -c "import os; from pathlib import Path; from data.db import Database; from data.keystore import KeyStore; r = Path(os.environ['LOCALAPPDATA']) / 'DOKScanner'; db = Database(r / 'dokscanner.db', key=KeyStore(r / 'keys' / 'master.bin').get_or_create()); db.conn.execute(\"UPDATE projects SET config_json = '{oops' WHERE project_id = '<project_id>'\"); db.conn.commit(); db.close()"`
+      (the database row is what the pipeline reads; the project's `.json` file
+      is not, so editing the file does not break it). Start the app, choose that
+      project in the scan wizard and start a scan: a "Project not available"
+      message appears, it shows the project id and the reason only (no
+      configuration values) and no batch or audit entry is created. Saving the
+      project in the Workflow Designer or a central sync repairs it
+- [ ] Interrupted batch of a broken project: start a scan, kill the app while
+      it runs, break the project as above, restart: a "Batches not recovered"
+      box lists the batch; the batch shows as failed
+- [ ] Duplicate detection is cross-project: scan the same page into two
+      projects (duplicate check on) and confirm the second document is held for
+      review
 
 ## Sign-off
 | Role | Name | Date | Signature |

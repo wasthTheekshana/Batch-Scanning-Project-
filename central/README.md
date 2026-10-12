@@ -45,8 +45,8 @@ Run behind a reverse proxy that terminates TLS. Do not expose uvicorn directly.
    (HTTPS) and the code, and clicks Register. The returned `api_key` is stored
    DPAPI-protected on that PC and never shown or logged. The PC then pulls its
    assigned projects at startup and on the server's poll interval.
-   Updated or new projects are written locally at once but only drive scanning
-   after the next DOKScanner restart. The PC keeps its own scanner, export and
+   Updated or new projects are written locally at once and apply to the next
+   scan batch (no restart; a batch already running keeps the settings it started with). The PC keeps its own scanner, export and
    delivery settings; central owns the processing settings (OCR, QC,
    separation, rules, index fields).
 3. Lost or compromised PC: `DELETE /admin/pcs/{id}/key`, then issue a new code.

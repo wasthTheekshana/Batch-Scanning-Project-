@@ -388,6 +388,12 @@ class WorkflowDesigner(QWidget):
         self.cd_enabled.setEnabled(self.can_edit)
         cd_layout.addWidget(self.cd_enabled)
         cd_layout.addWidget(QLabel("Tick Enabled to deliver to CD/DVD."))
+        self.cd_hint = QLabel("Only the startup project's disc queue can be "
+                              "burned from Admin; enable this on one project "
+                              "only.")
+        self.cd_hint.setTextFormat(Qt.TextFormat.PlainText)
+        self.cd_hint.setWordWrap(True)
+        cd_layout.addWidget(self.cd_hint)
         layout.addWidget(cd_box)
 
         # on an unmanaged project the shorthand toggles still drive the

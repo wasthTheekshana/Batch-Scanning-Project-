@@ -18,15 +18,15 @@ from PyQt6.QtWidgets import (QFormLayout, QHBoxLayout, QHeaderView, QLabel,
                              QTableWidgetItem, QVBoxLayout, QWidget)
 
 from core.central_client import (CentralRegistrationError, CentralUnavailable)
-from core.central_sync import SyncResult, note_sync_result, restart_pending
+from core.central_sync import SyncResult
 from ui.theme import mark
 
 log = logging.getLogger(__name__)
 
 MAX_TEXT = 200       # cap for any single piece of server-supplied text
 MAX_ERRORS_SHOWN = 5
-RESTART_TEXT = ("Updated project settings were received. "
-                "Restart DOKScanner to apply them to scanning.")
+APPLIED_TEXT = ("Updated project settings were received; "
+                "they apply to the next scan batch.")
 
 
 def _safe(value, limit: int = MAX_TEXT) -> str:
@@ -100,8 +100,6 @@ class CentralTab(QWidget):
         lines = ["Registering…"] if self._registering else []
         if not self.state.is_registered():
             lines.append("This PC is not registered with a central server.")
-            if restart_pending():
-                lines.append(RESTART_TEXT)
             return "\n".join(lines)
         lines.append(f"Registered as PC {_safe(s.pc_id)} at "
                      f"{_safe(s.server_url)}.")
@@ -124,13 +122,12 @@ class CentralTab(QWidget):
                     detail += f"; and {extra} more"
                 lines.append(f"{len(result.errors)} project(s) were skipped: "
                              + detail)
-        if restart_pending() or (result is not None and result.restart_needed):
-            lines.append(RESTART_TEXT)
+        if result is not None and result.applied:
+            lines.append(APPLIED_TEXT)
         return "\n".join(lines)
 
     def refresh_status(self, result: SyncResult | None = None) -> None:
         if result is not None:
-            note_sync_result(result)
             self._last_result = result
         registered = self.state.is_registered()
         idle = self._can and not self._registering

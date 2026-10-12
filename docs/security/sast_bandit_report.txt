@@ -1,22 +1,22 @@
-Run started:2026-10-09 09:16:36.993628+00:00
+Run started:2026-10-12 07:48:20.727836+00:00
 
 Test results:
 >> Issue: [B105:hardcoded_password_string] Possible hardcoded password: '80'
    Severity: Low   Confidence: Medium
    CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
    More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
-   Location: .\core\profile_manager.py:60:8
-59	        "dpi_fail": 150,
-60	        "pass_score": 80,
-61	    },
-62	    "ocr": {"lang": "eng", "zones": [], "confidence_threshold": 0.75},
-63	    "export": {
-64	        "format": "searchable_pdf",
-65	        "pdf_a": False,
-66	        "filename_template": "{date}_{batch_id}_{counter:04d}",
-67	        "output_path": "",
-68	    },
-69	    "delivery": {
+   Location: .\core\profile_manager.py:68:8
+67	        "dpi_fail": 150,
+68	        "pass_score": 80,
+69	    },
+70	    "ocr": {"lang": "eng", "zones": [], "confidence_threshold": 0.75},
+71	    "export": {
+72	        "format": "searchable_pdf",
+73	        "pdf_a": False,
+74	        "filename_template": "{date}_{batch_id}_{counter:04d}",
+75	        "output_path": "",
+76	    },
+77	    "delivery": {
 
 --------------------------------------------------
 >> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
@@ -55,20 +55,20 @@ Test results:
    Severity: Medium   Confidence: Medium
    CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
    More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
-   Location: .\data\db.py:320:16
-319	            self.conn.execute(
-320	                f"INSERT INTO documents ({cols}) VALUES ({marks})",
-321	                tuple(base.values()))
+   Location: .\data\db.py:325:16
+324	            self.conn.execute(
+325	                f"INSERT INTO documents ({cols}) VALUES ({marks})",
+326	                tuple(base.values()))
 
 --------------------------------------------------
 >> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
    Severity: Medium   Confidence: Medium
    CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
    More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
-   Location: .\data\db.py:334:16
-333	            self.conn.execute(
-334	                f"UPDATE documents SET {', '.join(sets)} WHERE document_id=?",
-335	                tuple(vals))
+   Location: .\data\db.py:339:16
+338	            self.conn.execute(
+339	                f"UPDATE documents SET {', '.join(sets)} WHERE document_id=?",
+340	                tuple(vals))
 
 --------------------------------------------------
 >> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
@@ -210,38 +210,38 @@ Test results:
    Severity: Low   Confidence: Medium
    CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
    More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
-   Location: .\ui\workflow_designer.py:35:15
-34	QC_PRESETS = {
-35	    "Strict": {"pass_score": 90, "blur_warn_threshold": 100,
-36	              "blur_fail_threshold": 50, "dpi_warn": 250, "dpi_fail": 200},
-37	    "Standard": {"pass_score": 80, "blur_warn_threshold": 80,
+   Location: .\ui\workflow_designer.py:47:15
+46	QC_PRESETS = {
+47	    "Strict": {"pass_score": 90, "blur_warn_threshold": 100,
+48	              "blur_fail_threshold": 50, "dpi_warn": 250, "dpi_fail": 200},
+49	    "Standard": {"pass_score": 80, "blur_warn_threshold": 80,
 
 --------------------------------------------------
 >> Issue: [B105:hardcoded_password_string] Possible hardcoded password: '80'
    Severity: Low   Confidence: Medium
    CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
    More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
-   Location: .\ui\workflow_designer.py:37:17
-36	              "blur_fail_threshold": 50, "dpi_warn": 250, "dpi_fail": 200},
-37	    "Standard": {"pass_score": 80, "blur_warn_threshold": 80,
-38	                "blur_fail_threshold": 30, "dpi_warn": 200, "dpi_fail": 150},
-39	    "Lenient": {"pass_score": 65, "blur_warn_threshold": 60,
+   Location: .\ui\workflow_designer.py:49:17
+48	              "blur_fail_threshold": 50, "dpi_warn": 250, "dpi_fail": 200},
+49	    "Standard": {"pass_score": 80, "blur_warn_threshold": 80,
+50	                "blur_fail_threshold": 30, "dpi_warn": 200, "dpi_fail": 150},
+51	    "Lenient": {"pass_score": 65, "blur_warn_threshold": 60,
 
 --------------------------------------------------
 >> Issue: [B105:hardcoded_password_string] Possible hardcoded password: '65'
    Severity: Low   Confidence: Medium
    CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
    More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
-   Location: .\ui\workflow_designer.py:39:16
-38	                "blur_fail_threshold": 30, "dpi_warn": 200, "dpi_fail": 150},
-39	    "Lenient": {"pass_score": 65, "blur_warn_threshold": 60,
-40	               "blur_fail_threshold": 15, "dpi_warn": 150, "dpi_fail": 100},
-41	}
+   Location: .\ui\workflow_designer.py:51:16
+50	                "blur_fail_threshold": 30, "dpi_warn": 200, "dpi_fail": 150},
+51	    "Lenient": {"pass_score": 65, "blur_warn_threshold": 60,
+52	               "blur_fail_threshold": 15, "dpi_warn": 150, "dpi_fail": 100},
+53	}
 
 --------------------------------------------------
 
 Code scanned:
-	Total lines of code: 9342
+	Total lines of code: 9776
 	Total lines skipped (#nosec): 0
 	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
 

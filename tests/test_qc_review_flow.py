@@ -110,3 +110,62 @@ def test_reject_does_not_export(qtbot, held_doc_env):
     doc = db.get_document(doc_id)
     assert doc["validation_status"] == "rejected"
     assert doc["storage_path"] is None
+
+
+# -- review approval refused for an unavailable project (final review I2) --------
+
+def _approve_env(held_doc_env):
+    db, profile, tmp_path = held_doc_env
+    from core.project_runtime import RuntimeResolver
+    from data.audit import AuditLogger
+    audit = AuditLogger(db, tmp_path / "audit-logs")
+    pipeline = Pipeline(db, profile,
+                        [LocalFolderChannel(profile["delivery"]["local_folder"])],
+                        export_document, working_dir=tmp_path / "staging2",
+                        resolver=RuntimeResolver(db))
+    return db, audit, pipeline
+
+
+def _audit_actions(db):
+    return [r["action"] for r in db.conn.execute("SELECT action FROM audit_log")]
+
+
+def test_accept_for_an_unavailable_project_changes_nothing_and_says_why(
+        qtbot, held_doc_env):
+    db, audit, pipeline = _approve_env(held_doc_env)
+    try:
+        db.conn.execute("UPDATE projects SET config_json='{oops'")
+        db.conn.commit()
+        panel = QCReviewPanel(db, audit, QC_OFFICER, pipeline=pipeline)
+        qtbot.addWidget(panel)
+        panel.queue.setCurrentRow(0)
+        doc_id = panel.current_document_id()
+        panel._action("accept")
+        assert db.get_document(doc_id)["validation_status"] == "pending_qc"
+        assert panel.queue.count() == 1                    # still in the review queue
+        text = panel.score_label.text()
+        assert "project not available" in text
+        assert "page images" not in text
+        assert "qc_review" not in _audit_actions(db)
+        assert pipeline.delivery_q.empty()
+    finally:
+        audit.close()
+
+
+def test_accept_with_missing_page_images_keeps_the_old_message_and_behaviour(
+        qtbot, held_doc_env):
+    db, audit, pipeline = _approve_env(held_doc_env)
+    try:
+        doc = db.list_documents(validation_status="pending_qc")[0]
+        for info in json.loads(doc["qc_detail"])["pages"].values():
+            Path(info["working_path"]).unlink()
+        panel = QCReviewPanel(db, audit, QC_OFFICER, pipeline=pipeline)
+        qtbot.addWidget(panel)
+        panel.queue.setCurrentRow(0)
+        doc_id = panel.current_document_id()
+        panel._action("accept")
+        assert db.get_document(doc_id)["validation_status"] == "corrected"
+        assert "page images are no longer available" in panel.score_label.text()
+        assert "qc_review" in _audit_actions(db)
+    finally:
+        audit.close()

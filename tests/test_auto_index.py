@@ -59,13 +59,16 @@ def indexed_profile(tmp_path, **over):
     return profile
 
 
-def seed_known_value(db, i: int) -> None:
+def seed_known_value(db, i: int, project_id: str = "seed-proj") -> None:
     """Insert a minimal document row so its extracted_fields count toward
-    the lookup table (needs a real project/batch to satisfy the FKs)."""
-    if db.get_project("seed-proj") is None:
-        db.insert_project("seed-proj", "Seed", {})
-        db.insert_batch("seed-batch", "seed-proj", "tester")
-    db.insert_document(f"seed-{i}", "seed-batch", "seed-proj",
+    that project's lookup table (needs a real project/batch to satisfy the
+    FKs). The lookup history is per project, so seed the project under test."""
+    batch_id = f"seed-batch-{project_id}"
+    if db.get_project(project_id) is None:
+        db.insert_project(project_id, "Seed", {})
+    if db.get_batch(batch_id) is None:
+        db.insert_batch(batch_id, project_id, "tester")
+    db.insert_document(f"seed-{project_id}-{i}", batch_id, project_id,
                        extracted_fields={"invoice_no": f"INV-{i}"},
                        validation_status="auto_approved", qc_score=100)
 
@@ -207,7 +210,7 @@ def test_unknown_value_flagged_once_lookup_table_established(tmp_path, db):
     profile = indexed_profile(tmp_path)
     # seed 5 known values so the lookup table is considered established
     for i in range(5):
-        seed_known_value(db, i)
+        seed_known_value(db, i, profile["project_id"])
     docs = run_batch(tmp_path, db, profile, ["text"])
     detail = json.loads(docs[0]["qc_detail"])
     assert "low_confidence_index" in detail["flags"]  # INV-7777 unseen
@@ -218,7 +221,7 @@ def test_lookup_not_enforced_below_sample_threshold(tmp_path, db):
     a novel value is not flagged purely for being unrecognised."""
     profile = indexed_profile(tmp_path)
     for i in range(3):
-        seed_known_value(db, i)
+        seed_known_value(db, i, profile["project_id"])
     docs = run_batch(tmp_path, db, profile, ["text"])
     detail = json.loads(docs[0]["qc_detail"])
     assert "low_confidence_index" not in detail.get("flags", [])

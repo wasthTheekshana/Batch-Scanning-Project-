@@ -25,6 +25,7 @@ from pathlib import Path
 import cv2
 
 from core.models import PageRecord, ScanJob, new_id
+from core.project_runtime import ProjectRuntime, ProjectUnavailable
 from imaging.blank_detect import is_blank
 from imaging.crop import auto_crop
 from imaging.deskew import deskew
@@ -43,6 +44,10 @@ _SENTINEL = object()
 # documents would flag every field as unknown.
 _LOOKUP_MIN_SAMPLES = 5
 
+# Pipeline.can_resubmit reason for a document whose page images are gone
+# (the one refusal the QC review still lets an approval through).
+REASON_NO_PAGE_IMAGES = "page images unavailable"
+
 
 class Pipeline:
     """Wires the six workers to a project profile.
@@ -57,13 +62,20 @@ class Pipeline:
                  audit=None, ocr_fn=None, ocr_workers: int = 2,
                  working_dir: str | Path = "staging",
                  trigger_pool: dict | None = None,
-                 delivery_attempts: int = 3):
+                 delivery_attempts: int = 3,
+                 resolver=None):
         self.db = db
         self.profile = profile
         self.channels = channels
         # channels addressable by the trigger_delivery rule action, even
         # when not project-enabled (Phase 3 multi-channel delivery)
         self.trigger_pool = trigger_pool or {c.name: c for c in channels}
+        self.resolver = resolver
+        # the constructor's profile/channels/trigger_pool ARE the runtime when no
+        # resolver is given (legacy behaviour); kept as attributes for compatibility
+        self._default = ProjectRuntime(
+            project_id=(profile or {}).get("project_id", ""),
+            profile=profile, channels=channels, trigger_pool=self.trigger_pool)
         self.delivery_attempts = delivery_attempts
         self.export_fn = export_fn
         self.audit = audit
@@ -84,6 +96,9 @@ class Pipeline:
         self._threads: list[threading.Thread] = []
         self._ocr_workers = ocr_workers
         self._started = False
+        # (batch_id, message) of every batch the last recover() refused;
+        # messages are str(ProjectUnavailable) only (value-free)
+        self.refused_batches: list[tuple[str, str]] = []
 
     # -- events ----------------------------------------------------------------
     def subscribe(self, fn) -> None:
@@ -96,6 +111,29 @@ class Pipeline:
                 fn(event)
             except Exception:
                 log.exception("event subscriber failed")
+
+    def _resolve(self, project_id: str) -> ProjectRuntime:
+        """The runtime for a project id. Without a resolver there is exactly
+        one runtime (the constructor's). Raises ProjectUnavailable."""
+        if self.resolver is None:
+            return self._default
+        return self.resolver.resolve(project_id)
+
+    def _rt(self, batch_id: str, project_id: str | None = None) -> ProjectRuntime:
+        """Settings for a batch: its start-of-batch snapshot if this session
+        still holds it, otherwise resolved from the given project id (or the
+        batch row's). The lock is not held while resolving."""
+        with self._lock:
+            state = self._batches.get(batch_id)
+            runtime = state.get("runtime") if state else None
+        if runtime is not None:
+            return runtime
+        if self.resolver is None:
+            return self._default
+        if project_id is None:
+            row = self.db.get_batch(batch_id)
+            project_id = row["project_id"] if row is not None else ""
+        return self.resolver.resolve(project_id)
 
     # -- lifecycle ----------------------------------------------------------------
     def start(self) -> None:
@@ -135,13 +173,22 @@ class Pipeline:
     def submit_batch(self, batch_id: str, jobs: list[ScanJob],
                      operator: str = "system") -> None:
         """Persist and enqueue a whole scan batch."""
-        if self.db.get_project(self.profile["project_id"]) is None:
-            self.db.insert_project(self.profile["project_id"],
-                                   self.profile["name"], self.profile)
+        if self.resolver is not None:
+            project_ids = {j.project_id for j in jobs}
+            if len(project_ids) != 1:
+                raise ValueError("a batch must belong to exactly one project")
+            runtime = self._resolve(next(iter(project_ids)))   # may raise ProjectUnavailable
+        else:
+            runtime = self._default
+            if self.db.get_project(self.profile["project_id"]) is None:
+                self.db.insert_project(self.profile["project_id"],
+                                       self.profile["name"], self.profile)
+        # insert first: a DB error must not leave an in-memory entry behind
+        self.db.insert_batch(batch_id, runtime.project_id, operator)
         with self._lock:
             self._batches[batch_id] = {"expected": len(jobs), "pages": [],
-                                       "counter": 0, "operator": operator}
-        self.db.insert_batch(batch_id, self.profile["project_id"], operator)
+                                       "counter": 0, "operator": operator,
+                                       "runtime": runtime}
         for job in jobs:
             self.db.upsert_job(job.job_id, job.batch_id, job.project_id,
                                job.page_no, "queued", job.image_path)
@@ -149,7 +196,9 @@ class Pipeline:
 
     def recover(self) -> list[ScanJob]:
         """Re-queue unfinished jobs from a previous run (HLD §14.2).
-        Recovered jobs are grouped per batch and resubmitted."""
+        Recovered jobs are grouped per batch and resubmitted. Batches that
+        cannot be resumed are failed and listed in ``refused_batches``."""
+        self.refused_batches = []
         rows = self.db.get_incomplete_jobs()
         by_batch: dict[str, list[ScanJob]] = {}
         for r in rows:
@@ -159,9 +208,24 @@ class Pipeline:
             by_batch.setdefault(job.batch_id, []).append(job)
         recovered = []
         for batch_id, jobs in by_batch.items():
+            project_ids = {j.project_id for j in jobs}
+            try:
+                if self.resolver is not None and len(project_ids) != 1:
+                    raise ProjectUnavailable("recovered batch spans several projects")
+                runtime = self._resolve(next(iter(project_ids), ""))
+            except ProjectUnavailable as e:
+                # message only: the chained cause can contain config values
+                log.warning("cannot recover batch %s: %s", batch_id, e)
+                for job in jobs:
+                    self.db.mark_job(job.job_id, "failed")
+                self.db.update_batch_status(batch_id, "failed")
+                self.refused_batches.append((batch_id, str(e)))
+                self._emit("recover", "failed", batch_id=batch_id, error=str(e))
+                continue
             with self._lock:
                 self._batches[batch_id] = {"expected": len(jobs), "pages": [],
-                                           "counter": 0, "operator": "recovery"}
+                                           "counter": 0, "operator": "recovery",
+                                           "runtime": runtime}
             for job in jobs:
                 self.db.mark_job(job.job_id, "queued")
                 self.ingest_q.put(job)
@@ -180,8 +244,12 @@ class Pipeline:
             try:
                 handler(item)
             except Exception as e:
-                log.error("stage %s failed: %s\n%s", stage, e,
-                          traceback.format_exc())
+                if isinstance(e, ProjectUnavailable):
+                    # message only: the chained cause can contain config values
+                    log.error("stage %s failed: %s", stage, e)
+                else:
+                    log.error("stage %s failed: %s\n%s", stage, e,
+                              traceback.format_exc())
                 job = item.job if isinstance(item, PageRecord) else item
                 if isinstance(job, ScanJob):
                     self.db.mark_job(job.job_id, "failed")
@@ -196,7 +264,8 @@ class Pipeline:
             if image is None:
                 raise IOError(f"cannot read image {job.image_path}")
             record = PageRecord(job=job)
-            sep_cfg = self.profile.get("separation", {})
+            rt = self._rt(job.batch_id, job.project_id)
+            sep_cfg = rt.profile.get("separation", {})
             record.is_blank = is_blank(
                 image, sep_cfg.get("blank_threshold", 0.02))
             # NOTE: the automatic custody "scanning" checkpoint (below) only
@@ -236,22 +305,24 @@ class Pipeline:
                 if result is not None:
                     record.ocr_text = result.text
                     record.ocr_confidence = result.confidence
-                self._extract_zone_fields(record, image)
+                self._extract_zone_fields(
+                    record, image,
+                    self._rt(record.job.batch_id, record.job.project_id))
             self._emit("ocr", "done", job_id=record.job.job_id,
                        batch_id=record.job.batch_id)
             self.enhance_q.put(record)
         self._pump(self.ocr_q, "ocr", handle)
 
-    def _extract_zone_fields(self, record: PageRecord, image) -> None:
+    def _extract_zone_fields(self, record: PageRecord, image, rt) -> None:
         """Auto-index: extract configured OCR zones into page fields
         (HLD §4 Layer 5). Values below the confidence threshold are kept
         but flagged so the operator can correct them in the index editor.
         ocr.mode selects zone-based extraction (fixed pixel regions,
         cropped and re-OCR'd) or full-page extraction (label-anchored
         regex against the page text already OCR'd for record.ocr_text)."""
-        ocr_cfg = self.profile.get("ocr", {})
+        ocr_cfg = rt.profile.get("ocr", {})
         zones = ocr_cfg.get("zones", [])
-        if not zones or not self.profile.get("features", {}).get("auto_index"):
+        if not zones or not rt.profile.get("features", {}).get("auto_index"):
             return
         threshold = float(ocr_cfg.get("confidence_threshold", 0.75))
         mode = ocr_cfg.get("mode", "zone")
@@ -273,20 +344,24 @@ class Pipeline:
             record.extracted_fields[name] = fv.value
             if not fv.value or fv.confidence < threshold:
                 record.low_conf_fields.append(name)
-            elif self._fails_lookup(name, fv.value):
+            elif self._fails_lookup(name, fv.value, rt.project_id):
                 record.low_conf_fields.append(name)
 
-    def _fails_lookup(self, field_name: str, value: str) -> bool:
+    def _fails_lookup(self, field_name: str, value: str,
+                      project_id: str | None = None) -> bool:
         """True if the value doesn't match this field's lookup table of
         previously-indexed values (HLD §4 Layer 5: "validated against
         lookup tables in SQLite"). Only enforced once the field has
-        enough history to be a trustworthy lookup set."""
-        known = self.db.known_field_values(field_name)
+        enough history to be a trustworthy lookup set. History is the
+        project's own: another project's documents never open the gate."""
+        known = self.db.known_field_values(field_name, project_id)
         return len(known) >= _LOOKUP_MIN_SAMPLES and value not in known
 
     def _enhance_worker(self) -> None:
         def handle(record: PageRecord):
-            profile = self.profile.get("enhancement_profile", {})
+            profile = self._rt(record.job.batch_id,
+                               record.job.project_id).profile.get(
+                "enhancement_profile", {})
             image = cv2.imread(record.job.image_path, cv2.IMREAD_UNCHANGED)
             if not record.is_blank:
                 if profile.get("deskew"):
@@ -304,14 +379,15 @@ class Pipeline:
 
     def _qc_worker(self) -> None:
         def handle(record: PageRecord):
-            qc_cfg = self.profile.get("qc", {"enabled": False})
+            rt = self._rt(record.job.batch_id, record.job.project_id)
+            qc_cfg = rt.profile.get("qc", {"enabled": False})
             if record.is_blank:
                 record.qc_score, record.qc_grade = 100, "PASS"
             else:
                 image = cv2.imread(record.working_path, cv2.IMREAD_UNCHANGED)
                 fixed, verdict = run_qc(
                     image, qc_cfg,
-                    {"dpi": self.profile.get("scanner", {}).get("dpi", 300)})
+                    {"dpi": rt.profile.get("scanner", {}).get("dpi", 300)})
                 cv2.imwrite(record.working_path, fixed)
                 record.qc_score = verdict.score
                 record.qc_grade = verdict.grade
@@ -346,7 +422,8 @@ class Pipeline:
                        "is_blank": r.is_blank, "barcodes": r.barcodes,
                        "is_custody_label": r.is_custody_label,
                        "record": r} for r in pages]
-        docs = split_documents(page_dicts, self.profile.get("separation", {}))
+        rt = self._rt(batch_id, record.job.project_id)
+        docs = split_documents(page_dicts, rt.profile.get("separation", {}))
         self.db.update_batch_status(batch_id, "qc_pending", len(pages))
         self._emit("separation", "done", batch_id=batch_id,
                    documents=len(docs))
@@ -356,6 +433,7 @@ class Pipeline:
     def _rule_worker(self) -> None:
         def handle(item: dict):
             doc = item["doc"]
+            rt = self._rt(item["batch_id"])
             records = [p["record"] for p in doc["pages"]]
             worst = min((r.qc_score for r in records), default=100)
             grades = {r.qc_grade for r in records}
@@ -371,6 +449,7 @@ class Pipeline:
             document = {
                 "document_id": new_id(),
                 "batch_id": item["batch_id"],
+                "project_id": rt.project_id,
                 "barcode": doc.get("barcode"),
                 "qc_score": worst,
                 "validation_status": "auto_approved"
@@ -388,9 +467,9 @@ class Pipeline:
 
             # duplicate detection: MD5 + pHash of first page, barcode
             # cross-check against previously processed documents
-            fingerprint_detail = self._check_duplicate(document, records)
+            fingerprint_detail = self._check_duplicate(document, records, rt)
 
-            rules = self.profile.get("rules") or {}
+            rules = rt.profile.get("rules") or {}
             if rules.get("rules"):
                 try:
                     RuleEngine(rules).evaluate(document)
@@ -405,7 +484,7 @@ class Pipeline:
                 qc_detail["fingerprint"] = fingerprint_detail
             self.db.insert_document(
                 document["document_id"], item["batch_id"],
-                self.profile["project_id"],
+                rt.project_id,
                 page_range=f"{min(page_nos)}-{max(page_nos)}",
                 enhancement_profile="default",
                 extracted_fields=document["extracted_fields"],
@@ -433,7 +512,8 @@ class Pipeline:
                 self._emit("delivery", "held_for_review", document_id=doc_id)
                 return
 
-            export_cfg = self.profile.get("export", {})
+            rt = self._rt(document["batch_id"], document.get("project_id"))
+            export_cfg = rt.profile.get("export", {})
             with self._lock:
                 # setdefault: batch state may be gone after a restart
                 # (e.g. review-approved documents from an old session)
@@ -449,7 +529,7 @@ class Pipeline:
                    "date": __import__("datetime").datetime.now().strftime("%Y%m%d"),
                    "fields": document["extracted_fields"],
                    "output_folder": document.get("output_folder", ""),
-                   "dpi": self.profile.get("scanner", {}).get("dpi", 300)}
+                   "dpi": rt.profile.get("scanner", {}).get("dpi", 300)}
             images = [r.working_path for r in records]
             texts = [r.ocr_text for r in records]
             out_path = self.export_fn(images, export_cfg, ctx, texts)
@@ -459,10 +539,10 @@ class Pipeline:
                                path=str(out_path))
 
             # multi-channel: project-enabled channels + rule-triggered ones
-            targets = list(self.channels)
+            targets = list(rt.channels)
             names = {c.name for c in targets}
             for trigger in document.get("trigger_channels", []):
-                extra = self.trigger_pool.get(trigger)
+                extra = rt.trigger_pool.get(trigger)
                 if extra is not None and extra.name not in names:
                     targets.append(extra)
                     names.add(extra.name)
@@ -491,11 +571,12 @@ class Pipeline:
             self._maybe_complete_batch(document["batch_id"])
         self._pump(self.delivery_q, "delivery", handle)
 
-    def _check_duplicate(self, document: dict, records: list) -> dict | None:
+    def _check_duplicate(self, document: dict, records: list,
+                         rt: ProjectRuntime) -> dict | None:
         """Fingerprint the first non-blank page and compare with earlier
         documents (features.duplicate_check, HLD §4 Layer 5). A match
         sets duplicate_of + holds the document for review."""
-        if not self.profile.get("features", {}).get("duplicate_check"):
+        if not rt.profile.get("features", {}).get("duplicate_check"):
             return None
         first = next((r for r in records if not r.is_blank
                       and r.working_path), None)
@@ -528,14 +609,16 @@ class Pipeline:
         return {"md5": md5, "phash": phash,
                 "barcode": document.get("barcode")}
 
-    def resubmit_document(self, document_id: str) -> bool:
-        """Push an operator-approved review document into the delivery
-        stage (QC review 'Accept → export'). Page images come from the
-        paths recorded in qc_detail during QC. Returns False when the
-        document is unknown or predates path recording."""
+    def _resubmit_inputs(self, document_id: str):
+        """(row, page records, reason). reason is "" when the document can be
+        re-exported, else a short operator-readable refusal (value-free)."""
         row = self.db.get_document(document_id)
         if row is None:
-            return False
+            return None, [], "unknown document"
+        try:
+            self._resolve(row["project_id"])
+        except ProjectUnavailable as e:
+            return row, [], f"project not available: {e}"
         detail = json.loads(row["qc_detail"] or "{}")
         pages = detail.get("pages", {})
         records = []
@@ -551,13 +634,29 @@ class Pipeline:
             records.append(PageRecord(job=job, working_path=working,
                                       ocr_text=info.get("ocr_text", "")))
         if not records:
-            log.warning("cannot re-export %s: page images unavailable",
-                        document_id)
+            return row, [], REASON_NO_PAGE_IMAGES
+        return row, records, ""
+
+    def can_resubmit(self, document_id: str) -> tuple[bool, str]:
+        """Whether resubmit_document would accept this document, and if not
+        why. No side effects."""
+        _row, _records, reason = self._resubmit_inputs(document_id)
+        return (not reason, reason)
+
+    def resubmit_document(self, document_id: str) -> bool:
+        """Push an operator-approved review document into the delivery
+        stage (QC review 'Accept → export'). Page images come from the
+        paths recorded in qc_detail during QC. Returns False when the
+        document is unknown or predates path recording."""
+        row, records, reason = self._resubmit_inputs(document_id)
+        if reason:
+            log.warning("cannot re-export %s: %s", document_id, reason)
             return False
         fields = json.loads(row["extracted_fields"] or "{}")
         document = {
             "document_id": document_id,
             "batch_id": row["batch_id"],
+            "project_id": row["project_id"],
             "barcode": fields.get("barcode"),
             "qc_score": row["qc_score"],
             "validation_status": "auto_approved",  # operator approved

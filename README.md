@@ -46,7 +46,9 @@ Tesseract 5 must be on PATH for OCR features (bundled in the packaged EXE).
   scaffolding (drop vendor DLLs into `vendor_sdks/`).
 - **Phase 3 (new modules)** — complete: real SFTP delivery (paramiko, LAN
   only, retry + size verification), CD/DVD burn queue with checksum verify
-  and disc log (configure `burner_cmd` for ImgBurn/cdrecord), multi-channel
+  and disc log (configure `burner_cmd` for ImgBurn/cdrecord; note: only the
+  startup project's disc queue can be burned in the Admin tab, so do not
+  enable CD/DVD delivery on other projects yet), multi-channel
   delivery incl. rule-triggered channels, benchmark suite
   (`python scripts/benchmark.py --pages 100 [--ocr]`; dev machine:
   141 pages/min no-OCR, 115 pages/min with OCR).
@@ -91,8 +93,8 @@ Tesseract 5 must be on PATH for OCR features (bundled in the packaged EXE).
 - **Central sync client** — complete: Admin > Central enrols the PC with a
   one-time code (enrollment is per Windows account: the key is DPAPI-protected
   and the data lives under that user's `%LOCALAPPDATA%`). Assigned projects are
-  pulled in the background and apply after a restart (a status-bar notice
-  shows for every role). Central owns processing settings; the PC keeps its own
+  pulled in the background and apply to the next scan batch (no restart;
+  the Central tab says so). Central owns processing settings; the PC keeps its own
   scanner / export / delivery. A project new to the PC has those three sections
   seeded from the PC's previous project (the first active project that central
   does not manage), so scans keep going to the same place, and they stay

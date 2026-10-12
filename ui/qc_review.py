@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QListWidget,
                              QListWidgetItem, QPushButton, QSplitter,
                              QVBoxLayout, QWidget)
 
+from core.job_queue import REASON_NO_PAGE_IMAGES
 from ui.image_viewer import ImageView
 
 
@@ -194,6 +195,17 @@ class QCReviewPanel(QWidget):
         doc_id = self.current_document_id()
         if doc_id is None:
             return
+        if action == "accept" and self.pipeline is not None:
+            # decide BEFORE touching the status: a refusal must leave the
+            # document in the review queue so it can be retried after the
+            # project is fixed. Missing page images still let the approval
+            # through (export is skipped with a message below).
+            ok, reason = self.pipeline.can_resubmit(doc_id)
+            if not ok and reason != REASON_NO_PAGE_IMAGES:
+                self.score_label.setText(
+                    f"Not accepted: {reason}. The document stays in the "
+                    "review queue; fix the project and accept it again.")
+                return
         status = {"accept": "corrected", "reject": "rejected",
                   "rescan": "rejected"}[action]
         self.db.update_document(doc_id, validation_status=status)

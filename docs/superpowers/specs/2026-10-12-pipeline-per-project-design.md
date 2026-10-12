@@ -1,6 +1,6 @@
 # Per-Project Pipeline Configuration — Design Spec
 
-Status: approved by user 2026-10-12 (decisions below), ready for implementation planning.
+Status: IMPLEMENTED 2026-10-12 (branch `per-project-pipeline`; end to end in `tests/test_wizard_project_e2e.py` and the run-dokscanner `check_central.py` driver). Approved by user 2026-10-12.
 Follows from `docs/ENHANCEMENT_PLAN_STATUS.md` ("the scan wizard's project choice is not
 applied to the pipeline") and the central-sync work, whose "restart to apply" limitation
 comes from the same cause.
@@ -98,6 +98,9 @@ class RuntimeResolver:
 ### Non-goals / follow-ups
 
 - Index tab zones / OCR mode per document project; CD/DVD burn tab for every project's queue.
+  Only the startup project's disc queue can be burned in the Admin tab; do not enable CD/DVD delivery on other projects yet.
+- Duplicate detection stays global: an identical page scanned into two projects is held for review.
+- A refused batch closes the wizard and leaves its staged copies under `staging_dir`.
 - Hot-folder watchers (none exist as a submit path today); moving documents between projects.
 
 ## Testing
