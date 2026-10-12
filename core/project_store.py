@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 import logging
 
+import jsonschema
+
 log = logging.getLogger(__name__)
 
 _ID_COLUMNS = {"project": "project_id", "template": "template_id"}
@@ -38,6 +40,16 @@ def load_config(row, kind: str = "project") -> dict | None:
                     kind, _row_id(row, kind))
         return None
     return cfg
+
+
+def config_error_path(exc: BaseException) -> str:
+    """The schema field path of a ProjectConfigError ("" when unknown).
+    ProjectConfigError's message quotes the offending VALUE; only the path
+    (taken from the chained jsonschema error) is safe to log or show."""
+    cause = exc.__cause__
+    if isinstance(cause, jsonschema.ValidationError):
+        return "/".join(map(str, cause.absolute_path))
+    return ""
 
 
 def readable_projects(rows) -> tuple[list[tuple[object, dict]], list[str]]:

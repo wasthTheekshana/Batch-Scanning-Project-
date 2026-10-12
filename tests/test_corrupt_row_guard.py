@@ -35,7 +35,7 @@ from tests.test_project_runtime import valid_profile
 from ui import main_window as main_window_module
 from ui.main_window import MainWindow
 from ui.scan_wizard import ScanWizard
-from ui.workflow_designer import WorkflowDesigner
+from ui.workflow_designer import UNREADABLE_BANNER, WorkflowDesigner
 
 SENTINEL = "S3CRET-VALUE-123"
 CORRUPT_VALUES = [
@@ -224,7 +224,7 @@ def test_seed_uses_defaults_when_every_local_project_is_unreadable(sync):
 
 def test_central_entry_for_an_unreadable_local_project_is_skipped_untouched(
         sync, caplog):
-    local = sync.pm.adopt(project_entry(pid=PID, name="Local copy")["config"])
+    sync.pm.adopt(project_entry(pid=PID, name="Local copy")["config"])
     corrupt_project(sync.db, PID)
     corrupt_value = sync.db.get_project(PID)["config_json"]
     file_before = (sync.root / "projects" / f"{PID}.json").read_bytes()
@@ -242,7 +242,8 @@ def test_central_entry_for_an_unreadable_local_project_is_skipped_untouched(
     assert sync.db.get_central_project(PID) is None     # never marked applied
     assert "central_project_skipped" in audit_actions(sync.db)
     assert SENTINEL not in caplog.text
-    assert local["project_id"] == PID
+    assert SENTINEL not in str(sync.db.conn.execute(
+        "SELECT detail FROM audit_log").fetchall())
 
 
 def test_unreadable_local_project_that_central_still_assigns_is_not_unassigned(
@@ -520,14 +521,13 @@ def select(designer, project_id):
 
 
 def test_designer_shows_a_banner_for_a_project_whose_file_is_unreadable(
-        designer, pm, caplog):
+        designer, pm, caplog, messages):
     bad = add_project(pm, "Aaa bad")
     good = add_project(pm, "Zzz good")
     corrupt_file(pm, bad["project_id"])
     d = designer()                      # the bad project is selected first
     assert not d.unreadable_banner.isHidden()
-    assert READ_FAILED in d.unreadable_banner.text()
-    assert SENTINEL not in d.unreadable_banner.text()
+    assert d.unreadable_banner.text() == UNREADABLE_BANNER
     assert not d.form_body.isEnabled()
     assert d.config is None
     assert not d.save_btn.isEnabled()
@@ -537,6 +537,7 @@ def test_designer_shows_a_banner_for_a_project_whose_file_is_unreadable(
     assert d.config["project_id"] == good["project_id"]
     assert d.save_btn.isEnabled()
     assert SENTINEL not in caplog.text
+    assert not [m for m in messages if SENTINEL in m[2]]
 
 
 @pytest.mark.parametrize("value", [CORRUPT_VALUES[1], '{"name": 1}'])
@@ -546,6 +547,7 @@ def test_designer_banner_also_covers_a_file_that_is_not_a_valid_config(
     corrupt_file(pm, bad["project_id"], value)
     d = designer()
     assert not d.unreadable_banner.isHidden()
+    assert d.unreadable_banner.text() == UNREADABLE_BANNER
 
 
 def test_designer_banner_when_the_project_file_is_missing(designer, pm):
@@ -612,3 +614,124 @@ def test_designer_new_from_template_with_an_unreadable_template_does_not_raise(
     d.new_from_template()
     assert seen["items"] == ["Cat — Fine"]
     assert len(db.list_projects()) == 2
+
+
+# ---- fix round 1 -------------------------------------------------------------
+def schema_invalid_file(pm, project_id):
+    """Valid JSON, schema-invalid, with the sentinel as the offending value."""
+    cfg = json.loads((pm.projects_dir / f"{project_id}.json").read_text(
+        encoding="utf-8"))
+    cfg["version"] = SENTINEL
+    corrupt_file(pm, project_id, json.dumps(cfg))
+
+
+def test_designer_managed_save_with_a_schema_invalid_stored_file_shows_fixed_text(
+        designer, db, pm, messages, caplog):
+    cfg = add_project(pm, "Only")
+    db.set_central_project(cfg["project_id"], 1, managed=True)
+    d = designer()
+    schema_invalid_file(pm, cfg["project_id"])
+    d.save()
+    assert [(m[0], m[1], m[2]) for m in messages] == [
+        ("warning", "Project unreadable", UNREADABLE_BANNER + ".")]
+    assert SENTINEL not in caplog.text
+
+
+def test_designer_save_validation_error_names_the_field_never_the_value(
+        designer, pm, messages, caplog, monkeypatch):
+    add_project(pm, "Only")
+    d = designer()
+    real = d.collect_config()
+    monkeypatch.setattr(d, "collect_config",
+                        lambda: {**real, "version": SENTINEL})
+    d.save()
+    assert len(messages) == 1
+    kind, title, text = messages[0]
+    assert (kind, title) == ("critical", "Invalid configuration")
+    assert text == ("The configuration is not valid at version. Correct that "
+                    "field and save again.")
+    assert SENTINEL not in caplog.text
+
+
+def test_designer_save_when_the_file_went_bad_after_loading_keeps_state(
+        designer, pm, messages, caplog):
+    cfg = add_project(pm, "Only")
+    d = designer()
+    corrupt_file(pm, cfg["project_id"])
+    before = (pm.projects_dir / f"{cfg['project_id']}.json").read_bytes()
+    d.save()
+    assert [(m[0], m[2]) for m in messages] == [
+        ("warning", UNREADABLE_BANNER + ".")]
+    assert (pm.projects_dir / f"{cfg['project_id']}.json").read_bytes() == before
+    assert d.config["project_id"] == cfg["project_id"]     # form state untouched
+    assert SENTINEL not in caplog.text
+
+
+def test_designer_clears_the_previous_projects_values_under_the_banner(
+        designer, pm):
+    bad = add_project(pm, "Aaa bad")
+    good = pm.create("Zzz good")
+    good["export"]["output_path"] = "D:/previous/output"
+    good["delivery"]["sftp"] = {"enabled": False, "password": "previous-pw"}
+    good["ocr"]["zones"] = [{"name": "prev_zone", "x": 0, "y": 0, "w": 5,
+                             "h": 5, "regex": "(a)"}]
+    pm.save(good)
+    d = designer()
+    select(d, good["project_id"])
+    assert d.output_path.text() == "D:/previous/output"
+    assert d.zone_list.count() == 1
+    corrupt_file(pm, bad["project_id"])
+    select(d, bad["project_id"])
+    assert d.output_path.text() == ""
+    assert d.sftp_password.text() == ""
+    assert d.zone_list.count() == 0
+    assert d.rule_list.count() == 0
+
+
+def test_sync_with_an_intact_row_but_corrupt_project_file_is_skipped_with_fixed_reason(
+        sync, caplog):
+    sync.pm.adopt(project_entry(pid=PID, name="Local copy")["config"])
+    corrupt_file(sync.pm, PID)
+    pull(sync, project_entry(pid=PID, version=2),
+         project_entry(pid=PID2, name="Good"))
+    result = sync.svc.sync_once()
+    assert result.status == "ok"
+    assert result.errors == {
+        PID: "local project file unreadable - repair or re-save the project, "
+             "then sync again"}
+    assert result.applied == [PID2]
+    assert result.unassigned == []
+    assert SENTINEL not in str(result)
+    assert SENTINEL not in str(sync.db.conn.execute(
+        "SELECT detail FROM audit_log").fetchall())
+    assert SENTINEL not in caplog.text
+
+
+def test_sync_records_only_the_exception_type_for_an_unexpected_failure(
+        sync, monkeypatch, caplog):
+    def boom(config):
+        raise RuntimeError(SENTINEL)
+
+    monkeypatch.setattr(sync.pm, "adopt", boom)
+    pull(sync, project_entry(pid=PID))
+    result = sync.svc.sync_once()
+    assert result.errors == {PID: "RuntimeError"}
+    assert SENTINEL not in str(sync.db.conn.execute(
+        "SELECT detail FROM audit_log").fetchall())
+    assert SENTINEL not in caplog.text
+
+
+def test_sync_schema_invalid_overlay_reports_the_field_never_the_value(
+        sync, monkeypatch, caplog):
+    real_adopt = sync.pm.adopt
+
+    def adopt_bad(config):
+        return real_adopt({**config, "version": SENTINEL})
+
+    monkeypatch.setattr(sync.pm, "adopt", adopt_bad)
+    pull(sync, project_entry(pid=PID))
+    result = sync.svc.sync_once()
+    assert result.errors == {PID: "invalid project config at version"}
+    assert SENTINEL not in str(sync.db.conn.execute(
+        "SELECT detail FROM audit_log").fetchall())
+    assert SENTINEL not in caplog.text

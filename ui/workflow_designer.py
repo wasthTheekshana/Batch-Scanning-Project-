@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
 
 from core.config_overlay import LOCAL_ONLY_KEYS
 from core.profile_manager import ProjectConfigError
+from core.project_store import config_error_path
 from separation.rule_engine import RuleEngine, RuleSetError
 
 log = logging.getLogger(__name__)
@@ -53,6 +54,19 @@ QC_PRESETS = {
     "Lenient": {"pass_score": 65, "blur_warn_threshold": 60,
                "blur_fail_threshold": 15, "dpi_warn": 150, "dpi_fail": 100},
 }
+
+
+class StoredFileUnreadable(Exception):
+    """Loading the stored project file failed (no content in this error)."""
+
+
+def validation_text(exc: ProjectConfigError) -> str:
+    """Fixed text plus at most the field path - the schema message quotes
+    the offending value, so it is never shown."""
+    path = config_error_path(exc)
+    where = f" at {path}" if path else ""
+    return (f"The configuration is not valid{where}. Correct that field and "
+            "save again." if path else "The configuration is not valid.")
 
 
 class RuleDialog(QDialog):
@@ -514,10 +528,23 @@ class WorkflowDesigner(QWidget):
         return (self.new_from_template_btn, self.clone_btn, self.rollback_btn,
                 self.save_btn, self.save_template_btn)
 
+    def _clear_form(self) -> None:
+        """Blank the free-text fields and lists so the previously shown
+        project's values (paths, SFTP login...) are not left under the
+        banner."""
+        for edit in (self.filename_template, self.output_path,
+                     self.delivery_path, self.sftp_host, self.sftp_user,
+                     self.sftp_password, self.sftp_key_file,
+                     self.sftp_remote_path):
+            edit.clear()
+        self.zone_list.clear()
+        self.rule_list.clear()
+
     def _show_unreadable(self) -> None:
         """The selected project's file cannot be read: nothing to edit, so
         the form and the project actions stay off until it is repaired."""
         self.config = None
+        self._clear_form()
         self.version_label.setText("")
         self.managed_banner.hide()
         self.unreadable_banner.show()
@@ -771,7 +798,11 @@ class WorkflowDesigner(QWidget):
         load and the save below, this save is based on the older central
         content and the next sync restores central's version. Local sections
         are never overwritten by a sync, so nothing local is lost."""
-        stored = self.pm.load(self.config["project_id"])
+        try:
+            stored = self.pm.load(self.config["project_id"])
+        except (ProjectConfigError, ValueError):
+            # the error text quotes the stored file: never surface it
+            raise StoredFileUnreadable from None
         collected = self.collect_config()
         for key in LOCAL_ONLY_KEYS:
             stored[key] = collected[key]
@@ -792,8 +823,11 @@ class WorkflowDesigner(QWidget):
         if self._is_managed():
             try:
                 self._save_local_sections_only()
-            except ProjectConfigError as e:
-                QMessageBox.critical(self, "Invalid configuration", str(e))
+            except StoredFileUnreadable:
+                self._warn_unreadable()
+            except ProjectConfigError as e:     # the config being saved
+                QMessageBox.critical(self, "Invalid configuration",
+                                     validation_text(e))
             except ValueError:            # the stored file is not valid JSON
                 self._warn_unreadable()
             except OSError as e:
@@ -807,8 +841,13 @@ class WorkflowDesigner(QWidget):
             self.refresh_projects_keep_selection()
             QMessageBox.information(
                 self, "Saved", f"Saved as version {self.config['version']}.")
-        except (ProjectConfigError, RuleSetError) as e:
+        except ProjectConfigError as e:
+            QMessageBox.critical(self, "Invalid configuration",
+                                 validation_text(e))
+        except RuleSetError as e:   # the operator's own rule definitions
             QMessageBox.critical(self, "Invalid configuration", str(e))
+        except ValueError:          # the stored file went bad after loading
+            self._warn_unreadable()
         except OSError as e:
             self._write_failed(e)
 

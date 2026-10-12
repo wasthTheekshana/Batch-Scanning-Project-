@@ -33,7 +33,7 @@ from core.config_overlay import (LOCAL_ONLY_KEYS, PulledProjectError,
                                  default_local_sections, overlay,
                                  validate_entry)
 from core.profile_manager import ProfileManager, ProjectConfigError
-from core.project_store import load_config
+from core.project_store import config_error_path, load_config
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +43,8 @@ MAX_TEXT = 200
 _CHANGED = "registration changed during sync"
 UNREADABLE_LOCAL_REASON = ("local copy unreadable - repair or re-save the "
                            "project, then sync again")
+UNREADABLE_FILE_REASON = ("local project file unreadable - repair or re-save "
+                          "the project, then sync again")
 
 
 class LocalCopyUnreadable(Exception):
@@ -209,11 +211,15 @@ class CentralSyncService:
             try:
                 validate_entry(entry)
                 self._apply_entry(entry, defaults, result)
-            except (PulledProjectError, ProjectConfigError,
-                    LocalCopyUnreadable) as e:
+            except (PulledProjectError, LocalCopyUnreadable) as e:
                 self._skip(result, key, str(e))
+            except ProjectConfigError as e:     # its text quotes the value
+                path = config_error_path(e)
+                self._skip(result, key, "invalid project config"
+                           + (f" at {path}" if path else ""))
             except Exception as e:        # one bad project must not stop the rest
-                self._skip(result, key, f"{type(e).__name__}: {e}")
+                # type only: exception text can quote stored documents
+                self._skip(result, key, type(e).__name__)
         for pid in sorted(managed_before - seen):
             self.db.unmanage_central_project(pid)
             result.unassigned.append(pid)
@@ -263,7 +269,10 @@ class CentralSyncService:
                 # that would silently replace this PC's own settings.
                 raise LocalCopyUnreadable(UNREADABLE_LOCAL_REASON)
         cfg = overlay(entry, local, defaults)
-        self.pm.adopt(cfg)
+        try:
+            self.pm.adopt(cfg)
+        except ValueError:      # the local project FILE is not valid JSON
+            raise LocalCopyUnreadable(UNREADABLE_FILE_REASON) from None
         self.db.set_central_project(pid, version, managed=True)
         result.applied.append(pid)
         self._audit("central_project_applied", project_id=pid,
