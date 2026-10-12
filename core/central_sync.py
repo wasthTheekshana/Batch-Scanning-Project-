@@ -3,7 +3,7 @@
 CentralSyncService.sync_once() is safe to call from any thread and never
 raises: every outcome is a SyncResult. It never touches the running pipeline
 - new or changed projects are written to the local project store/database and
-take effect for the pipeline at the next application start (restart_needed).
+take effect for the pipeline at the start of the next scan batch (no restart).
 
 Concurrency: no network call (pull or enrollment) is made under the service
 lock. Under it run only local steps: a sync's apply phase and its state
@@ -51,32 +51,6 @@ class SyncResult:
     unassigned: list[str] = field(default_factory=list)
     errors: dict[str, str] = field(default_factory=dict)
     message: str = ""
-
-    @property
-    def restart_needed(self) -> bool:
-        return bool(self.applied)
-
-
-# Process-level "restart pending": once a sync applied something the running
-# pipeline cannot pick up, the notice stays until the application exits (a
-# later empty sync must not hide that no restart has happened yet).
-_restart_pending = False
-
-
-def note_sync_result(result: SyncResult) -> None:
-    global _restart_pending
-    if result.restart_needed:
-        _restart_pending = True
-
-
-def restart_pending() -> bool:
-    return _restart_pending
-
-
-def _reset_restart_pending() -> None:
-    """For tests only."""
-    global _restart_pending
-    _restart_pending = False
 
 
 def default_client_factory(server_url: str, timeout: float) -> CentralClient:

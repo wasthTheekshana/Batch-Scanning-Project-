@@ -10,11 +10,13 @@ from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtWidgets import QListWidgetItem, QMessageBox
 
 import ui.central_tab
+import ui.main_window
 from core.central_client import (CentralRegistrationError, CentralUnavailable,
                                  RegisterResult)
 from core.central_state import CentralState
+import core.central_sync
 from core.central_sync import (CentralSyncService, SyncResult,
-                               _reset_restart_pending, default_client_factory)
+                               default_client_factory)
 from core.event_bus import EventBus
 from core.profile_manager import DEFAULT_PROJECT, ProfileManager
 from core.rbac import Session, User
@@ -27,13 +29,6 @@ from ui.workflow_designer import WorkflowDesigner
 ADMIN = User("u1", "root", "admin")
 VIEWER = User("u2", "view", "viewer")
 OPERATOR = User("u3", "op", "operator")
-
-
-@pytest.fixture(autouse=True)
-def fresh_restart_flag():
-    _reset_restart_pending()
-    yield
-    _reset_restart_pending()
 
 
 class StubClient:
@@ -150,12 +145,17 @@ def test_auth_failed_banner_and_reenroll(qtbot, env):
     assert t.register_btn.isEnabled()                      # can re-enroll while registered
 
 
-def test_status_reports_result_and_restart_hint(qtbot, env):
+APPLIED_WORDING = ("Updated project settings were received; "
+                   "they apply to the next scan batch.")
+
+
+def test_status_reports_result_and_applied_hint(qtbot, env):
     env.state.register_result("https://central.example", "pc-1", "k", 600)
     t = tab(env, qtbot=qtbot)
-    assert "restart" not in t.status_text(SyncResult("ok", unchanged=1)).lower()
+    assert "next scan batch" not in t.status_text(SyncResult("ok", unchanged=1))
     text = t.status_text(SyncResult("ok", applied=["p1"]))
-    assert "restart" in text.lower()
+    assert APPLIED_WORDING in text
+    assert "restart" not in text.lower()
     assert "unavailable" in t.status_text(SyncResult("unavailable", message="dns")).lower()
     assert "skipped" in t.status_text(SyncResult("ok", errors={"p2": "bad"})).lower()
 
@@ -203,9 +203,10 @@ def test_bus_signal_refreshes_status(qtbot, env):
     env.state.register_result("https://central.example", "pc-1", "k", 600)
     t = CentralTab(env.state, env.svc, env.worker, ADMIN, bus=bus)
     qtbot.addWidget(t)
-    assert "restart" not in t.status_label.text().lower()
+    assert "next scan batch" not in t.status_label.text()
     bus.central_synced.emit(SyncResult("ok", applied=["p1"]))
-    assert "restart" in t.status_label.text().lower()
+    assert APPLIED_WORDING in t.status_label.text()
+    assert "restart" not in t.status_label.text().lower()
 
 
 # ---- Registration runs off the UI thread -------------------------------------------------
@@ -287,7 +288,7 @@ def test_central_synced_from_another_thread_updates_on_the_ui_thread(qtbot, env)
     emitter = threading.Thread(
         target=lambda: bus.central_synced.emit(SyncResult("ok", applied=["p1"])))
     emitter.start()
-    qtbot.waitUntil(lambda: "restart" in t.status_label.text().lower(),
+    qtbot.waitUntil(lambda: APPLIED_WORDING in t.status_label.text(),
                     timeout=3000)
     emitter.join()
     assert seen == [threading.main_thread()]
@@ -389,7 +390,7 @@ def test_main_window_forwards_bus_to_central_tab(qtbot, env):
     win = _admin_window(qtbot, env, central_state=env.state,
                         sync_service=env.svc, sync_worker=env.worker)
     win.bus.central_synced.emit(SyncResult("ok", applied=["p1"]))
-    assert "restart" in win.admin_panel.central_tab.status_label.text().lower()
+    assert APPLIED_WORDING in win.admin_panel.central_tab.status_label.text()
 
 
 def test_main_window_designer_follows_projects_arriving_from_a_sync(qtbot, env):
@@ -544,35 +545,77 @@ def test_designer_refuses_rollback_of_a_managed_project(qtbot, env, monkeypatch)
     assert shown and "central" in shown[0].lower() and rolled == []
 
 
-# ---- I1: "restart to apply" survives later syncs and is visible to every role -------------
-def test_restart_notice_in_central_tab_survives_a_following_empty_result(qtbot, env):
+# ---- Updates apply to the next scan batch: nothing is pending, nothing is sticky ----------
+def test_applied_result_says_next_scan_batch_and_never_mentions_restart(qtbot, env):
     bus = EventBus()
     env.state.register_result("https://central.example", "pc-1", "k", 600)
     t = CentralTab(env.state, env.svc, env.worker, ADMIN, bus=bus)
     qtbot.addWidget(t)
     bus.central_synced.emit(SyncResult("ok", applied=["p1"]))
-    assert "restart" in t.status_label.text().lower()
+    assert APPLIED_WORDING in t.status_label.text()
+    assert "restart" not in t.status_label.text().lower()
+
+
+def test_applied_message_follows_the_latest_result_and_is_not_sticky(qtbot, env):
+    bus = EventBus()
+    env.state.register_result("https://central.example", "pc-1", "k", 600)
+    t = CentralTab(env.state, env.svc, env.worker, ADMIN, bus=bus)
+    qtbot.addWidget(t)
+    bus.central_synced.emit(SyncResult("ok", applied=["p1"]))
+    assert APPLIED_WORDING in t.status_label.text()
     bus.central_synced.emit(SyncResult("ok", unchanged=1))      # the next poll: nothing applied
-    assert "restart" in t.status_label.text().lower()
+    assert "next scan batch" not in t.status_label.text()
 
 
-@pytest.mark.parametrize("user", [ADMIN, OPERATOR], ids=["admin", "operator"])
-def test_main_window_restart_label_stays_until_exit_for_every_role(qtbot, env, user):
+def test_unregistered_tab_does_not_keep_the_applied_message(qtbot, env):
+    bus = EventBus()
+    env.state.register_result("https://central.example", "pc-1", "k", 600)
+    t = CentralTab(env.state, env.svc, env.worker, ADMIN, bus=bus)
+    qtbot.addWidget(t)
+    bus.central_synced.emit(SyncResult("ok", applied=["p1"]))
+    env.state.clear()
+    t.refresh_status(SyncResult("not_registered"))
+    assert "next scan batch" not in t.status_label.text()
+
+
+def test_restart_state_is_gone_from_the_sync_module():
+    assert not hasattr(SyncResult("ok"), "restart_needed")
+    assert not hasattr(SyncResult("ok", applied=["p1"]), "restart_needed")
+    for name in ("restart_pending", "_reset_restart_pending", "note_sync_result"):
+        assert not hasattr(core.central_sync, name), name
+    assert not hasattr(ui.central_tab, "RESTART_TEXT")
+    assert not hasattr(ui.main_window, "RESTART_NOTICE")
+
+
+def _wired_window(qtbot, env, user):
     env.pm.create("Default Project")
+    env.state.register_result("https://central.example", "pc-1", "k", 600)
     Session._current = user
     win = MainWindow(env.db, env.pm, EventBus(), staging_dir=env.root / "staging",
                      central_state=env.state, sync_service=env.svc,
                      sync_worker=env.worker)
     qtbot.addWidget(win)
-    assert win.restart_label.isHidden()
-    win.bus.central_synced.emit(SyncResult("ok", unchanged=1))
-    assert win.restart_label.isHidden()                         # nothing applied: no notice
+    return win
+
+
+def _bar_texts(win):
+    from PyQt6.QtWidgets import QLabel
+    return [lbl.text() for lbl in win.statusBar().findChildren(QLabel)
+            if not lbl.isHidden() and lbl.text()]
+
+
+@pytest.mark.parametrize("user", [ADMIN, OPERATOR], ids=["admin", "operator"])
+def test_main_window_has_no_restart_label_after_an_applied_sync(qtbot, env, user):
+    win = _wired_window(qtbot, env, user)
+    win.show()
+    assert not hasattr(win, "restart_label")
     win.bus.central_synced.emit(SyncResult("ok", applied=["p1"]))
-    assert not win.restart_label.isHidden()
-    assert "Restart to apply" in win.restart_label.text()
-    win.bus.central_synced.emit(SyncResult("ok", unchanged=1))
-    assert not win.restart_label.isHidden()                     # still pending
-    assert win.restart_label.parent() is win.statusBar()
+    assert not any("restart" in t.lower() for t in _bar_texts(win))
+    assert win.reenroll_label.isHidden()
+    env.state.update(auth_failed=True)
+    win.bus.central_synced.emit(SyncResult("auth_failed"))
+    assert "Central: new enrollment code needed" in _bar_texts(win)
+    assert not any("restart" in t.lower() for t in _bar_texts(win))
 
 
 @pytest.mark.parametrize("user", [ADMIN, OPERATOR], ids=["admin", "operator"])
@@ -590,13 +633,12 @@ def test_main_window_shows_reenrollment_notice_only_after_auth_failure(qtbot, en
     win.bus.central_synced.emit(SyncResult("auth_failed"))
     assert not win.reenroll_label.isHidden()
     assert "new enrollment code" in win.reenroll_label.text()
-    assert win.restart_label.isHidden()
     env.state.update(auth_failed=False)                         # re-enrolled
     win.bus.central_synced.emit(SyncResult("ok"))
     assert win.reenroll_label.isHidden()
 
 
-def test_status_bar_notices_total_at_most_70_characters(qtbot, env):
+def test_reenrollment_notice_stays_short_enough_for_the_status_bar(qtbot, env):
     env.pm.create("Default Project")
     env.state.register_result("https://central.example", "pc-1", "k", 600)
     env.state.update(auth_failed=True)
@@ -607,17 +649,16 @@ def test_status_bar_notices_total_at_most_70_characters(qtbot, env):
     qtbot.addWidget(win)
     win.show()
     win.bus.central_synced.emit(SyncResult("auth_failed", applied=["p1"]))
-    assert not win.restart_label.isHidden()
     assert not win.reenroll_label.isHidden()
     assert win.statusBar().currentMessage().startswith("Signed in as")
-    assert len(win.restart_label.text()) + len(win.reenroll_label.text()) <= 70
+    assert len(win.reenroll_label.text()) <= 70
 
 
 def test_main_window_without_central_objects_has_no_notices(qtbot, env):
     env.pm.create("Default Project")
     win = _admin_window(qtbot, env)
     win.bus.central_synced.emit(SyncResult("ok", applied=["p1"]))
-    assert win.restart_label.isHidden() and win.reenroll_label.isHidden()
+    assert win.reenroll_label.isHidden()
 
 
 # ---- I4: an unexpected registration failure is logged (type only) ------------------------

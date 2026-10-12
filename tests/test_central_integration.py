@@ -116,7 +116,7 @@ def test_full_round_trip(s):
     pid = s.publish("Invoices", cfg, push_to=[pc["pc_id"]])
 
     res = s.svc.sync_once()
-    assert res.status == "ok" and res.applied == [pid] and res.restart_needed
+    assert res.status == "ok" and res.applied == [pid]
     local = s.pm.load(pid)
     assert local["ocr"]["lang"] == "deu" and local["name"] == "Invoices"
     assert local["export"]["output_path"].endswith("output")

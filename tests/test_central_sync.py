@@ -96,7 +96,7 @@ def test_first_pull_creates_project_with_seeded_local_sections(env):
     register(env)
     pull(env, project_entry(lang="deu"))
     r = env.svc.sync_once()
-    assert r.status == "ok" and r.applied == [PID] and r.restart_needed
+    assert r.status == "ok" and r.applied == [PID]
     cfg = env.pm.load(PID)
     assert cfg["ocr"]["lang"] == "deu" and cfg["version"] == 1
     assert cfg["export"]["output_path"] == str(env.root / "output")
@@ -113,7 +113,7 @@ def test_same_version_again_is_a_noop(env):
     env.svc.sync_once()
     pull(env, project_entry())
     r = env.svc.sync_once()
-    assert r.applied == [] and r.unchanged == 1 and not r.restart_needed
+    assert r.applied == [] and r.unchanged == 1
     assert env.pm.load(PID)["version"] == 1          # no spurious local version bump
 
 

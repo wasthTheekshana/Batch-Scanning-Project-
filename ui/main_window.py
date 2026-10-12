@@ -8,7 +8,6 @@ from PyQt6.QtCore import QSize, Qt, pyqtSlot
 from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QMainWindow, QMessageBox,
                              QPushButton, QTabWidget, QVBoxLayout, QWidget)
 
-from core.central_sync import note_sync_result, restart_pending
 from core.project_runtime import ProjectUnavailable
 from core.rbac import Session
 from ui.admin_panel import AdminPanel
@@ -22,7 +21,6 @@ from ui.workflow_designer import WorkflowDesigner
 
 log = logging.getLogger(__name__)
 
-RESTART_NOTICE = "Restart to apply central updates"
 REENROLL_NOTICE = "Central: new enrollment code needed"
 
 ROLE_LABELS = {"admin": "Administrator", "operator": "Operator",
@@ -166,12 +164,10 @@ class MainWindow(QMainWindow):
         bus.qc_ready.connect(lambda _doc_id: self.qc_panel.refresh())
         # Central notices are for every role (the Central tab is admin-only).
         self._central_state = central_state
-        self.restart_label = QLabel(RESTART_NOTICE)
         self.reenroll_label = QLabel(REENROLL_NOTICE)
-        for label in (self.restart_label, self.reenroll_label):
-            label.setTextFormat(Qt.TextFormat.PlainText)
-            label.hide()
-            self.statusBar().addPermanentWidget(label)
+        self.reenroll_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.reenroll_label.hide()
+        self.statusBar().addPermanentWidget(self.reenroll_label)
         if central_state is not None:
             bus.central_synced.connect(self._on_central_synced)
             self._refresh_central_notices()
@@ -182,11 +178,9 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(object)
     def _on_central_synced(self, result) -> None:
-        note_sync_result(result)
         self._refresh_central_notices()
 
     def _refresh_central_notices(self) -> None:
-        self.restart_label.setVisible(restart_pending())
         self.reenroll_label.setVisible(
             self._central_state is not None
             and self._central_state.settings.auth_failed)
