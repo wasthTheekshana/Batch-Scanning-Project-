@@ -6,12 +6,19 @@ document) → blank_page (separator page removed). Input pages are dicts
 prepared by the pipeline:
 
     {"page_no": int, "image": ndarray | None,
-     "is_blank": bool, "barcodes": [{"type","value","rect"}, ...]}
+     "is_blank": bool, "barcodes": [{"type","value","rect"}, ...],
+     "ocr_text": str}
+
+separation.barcode_role says what a barcode page is: "first_page" (default:
+the page is the document's first page and stays in it), "cover_sheet" (a
+separator sheet that labels the document but is not part of it) or "auto"
+(a cover when the page has hardly any text besides the barcode).
 
 Returns a list of documents: {"pages": [page, ...], "barcode": str | None}.
 """
 from __future__ import annotations
 
+import re
 from typing import Callable
 
 import numpy as np
@@ -36,40 +43,57 @@ def split_documents(pages: list[dict], separation_cfg: dict,
 
     docs: list[dict] = []
     current: list[dict] = []
+    cover_code: str | None = None      # barcode of a cover sheet awaiting pages
+
+    def close() -> None:
+        nonlocal current, cover_code
+        if current:
+            docs.append(_doc(current, cover_code))
+            current, cover_code = [], None
+
     for page in pages:
         if page.get("is_custody_label"):
-            if current:
-                docs.append(_doc(current))
-                current = []
+            close()
             continue  # custody QR label sheet, never document content
 
         if use_blank and page.get("is_blank"):
-            if current:
-                docs.append(_doc(current))
-                current = []
+            close()
             continue  # separator sheet dropped
 
         starts_new = False
         if use_barcode and page.get("barcodes"):
             starts_new = True
+            if _is_cover(page, separation_cfg):
+                close()
+                cover_code = page["barcodes"][0]["value"]
+                continue  # the cover labels the next document, it is not in it
         elif use_zone and page.get("image") is not None:
             starts_new = any(check_zone_trigger(page["image"], z, ocr_fn)
                              for z in zones)
 
-        if starts_new and current:
-            docs.append(_doc(current))
-            current = []
+        if starts_new:
+            close()
         current.append(page)
 
-    if current:
-        docs.append(_doc(current))
+    close()
     return docs
 
 
-def _doc(pages: list[dict]) -> dict:
-    barcode = None
+def _is_cover(page: dict, cfg: dict) -> bool:
+    role = cfg.get("barcode_role", "first_page")
+    if role == "cover_sheet":
+        return True
+    if role != "auto":
+        return False
+    text = page.get("ocr_text") or ""
+    for code in page.get("barcodes", []):
+        text = text.replace(code["value"], " ")
+    return len(re.sub(r"\W", "", text)) < int(cfg.get("cover_max_chars", 40))
+
+
+def _doc(pages: list[dict], cover_code: str | None = None) -> dict:
+    barcode = cover_code
     for p in pages:
-        if p.get("barcodes"):
+        if barcode is None and p.get("barcodes"):
             barcode = p["barcodes"][0]["value"]
-            break
     return {"pages": pages, "barcode": barcode}

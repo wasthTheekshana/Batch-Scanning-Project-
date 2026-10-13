@@ -43,6 +43,10 @@
           "items": {"enum": ["barcode", "blank_page", "zone", "fixed_pages"]}
         },
         "barcode_types": {"type": "array", "items": {"type": "string"}},
+        "barcode_role": {"type": "string",
+                         "enum": ["first_page", "cover_sheet", "auto"]},
+        "barcode_pattern": {"type": "string"},
+        "cover_max_chars": {"type": "integer", "minimum": 0},
         "blank_threshold": {"type": "number", "minimum": 0, "maximum": 1},
         "fixed_pages": {"type": ["integer", "null"], "minimum": 1},
         "zones": {"type": "array"}

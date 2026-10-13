@@ -31,7 +31,7 @@ from imaging.crop import auto_crop
 from imaging.deskew import deskew
 from imaging.enhance import apply_profile
 from qc.pipeline import run_qc
-from separation.barcode import decode_barcodes
+from separation.barcode import decode_barcodes, filter_barcodes
 from separation.rule_engine import RuleEngine, RuleSetError
 from separation.splitter import split_documents
 
@@ -274,14 +274,17 @@ class Pipeline:
             # blank_page/fixed_pages separation will not auto-log scanning
             # checkpoints for custody bundles even if bundles exist for it.
             if "barcode" in sep_cfg.get("strategy", []):
-                record.barcodes = decode_barcodes(image)
-                if record.barcodes:
+                decoded = decode_barcodes(image)
+                # custody labels are matched against every barcode found;
+                # only the project's own barcodes may separate documents
+                record.barcodes = filter_barcodes(decoded, sep_cfg)
+                if decoded:
                     from custody.bundle_manager import (
                         record_checkpoint_from_barcode)
                     with self._lock:
                         operator = self._batches.get(job.batch_id, {}).get(
                             "operator", "system")
-                    for bc in record.barcodes:
+                    for bc in decoded:
                         try:
                             matched = record_checkpoint_from_barcode(
                                 self.db, bc["value"], "scanning", operator,
@@ -425,6 +428,7 @@ class Pipeline:
         page_dicts = [{"page_no": r.job.page_no, "image": None,
                        "is_blank": r.is_blank, "barcodes": r.barcodes,
                        "is_custody_label": r.is_custody_label,
+                       "ocr_text": r.ocr_text,
                        "record": r} for r in pages]
         rt = self._rt(batch_id, record.job.project_id)
         docs = split_documents(page_dicts, rt.profile.get("separation", {}))
