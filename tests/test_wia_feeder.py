@@ -145,10 +145,28 @@ def test_requires_a_connected_device():
         WIASource().acquire(300, "grayscale", False)
 
 
-def test_even_pixels_for_every_supported_dpi():
-    from scanning.wia_source import _even
-    assert all(_even(11.69 * d) % 2 == 0 for d in (75, 100, 150, 200, 240, 250,
-                                                    260, 300, 400, 500, 600))
+class RangeProp:
+    SubType = 1
+
+    def __init__(self, low, high, step):
+        self.SubTypeMin, self.SubTypeMax, self.SubTypeStep = low, high, step
+
+
+def test_scan_area_snaps_to_the_devices_own_step():
+    from scanning.wia_source import _snap
+    # Kodak S2050 at 300 dpi: 300..2580 in steps of 3 (2480 is not valid)
+    assert _snap(RangeProp(300, 2580, 3), 2481.0) == 2481
+    assert _snap(RangeProp(300, 2580, 3), 2480.0) == 2481
+    # at 200 dpi: steps of 2
+    assert _snap(RangeProp(200, 1720, 2), 1654.0) == 1654
+    # never outside the device's range
+    assert _snap(RangeProp(300, 2580, 3), 9999) == 2580
+    assert _snap(RangeProp(300, 2580, 3), 10) == 300
+
+
+def test_without_range_information_pixels_are_even():
+    from scanning.wia_source import _snap
+    assert _snap(Prop(1), 2481.0) % 2 == 0
 
 
 def test_bmp_data_from_the_driver_is_returned_as_a_real_png():
@@ -164,3 +182,76 @@ def test_bmp_data_from_the_driver_is_returned_as_a_real_png():
 def test_garbage_image_data_is_a_clear_error():
     with pytest.raises(ScannerUnavailable, match="unreadable image"):
         source(Item([b"not an image"])).acquire(200, "grayscale", False)
+
+
+class StrictProp(Prop):
+    SubType = 1
+    SubTypeMin, SubTypeMax, SubTypeStep = 300, 4200, 3
+
+    """Rejects a scan-area value until the resolution has been raised, like
+    the real driver (valid extent depends on the current dpi)."""
+
+    def __init__(self, pid, owner):
+        self._pid, self._owner, self._value = pid, owner, 0
+        self.PropertyID = pid
+
+    @property
+    def Value(self):
+        return self._value
+
+    @Value.setter
+    def Value(self, v):
+        if self._pid in (6151, 6152) and not self._owner.dpi_raised:
+            raise ComErr(0x80070057)           # parameter is incorrect
+        if self._pid == 6151 and (v - 300) % 3:
+            raise ComErr(0x80070057)           # 300 dpi: steps of 3
+        if self._pid == 6147:
+            self._owner.dpi_raised = v >= 300
+        self._value = v
+
+
+def test_scan_area_is_written_after_the_resolution_whatever_the_device_order():
+    item = Item([X])
+    item.dpi_raised = False
+    # the device lists the extents BEFORE the resolution
+    item.Properties = [StrictProp(int(pid), item) for pid in (
+        "6151", "6152", "6147", "6148", "4103", "4104")]
+    pages = source(item).acquire(300, "grayscale", False)
+    assert pages == [X]
+    assert item.value("6151") == 2481
+
+
+class FakeInfo:
+    Type = 1
+
+    def __init__(self, name, device):
+        self._name, self._device = name, device
+
+    def Properties(self, key):
+        assert key == "Name"
+        return Prop(0, self._name)
+
+    def Connect(self):
+        return self._device
+
+
+class FakeManager:
+    def __init__(self, infos):
+        self.DeviceInfos = infos
+
+
+def test_devices_are_listed_and_connect_finds_them_by_name(monkeypatch):
+    device = Device(Item([X]))
+    manager = FakeManager([FakeInfo("KODAK S2050 Scanner", device)])
+    monkeypatch.setattr(wia_source, "_wia_device_manager", lambda: manager)
+    src = WIASource()
+    assert src.list_devices() == ["KODAK S2050 Scanner"]
+    src.connect("KODAK S2050 Scanner")
+    assert src.acquire(200, "grayscale", False) == [X]
+    with pytest.raises(ScannerUnavailable, match="not found"):
+        src.connect("Other Scanner")
+
+
+def test_no_wia_stack_means_no_devices(monkeypatch):
+    monkeypatch.setattr(wia_source, "_wia_device_manager", lambda: None)
+    assert WIASource().list_devices() == []

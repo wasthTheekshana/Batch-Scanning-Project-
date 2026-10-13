@@ -79,16 +79,32 @@ def _as_png(data: bytes) -> bytes:
 
 
 def _even(pixels: float) -> int:
-    """The scan-area properties only accept even pixel counts."""
     return round(pixels / 2) * 2
 
 
+def _snap(prop, pixels: float) -> int:
+    """The nearest value the device accepts for a scan-area property. The
+    allowed range (and its step: 2 at 200 dpi, 3 at 300 dpi on the Kodak
+    S2050) is read from the property itself; without range information
+    fall back to an even pixel count."""
+    try:
+        if prop.SubType == 1:                         # WIA range
+            low, high, step = prop.SubTypeMin, prop.SubTypeMax, prop.SubTypeStep
+            snapped = low + round((pixels - low) / step) * step
+            return int(max(low, min(high, snapped)))
+    except AttributeError:
+        pass
+    return _even(pixels)
+
+
 def _set_props(collection, values: dict[str, object]) -> None:
-    """Write each {property id: value} that the device exposes and allows."""
-    for prop in collection:
-        pid = str(prop.PropertyID)
-        if pid in values:
-            prop.Value = values[pid]
+    """Write each {property id: value} the device exposes, in the order
+    given (not the device's own order): the scan-area limits depend on the
+    resolution, so the resolution has to be written first."""
+    by_id = {str(prop.PropertyID): prop for prop in collection}
+    for pid, value in values.items():
+        if pid in by_id:
+            by_id[pid].Value = value
 
 
 def _wia_device_manager():
@@ -145,12 +161,16 @@ class WIASource(BaseScannerSource):
             item = self._device.Items(1)
             _set_props(item.Properties, {
                 WIA_DPI_X: dpi, WIA_DPI_Y: dpi,
-                WIA_EXTENT_X: _even(A4_INCHES[0] * dpi),
-                WIA_EXTENT_Y: _even(A4_INCHES[1] * dpi),
                 WIA_DATA_TYPE: _DATA_TYPE.get(color, _DATA_TYPE["grayscale"])[0],
                 WIA_BITS_PER_PIXEL: _DATA_TYPE.get(
                     color, _DATA_TYPE["grayscale"])[1],
             })
+            # after the resolution: the valid scan-area range depends on it
+            by_id = {str(prop.PropertyID): prop for prop in item.Properties}
+            for pid, inches in ((WIA_EXTENT_X, A4_INCHES[0]),
+                                (WIA_EXTENT_Y, A4_INCHES[1])):
+                if pid in by_id:
+                    by_id[pid].Value = _snap(by_id[pid], inches * dpi)
         except ScannerUnavailable:
             raise
         except Exception as e:
