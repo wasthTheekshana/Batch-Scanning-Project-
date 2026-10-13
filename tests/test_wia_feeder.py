@@ -1,9 +1,20 @@
 """WIA document-feeder scanning, against fake COM objects."""
+import cv2
+import numpy as np
 import pytest
 
 from scanning import wia_source
 from scanning.base import ScannerUnavailable
 from scanning.wia_source import WIASource
+
+
+def sheet(shade: int) -> bytes:
+    ok, buf = cv2.imencode(".png", np.full((8, 8), shade, np.uint8))
+    assert ok
+    return buf.tobytes()
+
+
+P1, P2, P3, X = sheet(1), sheet(2), sheet(3), sheet(9)
 
 
 class ComErr(Exception):
@@ -69,21 +80,21 @@ def source(item, **kw):
 
 
 def test_every_sheet_in_the_feeder_is_returned_in_order():
-    item = Item([b"p1", b"p2", b"p3"])
+    item = Item([P1, P2, P3])
     seen = []
     pages = source(item).acquire(300, "grayscale", True,
                                  on_page=lambda data, n: seen.append((data, n)))
-    assert pages == [b"p1", b"p2", b"p3"]
-    assert seen == [(b"p1", 1), (b"p2", 2), (b"p3", 3)]
+    assert pages == [P1, P2, P3]
+    assert seen == [(P1, 1), (P2, 2), (P3, 3)]
     assert item.transfers == 4                 # the 4th call found it empty
 
 
 def test_settings_are_written_to_the_device_and_the_item():
-    item = Item([b"x"])
+    item = Item([X])
     src = source(item)
     src.acquire(300, "color", True)
     assert src._device.value("3088") == wia_source.FEEDER | wia_source.DUPLEX
-    assert src._device.value("3096") == 0      # all pages
+    assert src._device.value("3096") == 1      # one sheet per Transfer
     assert item.value("6147") == item.value("6148") == 300
     assert item.value("6151") == 2480            # 8.27 in at 300 dpi, rounded to even
     assert item.value("6152") == 3508            # 11.69 in at 300 dpi, rounded to even
@@ -92,13 +103,13 @@ def test_settings_are_written_to_the_device_and_the_item():
 
 @pytest.mark.parametrize("mode,expected", [("bw", (0, 1)), ("grayscale", (2, 8))])
 def test_colour_modes_map_to_wia_data_types(mode, expected):
-    item = Item([b"x"])
+    item = Item([X])
     source(item).acquire(200, mode, False)
     assert (item.value("4103"), item.value("4104")) == expected
 
 
 def test_simplex_asks_for_the_feeder_only():
-    src = source(Item([b"x"]))
+    src = source(Item([X]))
     src.acquire(200, "grayscale", False)
     assert src._device.value("3088") == wia_source.FEEDER
 
@@ -109,23 +120,23 @@ def test_empty_feeder_is_a_clear_error_not_an_empty_list():
 
 
 def test_a_jam_after_some_pages_reports_the_jam_and_keeps_the_pages_seen():
-    item = Item([b"p1", b"p2", b"p3"], error_after=2)
+    item = Item([P1, P2, P3], error_after=2)
     got = []
     with pytest.raises(ScannerUnavailable, match="Paper jam"):
         source(item).acquire(300, "grayscale", False,
                              on_page=lambda data, n: got.append(data))
-    assert got == [b"p1", b"p2"]
+    assert got == [P1, P2]
 
 
 def test_unknown_device_error_is_wrapped():
-    item = Item([b"x"])
+    item = Item([X])
     item.Transfer = lambda fmt: (_ for _ in ()).throw(RuntimeError("boom"))
     with pytest.raises(ScannerUnavailable, match="WIA acquire failed: boom"):
         source(item).acquire(300, "grayscale", False)
 
 
 def test_runaway_feeder_is_capped():
-    item = Item([b"x"] * 10)
+    item = Item([X] * 10)
     assert len(source(item).acquire(300, "grayscale", False, max_pages=4)) == 4
 
 
@@ -138,3 +149,18 @@ def test_even_pixels_for_every_supported_dpi():
     from scanning.wia_source import _even
     assert all(_even(11.69 * d) % 2 == 0 for d in (75, 100, 150, 200, 240, 250,
                                                     260, 300, 400, 500, 600))
+
+
+def test_bmp_data_from_the_driver_is_returned_as_a_real_png():
+    page = np.full((40, 30), 77, np.uint8)
+    ok, bmp = cv2.imencode(".bmp", page)
+    assert ok and bmp.tobytes().startswith(b"BM")
+    got = source(Item([bmp.tobytes()])).acquire(200, "grayscale", False)
+    assert got[0].startswith(wia_source._PNG_SIGNATURE)
+    assert (cv2.imdecode(np.frombuffer(got[0], np.uint8),
+                         cv2.IMREAD_GRAYSCALE) == 77).all()
+
+
+def test_garbage_image_data_is_a_clear_error():
+    with pytest.raises(ScannerUnavailable, match="unreadable image"):
+        source(Item([b"not an image"])).acquire(200, "grayscale", False)

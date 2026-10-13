@@ -59,6 +59,25 @@ def _hresult(exc: Exception) -> int | None:
     return None if code is None else code & 0xFFFFFFFF
 
 
+_PNG_SIGNATURE = bytes([0x89]) + b"PNG" + bytes([0x0D, 0x0A, 0x1A, 0x0A])
+
+
+def _as_png(data: bytes) -> bytes:
+    """Some drivers (the Kodak S2050's) hand back BMP data whatever format
+    was requested; re-encode so every page is a real, compact PNG."""
+    if data.startswith(_PNG_SIGNATURE):
+        return data
+    import cv2
+    import numpy as np
+    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
+    if img is None:
+        raise ScannerUnavailable("The scanner returned an unreadable image.")
+    ok, buf = cv2.imencode(".png", img)
+    if not ok:
+        raise ScannerUnavailable("The scanned page could not be encoded.")
+    return buf.tobytes()
+
+
 def _even(pixels: float) -> int:
     """The scan-area properties only accept even pixel counts."""
     return round(pixels / 2) * 2
@@ -144,7 +163,7 @@ class WIASource(BaseScannerSource):
                 with tempfile.TemporaryDirectory() as td:
                     out = Path(td) / "scan.png"
                     image.SaveFile(str(out))
-                    data = out.read_bytes()
+                    data = _as_png(out.read_bytes())
             except Exception as e:
                 if _hresult(e) == _PAPER_EMPTY:
                     if pages:
@@ -160,18 +179,20 @@ class WIASource(BaseScannerSource):
         return pages
 
     def _configure(self, dpi: int, color: str, duplex: bool) -> None:
-        """Feeder (and duplex if asked) for all pages; fall back to the
-        feeder alone when the device refuses the duplex flag."""
+        """Feeder (and duplex if asked), one sheet per Transfer. The Kodak
+        S2050 driver rejects Pages=0 ("all") with 'parameter is incorrect',
+        so we ask for one page per call and loop until the feeder is empty.
+        Falls back to the feeder alone when the device refuses duplex."""
         props = self._device.Properties
         mode = FEEDER | (DUPLEX if duplex else 0)
         try:
             _set_props(props, {WIA_DPS_DOCUMENT_HANDLING_SELECT: mode,
-                               WIA_DPS_PAGES: 0})
+                               WIA_DPS_PAGES: 1})
         except Exception:
             if not duplex:
                 raise
             _set_props(props, {WIA_DPS_DOCUMENT_HANDLING_SELECT: FEEDER,
-                               WIA_DPS_PAGES: 0})
+                               WIA_DPS_PAGES: 1})
 
     @staticmethod
     def _describe(exc: Exception, prefix: str) -> str:
