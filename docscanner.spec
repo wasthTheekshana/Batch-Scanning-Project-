@@ -5,6 +5,8 @@
 import glob
 import os
 
+from PyInstaller.utils.hooks import collect_submodules
+
 block_cipher = None
 
 datas = [
@@ -33,8 +35,12 @@ a = Analysis(
     pathex=[],
     binaries=binaries,
     datas=datas,
+    # reportlab loads its barcode symbologies by name at run time, which
+    # PyInstaller cannot see: without these, "Print cover sheets" fails with
+    # "No module named reportlab.graphics.barcode.code93" in the built exe.
     hiddenimports=["pytesseract", "pyzbar.pyzbar", "imagehash", "qrcode",
-                  "qrcode.image.pil"],
+                  "qrcode.image.pil", "pythoncom", "pywintypes"]
+                 + collect_submodules("reportlab.graphics.barcode"),
     hookspath=[],
     runtime_hooks=[],
     excludes=["tkinter"],

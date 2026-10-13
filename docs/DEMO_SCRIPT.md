@@ -17,8 +17,11 @@ every step recorded.
 2. `python scripts/demo_setup.py --reset` creates a clean **demo copy** of the
    app's data (`%USERPROFILE%\DOKScannerDemo`, separate from real data), with
    the login `admin` / `admin` and the **Bank - Customer file** project.
-3. Rebuild the exe (`pyinstaller docscanner.spec`) and start the demo with
-   `scripts\launch_demo.bat`. Check it opens and signs in.
+3. Rebuild the exe (`pyinstaller docscanner.spec`), then run
+   `dist\DOKScanner.exe --selftest` and open `selftest.txt` in the data folder:
+   every line must say `ok` (it catches parts missing from the build before a
+   button is clicked). Start the demo with `scripts\launch_demo.bat`; check it
+   opens and signs in.
 4. **Rehearse with the scanner** (once, with the exact paper you will use):
    print `demo_kit/REHEARSAL_print_me.pdf` one-sided at 100% (7 sheets), load
    the feeder in that order, run `python scripts/rehearsal.py scan`. All checks

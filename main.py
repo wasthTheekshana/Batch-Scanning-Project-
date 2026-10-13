@@ -35,6 +35,83 @@ from ui.main_window import MainWindow
 APP_NAME = "DOKScanner"
 
 
+def selftest() -> int:
+    """`DOKScanner.exe --selftest`: import every module the app loads lazily
+    and use the libraries that need native parts, then write what happened to
+    selftest.txt in the data folder. A packaged build can fail only when a
+    button is clicked; this finds that without clicking."""
+    import tempfile
+    root = data_dir()
+    lines, failed = [], False
+
+    def check(name, work):
+        nonlocal failed
+        try:
+            lines.append(f"ok    {name}: {work() or ''}".rstrip())
+        except Exception as e:                          # report, never raise
+            failed = True
+            lines.append(f"FAIL  {name}: {type(e).__name__}: {e}")
+
+    def modules():
+        import importlib
+        for name in ("ui.cover_sheet_dialog", "ui.document_type_dialog",
+                     "ui.zone_dialog", "ui.workflow_designer", "ui.custody_panel",
+                     "ui.reports_panel", "ui.admin_panel", "ui.central_tab",
+                     "scanning.cover_sheets", "scanning.wia_source",
+                     "ocr.comb", "ocr.doc_types", "separation.barcode"):
+            importlib.import_module(name)
+        return "all imported"
+
+    def cover_sheet():
+        from scanning.cover_sheets import write_cover_sheets
+        out = Path(tempfile.mkdtemp()) / "t.pdf"
+        write_cover_sheets(["CIF-1"], out)
+        return f"{out.stat().st_size} bytes"
+
+    def barcode_roundtrip():
+        import cv2
+        import fitz
+        import numpy as np
+        from scanning.cover_sheets import write_cover_sheets
+        from separation.barcode import decode_barcodes
+        out = Path(tempfile.mkdtemp()) / "t.pdf"
+        write_cover_sheets(["CIF-100234"], out)
+        with fitz.open(str(out)) as pdf:
+            pix = pdf[0].get_pixmap(dpi=200, colorspace=fitz.csGRAY)
+        page = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width)
+        return str([b["value"] for b in decode_barcodes(page)])
+
+    def ocr():
+        import numpy as np
+        from ocr.tesseract_engine import is_available, ocr_page
+        if not is_available():
+            raise RuntimeError("Tesseract not found")
+        ocr_page(np.full((60, 200), 255, np.uint8))
+        return "tesseract runs"
+
+    def scanner():
+        from scanning.sources import available_sources
+        return str(available_sources())
+
+    def dialog():
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance() or QApplication([])
+        from ui.cover_sheet_dialog import CoverSheetDialog
+        dlg = CoverSheetDialog()
+        dlg.ids.setPlainText("A-1" + chr(10) + "A-2")
+        return dlg.summary.text()
+
+    for name, work in (("modules", modules), ("cover sheet PDF", cover_sheet),
+                       ("barcode round trip", barcode_roundtrip),
+                       ("OCR engine", ocr), ("scanners", scanner),
+                       ("cover sheet dialog", dialog)):
+        check(name, work)
+    text = chr(10).join(lines) + chr(10)
+    (root / "selftest.txt").write_text(text, encoding="utf-8")
+    print(text)
+    return 1 if failed else 0
+
+
 def data_dir() -> Path:
     root = Path(os.environ.get("LOCALAPPDATA", Path.home())) / APP_NAME
     root.mkdir(parents=True, exist_ok=True)
@@ -75,6 +152,8 @@ def build_default_project(pm: ProfileManager, db: Database,
 
 
 def main() -> int:
+    if "--selftest" in sys.argv:
+        return selftest()
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
     root = data_dir()
@@ -96,6 +175,11 @@ def main() -> int:
     app.setApplicationName(APP_NAME)
     from ui.theme import apply_theme
     apply_theme(app)
+
+    from PyQt6.QtWidgets import QMessageBox
+    from core.crash_guard import install as install_crash_guard
+    install_crash_guard(root / "logs", show=lambda title, text: QMessageBox.critical(
+        None, title, text))
 
     login = LoginDialog(db)
     if login.exec() != login.DialogCode.Accepted:
