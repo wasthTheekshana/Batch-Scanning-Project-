@@ -36,6 +36,7 @@ class PageRecord:
     barcodes: list = field(default_factory=list)
     is_blank: bool = False
     is_custody_label: bool = False
+    doc_type: str | None = None          # project document type of this page
     qc_score: int | None = None
     qc_grade: str = ""                   # PASS / WARN / FAIL
     qc_detail: dict = field(default_factory=dict)

@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QMainWindow, QMessageBox,
 from core.project_runtime import ProjectUnavailable
 from core.project_store import load_config, readable_projects
 from core.rbac import Session
+from ocr.doc_types import all_zones
 from ui.admin_panel import AdminPanel
 from ui.image_viewer import ImageViewer
 from ui.index_editor import IndexEditor
@@ -120,11 +121,12 @@ class MainWindow(QMainWindow):
         readable, _unreadable = readable_projects(db.list_projects("active"))
         if readable:
             cfg = readable[0][1]
-            zones = cfg.get("ocr", {}).get("zones", [])
+            zones = all_zones(cfg.get("ocr", {}))
             ocr_mode = cfg.get("ocr", {}).get("mode", "zone")
         self.index_editor = IndexEditor(
             db, zones, audit, user, full_page=(ocr_mode == "full_page"),
-            zones_for_project=self._zones_for_project)
+            zones_for_project=self._zones_for_project,
+            ocr_cfg_for_project=self._ocr_cfg_for_project)
         self.tabs.addTab(self.index_editor, icon("fa5s.tags"), "Index")
 
         # Job monitor tab
@@ -195,14 +197,19 @@ class MainWindow(QMainWindow):
         if cfg is None:
             return None
         ocr = cfg.get("ocr", {})
-        return ocr.get("zones", []), ocr.get("mode", "zone") == "full_page"
+        return all_zones(ocr), ocr.get("mode", "zone") == "full_page"
+
+    def _ocr_cfg_for_project(self, project_id: str):
+        row = self.db.get_project(project_id)
+        cfg = load_config(row) if row is not None else None
+        return None if cfg is None else cfg.get("ocr", {})
 
     def _active_zones(self) -> list:
         for row in self.db.list_projects("active"):
             cfg = load_config(row)
             if cfg is None:
                 continue
-            zones = cfg.get("ocr", {}).get("zones", [])
+            zones = all_zones(cfg.get("ocr", {}))
             if zones:
                 return zones
         return []
@@ -216,7 +223,7 @@ class MainWindow(QMainWindow):
             cfg = load_config(row)
             if cfg is None:
                 continue
-            zones = cfg.get("ocr", {}).get("zones", [])
+            zones = all_zones(cfg.get("ocr", {}))
             if zones:
                 return cfg.get("ocr", {}).get("mode", "zone")
         return "zone"

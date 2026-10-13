@@ -31,6 +31,7 @@ from imaging.crop import auto_crop
 from imaging.deskew import deskew
 from imaging.enhance import apply_profile
 from qc.pipeline import run_qc
+from ocr.doc_types import inherit_types, page_zones
 from separation.barcode import decode_barcodes, filter_barcodes
 from separation.rule_engine import RuleEngine, RuleSetError
 from separation.splitter import split_documents
@@ -328,7 +329,9 @@ class Pipeline:
         cropped and re-OCR'd) or full-page extraction (label-anchored
         regex against the page text already OCR'd for record.ocr_text)."""
         ocr_cfg = rt.profile.get("ocr", {})
-        zones = ocr_cfg.get("zones", [])
+        # a page's zones are the common ones plus those of its document type
+        # (NIC, application, ...); the type also labels the page in the PDF
+        zones, record.doc_type = page_zones(ocr_cfg, record.ocr_text)
         if not zones or not rt.profile.get("features", {}).get("auto_index"):
             return
         threshold = float(ocr_cfg.get("confidence_threshold", 0.75))
@@ -443,6 +446,9 @@ class Pipeline:
             doc = item["doc"]
             rt = self._rt(item["batch_id"])
             records = [p["record"] for p in doc["pages"]]
+            for r, name in zip(records, inherit_types(
+                    [r.doc_type for r in records])):
+                r.doc_type = name
             worst = min((r.qc_score for r in records), default=100)
             grades = {r.qc_grade for r in records}
             # auto-index: merge page zone fields (first non-empty wins)
@@ -472,6 +478,10 @@ class Pipeline:
                                            | {"low_confidence_index"})
             if doc.get("barcode"):
                 document["extracted_fields"]["barcode"] = doc["barcode"]
+            found_types = list(dict.fromkeys(
+                r.doc_type for r in records if r.doc_type))
+            if found_types:
+                document["extracted_fields"]["doc_types"] = ", ".join(found_types)
 
             # duplicate detection: MD5 + pHash of first page, barcode
             # cross-check against previously processed documents
@@ -485,8 +495,9 @@ class Pipeline:
                     log.error("rule set invalid, skipping rules: %s", e)
 
             page_nos = [p["page_no"] for p in doc["pages"]]
-            qc_detail = {"pages": {str(r.job.page_no): r.qc_detail
-                                   for r in records},
+            qc_detail = {"pages": {str(r.job.page_no): (
+                {**r.qc_detail, "doc_type": r.doc_type} if r.doc_type
+                else r.qc_detail) for r in records},
                          "flags": document["flags"]}
             if fingerprint_detail:
                 qc_detail["fingerprint"] = fingerprint_detail
@@ -537,7 +548,8 @@ class Pipeline:
                    "date": __import__("datetime").datetime.now().strftime("%Y%m%d"),
                    "fields": document["extracted_fields"],
                    "output_folder": document.get("output_folder", ""),
-                   "dpi": rt.profile.get("scanner", {}).get("dpi", 300)}
+                   "dpi": rt.profile.get("scanner", {}).get("dpi", 300),
+                   "page_types": [r.doc_type for r in records]}
             images = [r.working_path for r in records]
             texts = [r.ocr_text for r in records]
             out_path = self.export_fn(images, export_cfg, ctx, texts)
@@ -640,7 +652,8 @@ class Pipeline:
                           page_no=int(page_no),
                           image_path=info.get("original_path", working))
             records.append(PageRecord(job=job, working_path=working,
-                                      ocr_text=info.get("ocr_text", "")))
+                                      ocr_text=info.get("ocr_text", ""),
+                                      doc_type=info.get("doc_type")))
         if not records:
             return row, [], REASON_NO_PAGE_IMAGES
         return row, records, ""

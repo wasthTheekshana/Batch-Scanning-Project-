@@ -25,8 +25,12 @@ class IndexEditor(QWidget):
 
     def __init__(self, db, zones: list[dict], audit=None,
                  current_user=None, parent=None, full_page: bool = False,
-                 zones_for_project=None):
+                 zones_for_project=None, ocr_cfg_for_project=None):
         super().__init__(parent)
+        # project_id -> the project's ocr config (document types), so each
+        # page is extracted with the zones of its own document type
+        self._ocr_cfg_for_project = ocr_cfg_for_project
+        self._ocr_cfg: dict | None = None
         # project_id -> (zones, full_page) or None; lets each document be
         # indexed with ITS project's zones, not the first project's
         self._zones_for_project = zones_for_project
@@ -188,6 +192,8 @@ class IndexEditor(QWidget):
         zones, full_page = self._project_zones(doc["project_id"])
         if zones != self.zones or full_page != self.full_page:
             self.set_zones(zones, full_page)
+        self._ocr_cfg = (self._ocr_cfg_for_project(doc["project_id"])
+                         if self._ocr_cfg_for_project else None)
         self.title.setText(f"Document {document_id[:8]} · "
                            f"pages {doc['page_range']} · "
                            f"{doc['validation_status']}")
@@ -217,18 +223,23 @@ class IndexEditor(QWidget):
             import cv2
 
             from ocr.tesseract_engine import TesseractNotFound, ocr_page
+            from ocr.doc_types import document_types, page_zones
             from ocr.zone_extractor import (extract_fields,
                                             extract_fields_from_text)
+            typed = bool(self._ocr_cfg and document_types(self._ocr_cfg))
             for page_no, path in page_paths:
                 image = cv2.imread(path, cv2.IMREAD_UNCHANGED)
                 if image is None:
                     continue
+                result = ocr_page(image) if (self.full_page or typed) else None
+                zones = self.zones
+                if typed:      # this page's zones: common + its document type
+                    zones, _name = page_zones(self._ocr_cfg, result.text)
                 if self.full_page:
-                    result = ocr_page(image)
                     fields = extract_fields_from_text(
-                        result.text, result.confidence, self.zones)
+                        result.text, result.confidence, zones)
                 else:
-                    fields = extract_fields(image, self.zones)
+                    fields = extract_fields(image, zones)
                 for name, fv in fields.items():
                     if fv.value and name not in best:
                         best[name] = (fv.value, fv.confidence, page_no)

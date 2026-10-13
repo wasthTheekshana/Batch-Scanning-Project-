@@ -75,6 +75,18 @@
         "lang": {"type": "string"},
         "mode": {"type": "string", "enum": ["zone", "full_page"]},
         "zones": {"type": "array"},
+        "document_types": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "regex": {"type": "string"},
+              "zones": {"type": "array"}
+            }
+          }
+        },
         "confidence_threshold": {"type": "number", "minimum": 0, "maximum": 1}
       }
     },

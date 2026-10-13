@@ -427,3 +427,41 @@ def test_unknown_project_keeps_the_current_zones(qtbot, env):
     qtbot.addWidget(editor)
     editor.doc_list.setCurrentRow(0)
     assert list(editor._inputs) == ["invoice_no"]
+
+
+def test_auto_extract_uses_each_pages_own_document_type(qtbot, env, monkeypatch, tmp_path):
+    """A customer file holds an ID card page then an application page: the
+    NIC zones are read from the first, the application zones from the second."""
+    db, audit, tmp = env
+    pages = {}
+    for no in (1, 2):
+        path = tmp / f"typed_{no}.png"
+        cv2.imwrite(str(path), make_text_page())
+        pages[str(no)] = {"original_path": str(path), "working_path": str(path)}
+    db.insert_document("d3", "b1", "p1", page_range="1-2", qc_score=90,
+                       validation_status="auto_approved", extracted_fields={},
+                       qc_detail={"flags": [], "pages": pages})
+    ocr_cfg = {"zones": [], "document_types": [
+        {"name": "NIC", "regex": "identity card",
+         "zones": [{"name": "nic_number", "regex": r"ID No:\s*(\d{12})"}]},
+        {"name": "App", "regex": "application form",
+         "zones": [{"name": "application_number",
+                    "regex": r"Application No:\s*(APP-\d+)"}]}]}
+    from ocr.doc_types import all_zones
+    texts = iter(["NATIONAL IDENTITY CARD ID No: 199012345678 Application No: APP-9",
+                  "LOAN APPLICATION FORM Application No: APP-55001"])
+    monkeypatch.setattr("ocr.tesseract_engine.ocr_page",
+                        lambda img, lang="eng": OCRResult(text=next(texts),
+                                                          confidence=0.9))
+    editor = IndexEditor(
+        db, [], audit, ADMIN, full_page=True,
+        zones_for_project=lambda pid: (all_zones(ocr_cfg), True),
+        ocr_cfg_for_project=lambda pid: ocr_cfg)
+    qtbot.addWidget(editor)
+    editor.load_document("d3")
+    assert list(editor._inputs) == ["nic_number", "application_number"]
+    editor.auto_extract()
+    assert editor._inputs["nic_number"].text() == "199012345678"
+    # page 1 also contains "Application No: APP-9", but it is an ID-card page:
+    # the application zone only runs on the application page
+    assert editor._inputs["application_number"].text() == "APP-55001"
