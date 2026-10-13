@@ -26,7 +26,7 @@ import cv2
 
 from core.models import PageRecord, ScanJob, new_id
 from core.project_runtime import ProjectRuntime, ProjectUnavailable
-from imaging.blank_detect import is_blank
+from imaging.blank_detect import ink_density, is_blank
 from imaging.crop import auto_crop
 from imaging.deskew import deskew
 from imaging.enhance import apply_profile
@@ -267,6 +267,7 @@ class Pipeline:
             record = PageRecord(job=job)
             rt = self._rt(job.batch_id, job.project_id)
             sep_cfg = rt.profile.get("separation", {})
+            record.ink_density = ink_density(image)
             record.is_blank = is_blank(
                 image, sep_cfg.get("blank_threshold", 0.02))
             # NOTE: the automatic custody "scanning" checkpoint (below) only
@@ -304,12 +305,15 @@ class Pipeline:
     def _ocr_worker(self) -> None:
         def handle(record: PageRecord):
             rt = self._rt(record.job.batch_id, record.job.project_id)
-            # a "blank" page is only a separator (and so only skipped) in a
-            # project that separates by blank pages; elsewhere a sparse page
-            # (back of an ID card, a short form) is real content to index
-            drops_blanks = "blank_page" in rt.profile.get(
-                "separation", {}).get("strategy", [])
-            if self.ocr_fn is not None and not (record.is_blank and drops_blanks):
+            # nothing to read on a page the project will drop anyway (a blank
+            # separator, or an empty back when empty pages are discarded);
+            # a merely sparse page (ID card, short note) is real content
+            separation = rt.profile.get("separation", {})
+            skip_ocr = ((record.is_blank
+                         and "blank_page" in separation.get("strategy", []))
+                        or (record.is_empty
+                            and bool(separation.get("drop_blank_pages"))))
+            if self.ocr_fn is not None and not skip_ocr:
                 image = cv2.imread(record.job.image_path, cv2.IMREAD_UNCHANGED)
                 result = self.ocr_fn(image)
                 if result is not None:
@@ -374,7 +378,7 @@ class Pipeline:
                                record.job.project_id).profile.get(
                 "enhancement_profile", {})
             image = cv2.imread(record.job.image_path, cv2.IMREAD_UNCHANGED)
-            if not record.is_blank:
+            if not record.is_empty:
                 if profile.get("deskew"):
                     image, _ = deskew(image)
                 if profile.get("crop"):
@@ -392,7 +396,7 @@ class Pipeline:
         def handle(record: PageRecord):
             rt = self._rt(record.job.batch_id, record.job.project_id)
             qc_cfg = rt.profile.get("qc", {"enabled": False})
-            if record.is_blank:
+            if record.is_empty:
                 record.qc_score, record.qc_grade = 100, "PASS"
             else:
                 image = cv2.imread(record.working_path, cv2.IMREAD_UNCHANGED)
@@ -430,17 +434,36 @@ class Pipeline:
             pages = sorted(state["pages"], key=lambda r: r.job.page_no)
 
         page_dicts = [{"page_no": r.job.page_no, "image": None,
-                       "is_blank": r.is_blank, "barcodes": r.barcodes,
+                       "is_blank": r.is_blank, "ink_density": r.ink_density,
+                       "barcodes": r.barcodes,
                        "is_custody_label": r.is_custody_label,
                        "ocr_text": r.ocr_text,
                        "record": r} for r in pages]
         rt = self._rt(batch_id, record.job.project_id)
         docs = split_documents(page_dicts, rt.profile.get("separation", {}))
+        self._audit_excluded_pages(batch_id, page_dicts, docs)
         self.db.update_batch_status(batch_id, "qc_pending", len(pages))
         self._emit("separation", "done", batch_id=batch_id,
                    documents=len(docs))
         for doc in docs:
             self.rule_q.put({"batch_id": batch_id, "doc": doc})
+
+    def _audit_excluded_pages(self, batch_id: str, page_dicts: list,
+                              docs: list) -> None:
+        """Pages that ended up in no document (cover sheets, custody labels,
+        discarded blank pages) are recorded, so a page is never dropped
+        without a trace."""
+        kept = {p["page_no"] for d in docs for p in d["pages"]}
+        left_out = [p for p in page_dicts if p["page_no"] not in kept]
+        if not left_out or self.audit is None:
+            return
+        reason = {}
+        for p in left_out:
+            reason[p["page_no"]] = ("custody_label" if p["is_custody_label"]
+                                    else "separator" if p["barcodes"]
+                                    else "blank")
+        self.audit.log("pages_excluded", "system", batch_id=batch_id,
+                       count=len(left_out), reasons=reason)
 
     def _rule_worker(self) -> None:
         def handle(item: dict):
@@ -599,7 +622,7 @@ class Pipeline:
         sets duplicate_of + holds the document for review."""
         if not rt.profile.get("features", {}).get("duplicate_check"):
             return None
-        first = next((r for r in records if not r.is_blank
+        first = next((r for r in records if not r.is_empty
                       and r.working_path), None)
         if first is None:
             return None

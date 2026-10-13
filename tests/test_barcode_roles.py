@@ -135,7 +135,8 @@ def test_a_page_without_a_barcode_returns_nothing():
 
 
 # -- through the real pipeline ---------------------------------------------------
-def _run(tmp_path, db, separation, barcodes_by_page, specs, monkeypatch):
+def _run(tmp_path, db, separation, barcodes_by_page, specs, monkeypatch,
+         sparse_pages=()):
     """Run a batch with a fake barcode decoder: barcodes_by_page maps a
     page number to the barcode values 'found' on it. Each page file is
     stamped with its number so the fake works whatever order the pipeline
@@ -151,6 +152,9 @@ def _run(tmp_path, db, separation, barcodes_by_page, specs, monkeypatch):
         j.batch_id = "batch-1"
         img = cv2.imread(j.image_path, cv2.IMREAD_UNCHANGED)
         img[5, 5] = 100 + j.page_no
+        if j.page_no in sparse_pages:      # a short note: ~1.6% ink, not empty
+            h, w = img.shape[:2]
+            img[h // 2:h // 2 + int(h * 0.016), w // 4:w // 4 + w // 2] = 0
         cv2.imwrite(j.image_path, img)
 
     def fake_decode(image):
@@ -209,3 +213,128 @@ def test_a_barcode_that_does_not_match_the_pattern_does_not_split(tmp_path, db, 
                 {1: ["CIF-1"], 2: ["8901234567890"], 4: ["CIF-2"]},
                 ["text", "text", "text", "text"], monkeypatch)
     assert _page_counts(docs) == [1, 3]          # page 2's barcode ignored
+
+
+# -- discarding blank pages without splitting -------------------------------------------
+def test_blank_pages_are_discarded_without_splitting_the_document():
+    docs = split_documents(
+        [page(1, "CIF-1"), page(2, text="NIC"), page(3, blank=True),
+         page(4, text="APP"), page(5, blank=True), page(6, text="LETTER")],
+        {"strategy": ["barcode"], "barcode_role": "cover_sheet",
+         "drop_blank_pages": True})
+    assert [numbers(d) for d in docs] == [[2, 4, 6]]
+    assert docs[0]["barcode"] == "CIF-1"
+
+
+def test_without_the_option_blank_pages_stay_in_the_document():
+    docs = split_documents(
+        [page(1, "CIF-1"), page(2, text="NIC"), page(3, blank=True)],
+        {"strategy": ["barcode"], "barcode_role": "cover_sheet"})
+    assert [numbers(d) for d in docs] == [[2, 3]]
+
+
+def test_the_blank_page_strategy_still_splits_when_both_are_set():
+    docs = split_documents(
+        [page(1, text="A"), page(2, blank=True), page(3, text="B")],
+        {"strategy": ["blank_page"], "drop_blank_pages": True})
+    assert [numbers(d) for d in docs] == [[1], [3]]
+
+
+def test_a_page_with_a_barcode_is_never_dropped_as_blank():
+    docs = split_documents(
+        [page(1, "CIF-1", blank=True), page(2, text="NIC")],
+        {"strategy": ["barcode"], "drop_blank_pages": True})
+    assert [numbers(d) for d in docs] == [[1, 2]]
+
+
+def test_dropping_blanks_keeps_fixed_page_counts_to_real_pages():
+    docs = split_documents(
+        [page(1, text="a"), page(2, blank=True), page(3, text="b"),
+         page(4, blank=True), page(5, text="c"), page(6, blank=True)],
+        {"strategy": ["fixed_pages"], "fixed_pages": 2, "drop_blank_pages": True})
+    assert [numbers(d) for d in docs] == [[1, 3], [5]]
+
+
+def test_a_batch_of_only_blank_pages_makes_no_documents():
+    assert split_documents([page(1, blank=True), page(2, blank=True)],
+                           {"strategy": ["barcode"], "drop_blank_pages": True}) == []
+
+
+def test_through_the_pipeline_the_blank_backs_are_not_exported(tmp_path, db, monkeypatch):
+    docs = _run(tmp_path, db,
+                {"strategy": ["barcode"], "barcode_role": "cover_sheet",
+                 "drop_blank_pages": True},
+                {1: ["CIF-1"]},
+                ["text", "text", "blank", "text", "blank"], monkeypatch)
+    assert _page_counts(docs) == [2]               # only the two printed pages
+
+
+def page_with_ink(no, density, **kw):
+    p = page(no, **kw)
+    p["is_blank"] = density < 0.02            # what the 2% separator test says
+    p["ink_density"] = density
+    return p
+
+
+def test_a_sparse_page_is_kept_but_an_empty_one_is_discarded():
+    docs = split_documents(
+        [page_with_ink(1, 0.0005), page_with_ink(2, 0.016, text="note"),
+         page_with_ink(3, 0.0001), page_with_ink(4, 0.08, text="form")],
+        {"strategy": ["barcode"], "drop_blank_pages": True})
+    assert [numbers(d) for d in docs] == [[2, 4]]
+
+
+def test_the_discard_limit_can_be_changed():
+    pages = [page_with_ink(1, 0.01, text="x"), page_with_ink(2, 0.08, text="y")]
+    strict = {"strategy": ["barcode"], "drop_blank_pages": True}
+    assert [numbers(d) for d in split_documents(pages, strict)] == [[1, 2]]
+    loose = dict(strict, drop_blank_threshold=0.02)
+    assert [numbers(d) for d in split_documents(pages, loose)] == [[2]]
+
+
+def test_through_the_pipeline_a_sparse_page_is_kept_and_read(tmp_path, db, monkeypatch):
+    docs = _run(tmp_path, db,
+                {"strategy": ["barcode"], "barcode_role": "cover_sheet",
+                 "drop_blank_pages": True},
+                {1: ["CIF-1"]},
+                ["text", "text", "blank", "text", "blank"], monkeypatch,
+                sparse_pages=(4,))
+    assert _page_counts(docs) == [2]               # page 2 and the sparse page 4
+
+
+def test_every_page_left_out_of_a_document_is_audited_with_its_reason():
+    import types
+
+    from core.job_queue import Pipeline
+
+    class Audit:
+        def __init__(self):
+            self.events = []
+
+        def log(self, action, user, **detail):
+            self.events.append((action, user, detail))
+
+    audit = Audit()
+    page_dicts = [
+        {"page_no": 1, "barcodes": [{"value": "CIF-1"}], "is_custody_label": False},
+        {"page_no": 2, "barcodes": [], "is_custody_label": False},
+        {"page_no": 3, "barcodes": [], "is_custody_label": False},     # blank back
+        {"page_no": 4, "barcodes": [{"value": "DOK-BUNDLE-X"}], "is_custody_label": True},
+    ]
+    docs = [{"pages": [page_dicts[1]], "barcode": "CIF-1"}]
+    Pipeline._audit_excluded_pages(types.SimpleNamespace(audit=audit), "b1",
+                                   page_dicts, docs)
+    action, user, detail = audit.events[0]
+    assert (action, user, detail["batch_id"], detail["count"]) == (
+        "pages_excluded", "system", "b1", 3)
+    assert detail["reasons"] == {1: "separator", 3: "blank", 4: "custody_label"}
+
+
+def test_nothing_is_audited_when_every_page_is_in_a_document():
+    import types
+
+    from core.job_queue import Pipeline
+    audit = types.SimpleNamespace(log=lambda *a, **k: (_ for _ in ()).throw(AssertionError))
+    pages = [{"page_no": 1, "barcodes": [], "is_custody_label": False}]
+    Pipeline._audit_excluded_pages(types.SimpleNamespace(audit=audit), "b1", pages,
+                                   [{"pages": pages, "barcode": None}])

@@ -46,6 +46,8 @@
         "barcode_role": {"type": "string",
                          "enum": ["first_page", "cover_sheet", "auto"]},
         "barcode_pattern": {"type": "string"},
+        "drop_blank_pages": {"type": "boolean"},
+        "drop_blank_threshold": {"type": "number", "minimum": 0, "maximum": 0.05},
         "cover_max_chars": {"type": "integer", "minimum": 0},
         "blank_threshold": {"type": "number", "minimum": 0, "maximum": 1},
         "fixed_pages": {"type": ["integer", "null"], "minimum": 1},

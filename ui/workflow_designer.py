@@ -283,6 +283,10 @@ class WorkflowDesigner(QWidget):
         self.fixed_pages.setSpecialValueText("(off)")
         self.fixed_pages.setEnabled(self.can_edit)
         fixed_row.addRow("Fixed pages per document", self.fixed_pages)
+        self.drop_blanks = QCheckBox(
+            "Discard blank pages (the empty back of a one-sided sheet)")
+        self.drop_blanks.setEnabled(self.can_edit)
+        fixed_row.addRow(self.drop_blanks)
         self.barcode_role = QComboBox()
         for label, key in BARCODE_ROLES:
             self.barcode_role.addItem(label, key)
@@ -646,6 +650,7 @@ class WorkflowDesigner(QWidget):
         self.barcode_role.setCurrentIndex(max(0, self.barcode_role.findData(
             cfg["separation"].get("barcode_role", "first_page"))))
         self.barcode_pattern.setText(cfg["separation"].get("barcode_pattern", ""))
+        self.drop_blanks.setChecked(bool(cfg["separation"].get("drop_blank_pages")))
         qc = cfg["qc"]
         self.qc_enabled.setChecked(qc["enabled"])
         for stage, cb in self.qc_stage_checks.items():
@@ -716,6 +721,10 @@ class WorkflowDesigner(QWidget):
             k for k, cb in self.strategy_checks.items() if cb.isChecked()]
         cfg["separation"]["fixed_pages"] = self.fixed_pages.value() or None
         cfg["separation"]["barcode_role"] = self.barcode_role.currentData()
+        if self.drop_blanks.isChecked():
+            cfg["separation"]["drop_blank_pages"] = True
+        else:
+            cfg["separation"].pop("drop_blank_pages", None)
         pattern = self.barcode_pattern.text().strip()
         if pattern:
             cfg["separation"]["barcode_pattern"] = pattern

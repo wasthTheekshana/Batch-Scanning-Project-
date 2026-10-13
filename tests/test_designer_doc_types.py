@@ -178,3 +178,13 @@ def test_choosing_text_patterns_overrides_a_region_project(qtbot):
     dlg = dialog(qtbot, doc_type=NIC, full_page=False)
     dlg.mode.setCurrentIndex(dlg.mode.findData("full_page"))
     assert dlg.full_page is True and dlg.build_type()["mode"] == "full_page"
+
+
+def test_drop_blank_pages_round_trips_through_save(qtbot, env):
+    d = designer(qtbot, env, separation={"strategy": ["barcode"], "drop_blank_pages": True})
+    assert d.drop_blanks.isChecked()
+    d.save()
+    assert env.pm.load(d.config["project_id"])["separation"]["drop_blank_pages"] is True
+    d.drop_blanks.setChecked(False)
+    d.save()
+    assert "drop_blank_pages" not in env.pm.load(d.config["project_id"])["separation"]

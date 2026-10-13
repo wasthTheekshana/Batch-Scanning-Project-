@@ -58,7 +58,8 @@ TEMPLATE = {
     "category": "Banking",
     "config": {
         "separation": {"strategy": ["barcode"], "barcode_role": "auto",
-                       "cover_max_chars": 40, "blank_threshold": 0.02},
+                       "cover_max_chars": 40, "blank_threshold": 0.02,
+                       "drop_blank_pages": True},
         "ocr": {"lang": "eng", "mode": "full_page", "confidence_threshold": 0.75,
                 "zones": [], "document_types": DOCUMENT_TYPES},
         "export": {"filename_template": "{barcode}_{counter:04d}"},

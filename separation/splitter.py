@@ -9,6 +9,10 @@ prepared by the pipeline:
      "is_blank": bool, "barcodes": [{"type","value","rect"}, ...],
      "ocr_text": str}
 
+separation.drop_blank_pages discards EMPTY pages (ink density under
+drop_blank_threshold, default 0.4%) without splitting; sparse pages are kept.
+Ignored when the blank_page strategy, which splits on blanks, is on.
+
 separation.barcode_role says what a barcode page is: "first_page" (default:
 the page is the document's first page and stays in it), "cover_sheet" (a
 separator sheet that labels the document but is not part of it) or "auto"
@@ -31,6 +35,21 @@ def split_documents(pages: list[dict], separation_cfg: dict,
     strategies = separation_cfg.get("strategy", [])
     if not pages:
         return []
+
+    if separation_cfg.get("drop_blank_pages") and "blank_page" not in strategies:
+        # discard EMPTY pages (the blank back of a one-sided sheet scanned
+        # duplex) WITHOUT splitting: unlike the blank_page strategy they are
+        # not separators. This is deliberately far stricter than the
+        # separator test: a sparse page (an ID card, a short note) is
+        # content, and losing it silently would be worse than keeping a
+        # blank. A page carrying a barcode is never dropped.
+        limit = float(separation_cfg.get("drop_blank_threshold", 0.004))
+        pages = [p for p in pages
+                 if not (p.get("is_blank") and (p.get("ink_density") is None
+                                               or p["ink_density"] < limit))
+                 or p.get("barcodes") or p.get("is_custody_label")]
+        if not pages:
+            return []
 
     if "fixed_pages" in strategies and separation_cfg.get("fixed_pages"):
         n = int(separation_cfg["fixed_pages"])
