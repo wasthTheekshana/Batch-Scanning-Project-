@@ -99,6 +99,12 @@ class MainWindow(QMainWindow):
             user is not None and user.can("scan.run"))
         self.new_batch_button.clicked.connect(self.open_scan_wizard)
         bar.addWidget(self.new_batch_button)
+        self.cover_sheets_button = QPushButton("  Print cover sheets")
+        self.cover_sheets_button.setIcon(icon("fa5s.barcode"))
+        self.cover_sheets_button.setEnabled(
+            user is not None and user.can("scan.run"))
+        self.cover_sheets_button.clicked.connect(self.open_cover_sheets)
+        bar.addWidget(self.cover_sheets_button)
         hint = QLabel("Import files, watch a hot folder, or acquire from "
                       "a TWAIN/WIA scanner.")
         mark(hint, "muted")
@@ -247,6 +253,10 @@ class MainWindow(QMainWindow):
     def sign_out(self) -> None:
         Session.logout(self.db)
         self.close()
+
+    def open_cover_sheets(self) -> None:
+        from ui.cover_sheet_dialog import CoverSheetDialog
+        CoverSheetDialog(self).exec()
 
     def open_scan_wizard(self) -> None:
         readable, unreadable = readable_projects(
