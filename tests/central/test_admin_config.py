@@ -443,3 +443,16 @@ def test_template_version_detail_unauthenticated_401(app):
 
     r = unauthenticated.get(f"/admin/templates/{pid()}/versions/1")
     assert r.status_code == 401
+
+
+def test_project_defaults_are_a_complete_valid_starting_point(admin_client):
+    defaults = admin_client.get("/admin/project-defaults").json()
+    assert "project_id" not in defaults and "name" not in defaults
+    r = admin_client.put("/admin/projects/00000000-0000-0000-0000-000000000001",
+                         json={"name": "From defaults", "config": defaults})
+    assert r.status_code == 200, r.text
+    assert r.json()["version"] == 1
+
+
+def test_project_defaults_need_a_login(client):
+    assert client.get("/admin/project-defaults").status_code == 401

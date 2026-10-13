@@ -53,6 +53,17 @@ def create_app(settings: Settings) -> FastAPI:
             content={"detail": errors}
         )
 
+    @app.middleware("http")
+    async def security_headers(request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        path = request.url.path
+        if path.startswith(("/admin", "/dashboard")):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.exception_handler(RecursionError)
     async def recursion_error_handler(request, exc):
         """Handle deeply nested JSON bodies that cause RecursionError during parsing."""
@@ -63,13 +74,15 @@ def create_app(settings: Settings) -> FastAPI:
 
     from central import (routes_admin_auth, routes_admin_config,
                          routes_admin_overview, routes_admin_pcs,
-                         routes_admin_users, routes_pcs)
+                         routes_admin_users, routes_dashboard,
+                         routes_pcs)
     app.include_router(routes_admin_auth.router)
     app.include_router(routes_admin_users.router)
     app.include_router(routes_admin_overview.router)
     app.include_router(routes_admin_pcs.router)
     app.include_router(routes_admin_config.router)
     app.include_router(routes_pcs.router)
+    app.include_router(routes_dashboard.router)
 
     @app.get("/healthz")
     def healthz():

@@ -123,8 +123,11 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/me")
-def me(user: AdminUser = Depends(require_admin)):
-    return {"username": user.username, "role": user.role}
+def me(request: Request, user: AdminUser = Depends(require_admin)):
+    # the token lets a reloaded page (same session cookie, fresh JS) keep
+    # making changes; it is only readable same-origin (no CORS is enabled)
+    return {"username": user.username, "role": user.role,
+            "csrf_token": request.session.get("csrf")}
 
 
 @router.post("/logout", status_code=204,

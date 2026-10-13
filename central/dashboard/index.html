@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DOK Scanner Central Admin</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/dashboard/style.css">
+</head>
+<body>
+  <header class="top" id="top" hidden>
+    <div class="brand">DOK Scanner <span>Central admin</span></div>
+    <nav id="nav">
+      <a href="#/overview" data-view="overview">Overview</a>
+      <a href="#/pcs" data-view="pcs">PCs</a>
+      <a href="#/projects" data-view="projects">Projects</a>
+      <a href="#/templates" data-view="templates">Templates</a>
+      <a href="#/admins" data-view="admins">Admins</a>
+      <a href="#/audit" data-view="audit">Audit log</a>
+      <a href="#/settings" data-view="settings">Settings</a>
+    </nav>
+    <div class="who">
+      <span id="who-name"></span>
+      <button type="button" id="change-password" class="link">Change password</button>
+      <button type="button" id="sign-out" class="link">Sign out</button>
+    </div>
+  </header>
+
+  <section id="login" class="login" hidden>
+    <form id="login-form" class="card">
+      <h1>Central admin</h1>
+      <label>Username <input id="login-user" autocomplete="username" required maxlength="100"></label>
+      <label>Password <input id="login-pass" type="password" autocomplete="current-password" required maxlength="200"></label>
+      <p id="login-error" class="error" role="alert"></p>
+      <button type="submit" class="primary">Sign in</button>
+    </form>
+  </section>
+
+  <main id="view" hidden></main>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <dialog id="dialog"></dialog>
+  <noscript><p class="error">This page needs JavaScript.</p></noscript>
+  <script src="/dashboard/app.js"></script>
+</body>
+</html>

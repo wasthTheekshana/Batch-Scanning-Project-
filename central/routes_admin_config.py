@@ -15,7 +15,8 @@ from central.models import (AdminUser, ConfigVersion, Pc, PcAssignment, Project,
                             Template)
 from central.settings_store import get_poll_interval, set_poll_interval
 from central.versioning import save_version
-from core.profile_manager import ProfileManager, ProjectConfigError
+from core.profile_manager import (DEFAULT_PROJECT, ProfileManager,
+                                  ProjectConfigError)
 
 router = APIRouter(prefix="/admin", tags=["admin-config"],
                    dependencies=[Depends(require_admin),
@@ -88,6 +89,16 @@ def put_project(body: ProjectIn, project_id: ProjectId,
                 # Retry from the top of the loop
     except RecursionError:
         raise HTTPException(422, "config nested too deeply")
+
+
+@router.get("/project-defaults")
+def project_defaults():
+    """A complete, valid starting configuration for a new project (the
+    admin fills in what differs; identity fields are set on save)."""
+    config = json.loads(json.dumps(DEFAULT_PROJECT))
+    for key in ("project_id", "name", "created", "cloned_from"):
+        config.pop(key, None)
+    return config
 
 
 @router.get("/projects")

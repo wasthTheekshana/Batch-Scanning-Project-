@@ -82,3 +82,39 @@ Run behind a reverse proxy that terminates TLS. Do not expose uvicorn directly.
 - `audit_events` grows by one row per PC poll (default every 10 minutes);
   plan retention before large fleets.
 - A project pushed to "all PCs" reaches only PCs that exist at that moment.
+
+
+## Admin dashboard
+
+Open `/dashboard` (the root `/` redirects there) and sign in with an admin
+account. The dashboard is three static files in `central/dashboard/`
+(`index.html`, `app.js`, `style.css`; ship the folder with the service). It has
+no build step and loads nothing from other sites; every response carries a strict
+Content-Security-Policy (`default-src 'none'`, scripts and styles from the
+service only), `X-Frame-Options: DENY`, `nosniff`, and admin pages are never cached.
+
+Pages: Overview (PC and admin counts, PCs that stopped checking in, recent
+activity), PCs (register, enrollment code, rename, revoke key, delete),
+Projects and Templates (versions, JSON view and edit, assign or unassign PCs),
+Admins (create, disable/enable, unlock, reset password, sign out, sign
+everyone out), Audit log (filter by action or user, paged) and Settings
+(PC poll interval). Each admin changes their own password from the header.
+
+Try it locally with sample data: `python scripts/central_demo.py` (sign in as
+`admin` / `demo-admin-passphrase`).
+
+### Admin API added for the dashboard
+
+| Endpoint | Purpose |
+|---|---|
+| `GET/POST /admin/users` | list / create admins (password at least 12 characters) |
+| `POST /admin/users/{id}/disable` `enable` `unlock` | a disabled admin cannot sign in and is signed out; you cannot disable yourself or the last enabled admin |
+| `POST /admin/users/{id}/password` | reset another admin's password (signs them out) |
+| `POST /admin/users/{id}/revoke-sessions`, `POST /admin/users/revoke-all-sessions` | force sign-out |
+| `POST /admin/me/password` | change your own password (needs the current one) |
+| `PATCH /admin/pcs/{id}`, `DELETE /admin/pcs/{id}` | rename / delete a PC (and its assignments and codes) |
+| `GET /admin/audit` | audit log, newest first, `limit`, `before_id`, `action`, `actor` |
+| `GET /admin/audit/actions`, `GET /admin/overview` | filter list, dashboard summary |
+| `GET /admin/project-defaults` | a complete starting configuration for a new project |
+
+A real-browser test of the dashboard is in `scripts/dashboard_e2e/`.
