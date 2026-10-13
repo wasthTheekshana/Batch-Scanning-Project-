@@ -31,7 +31,7 @@ from imaging.crop import auto_crop
 from imaging.deskew import deskew
 from imaging.enhance import apply_profile
 from qc.pipeline import run_qc
-from ocr.doc_types import inherit_types, page_zones
+from ocr.doc_types import inherit_types, page_zone_groups
 from separation.barcode import decode_barcodes, filter_barcodes
 from separation.rule_engine import RuleEngine, RuleSetError
 from separation.splitter import split_documents
@@ -330,26 +330,27 @@ class Pipeline:
         regex against the page text already OCR'd for record.ocr_text)."""
         ocr_cfg = rt.profile.get("ocr", {})
         # a page's zones are the common ones plus those of its document type
-        # (NIC, application, ...); the type also labels the page in the PDF
-        zones, record.doc_type = page_zones(ocr_cfg, record.ocr_text)
-        if not zones or not rt.profile.get("features", {}).get("auto_index"):
+        # (NIC, application, ...); the type also labels the page in the PDF,
+        # and may read its zones differently from the rest of the project
+        groups, record.doc_type = page_zone_groups(ocr_cfg, record.ocr_text)
+        if not groups or not rt.profile.get("features", {}).get("auto_index"):
             return
         threshold = float(ocr_cfg.get("confidence_threshold", 0.75))
-        mode = ocr_cfg.get("mode", "zone")
-        try:
-            if mode == "full_page":
-                from ocr.zone_extractor import extract_fields_from_text
-                fields = extract_fields_from_text(
-                    record.ocr_text, record.ocr_confidence, zones)
-            else:
-                from ocr.zone_extractor import extract_fields
-                fields = extract_fields(image, zones,
-                                        lang=ocr_cfg.get("lang", "eng"),
-                                        ocr_fn=self.ocr_fn)
-        except Exception as e:
-            log.warning("zone extraction failed for page %s: %s",
-                        record.job.page_no, e)
-            return
+        fields: dict = {}
+        for zones, mode in groups:
+            try:
+                if mode == "full_page":
+                    from ocr.zone_extractor import extract_fields_from_text
+                    fields.update(extract_fields_from_text(
+                        record.ocr_text, record.ocr_confidence, zones))
+                else:
+                    from ocr.zone_extractor import extract_fields
+                    fields.update(extract_fields(
+                        image, zones, lang=ocr_cfg.get("lang", "eng"),
+                        ocr_fn=self.ocr_fn))
+            except Exception as e:
+                log.warning("zone extraction failed for page %s: %s",
+                            record.job.page_no, e)
         for name, fv in fields.items():
             record.extracted_fields[name] = fv.value
             if not fv.value or fv.confidence < threshold:

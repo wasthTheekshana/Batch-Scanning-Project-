@@ -159,3 +159,22 @@ def test_dialog_edits_an_existing_type(qtbot):
     dlg._accept()
     assert dlg.result() == QDialog.DialogCode.Accepted
     assert dlg.build_type()["regex"] == "identity"
+
+
+def test_a_type_remembers_its_own_extraction_mode(qtbot):
+    dlg = dialog(qtbot, doc_type=dict(NIC, mode="zone"), full_page=True)
+    assert dlg.mode.currentData() == "zone" and dlg.full_page is False
+    assert dlg.build_type()["mode"] == "zone"
+
+
+def test_without_a_mode_the_type_follows_the_project_and_saves_no_mode_key(qtbot):
+    dlg = dialog(qtbot, doc_type=NIC, full_page=False)
+    assert dlg.mode.currentData() is None
+    assert dlg.full_page is False                      # follows the project
+    assert "mode" not in dlg.build_type()
+
+
+def test_choosing_text_patterns_overrides_a_region_project(qtbot):
+    dlg = dialog(qtbot, doc_type=NIC, full_page=False)
+    dlg.mode.setCurrentIndex(dlg.mode.findData("full_page"))
+    assert dlg.full_page is True and dlg.build_type()["mode"] == "full_page"

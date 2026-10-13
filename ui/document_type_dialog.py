@@ -5,9 +5,9 @@ from __future__ import annotations
 import re
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (QDialog, QDialogButtonBox, QFormLayout, QLabel,
-                             QLineEdit, QListWidget, QListWidgetItem,
-                             QMessageBox, QPushButton, QVBoxLayout, QHBoxLayout)
+from PyQt6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout,
+                             QHBoxLayout, QLabel, QLineEdit, QListWidget,
+                             QListWidgetItem, QPushButton, QVBoxLayout)
 
 from ui.theme import mark
 from ui.zone_dialog import ZoneDialog
@@ -18,8 +18,8 @@ class DocumentTypeDialog(QDialog):
                  full_page: bool = True, taken_names: tuple = ()):
         super().__init__(parent)
         self.setWindowTitle("Document type")
-        self.resize(560, 520)
-        self.full_page = full_page
+        self.resize(560, 560)
+        self.project_full_page = full_page
         self._taken = {n.lower() for n in taken_names}
         layout = QVBoxLayout(self)
 
@@ -31,6 +31,13 @@ class DocumentTypeDialog(QDialog):
         self.regex.setPlaceholderText(
             "e.g. national identity card|identity card no")
         form.addRow("Recognised when the page text matches", self.regex)
+        self.mode = QComboBox()
+        self.mode.addItem("Same as the project", None)
+        self.mode.addItem("Text patterns (find each value by its label)", "full_page")
+        self.mode.addItem("Regions (draw a box per field on a sample form)", "zone")
+        self.mode.setCurrentIndex(max(0, self.mode.findData(
+            doc_type.get("mode") if doc_type else None)))
+        form.addRow("Fields are read by", self.mode)
         layout.addLayout(form)
         hint = QLabel(
             "A page belongs to the first type whose pattern matches its text "
@@ -68,6 +75,12 @@ class DocumentTypeDialog(QDialog):
         box.accepted.connect(self._accept)
         box.rejected.connect(self.reject)
         layout.addWidget(box)
+
+    @property
+    def full_page(self) -> bool:
+        """How this type's fields are defined (text patterns or regions)."""
+        chosen = self.mode.currentData()
+        return self.project_full_page if chosen is None else chosen == "full_page"
 
     # -- fields ----------------------------------------------------------------
     @staticmethod
@@ -129,5 +142,8 @@ class DocumentTypeDialog(QDialog):
             self.accept()
 
     def build_type(self) -> dict:
-        return {"name": self.name.text().strip(),
-                "regex": self.regex.text().strip(), "zones": self.zones()}
+        doc_type = {"name": self.name.text().strip(),
+                    "regex": self.regex.text().strip(), "zones": self.zones()}
+        if self.mode.currentData():
+            doc_type["mode"] = self.mode.currentData()
+        return doc_type

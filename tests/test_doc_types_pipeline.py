@@ -122,3 +122,47 @@ def test_types_label_pages_even_when_auto_index_is_off(tmp_path, db, monkeypatch
     fields = json.loads(doc["extracted_fields"])
     assert "nic_number" not in fields               # no extraction ...
     assert fields["doc_types"] == "NIC, Application"   # ... but pages typed
+
+
+def test_a_type_can_read_regions_while_the_rest_of_the_project_reads_text(tmp_path, db, monkeypatch):
+    """A boxed bank form is read by region, the ID card by text pattern, in
+    one customer file: the form's zone is OCR'd as a crop, the NIC's as text."""
+    cfg = json.loads(json.dumps(OCR_CFG))
+    cfg["document_types"][1] = {          # Application: boxes on the page
+        "name": "Application", "regex": r"application\s+form", "mode": "zone",
+        "zones": [{"name": "account_number", "x": 10, "y": 10, "w": 200, "h": 40}]}
+
+    def ocr(image):
+        if image.shape[0] < 500:                       # a cropped region
+            return OCRResult(text="0012345678", confidence=0.95)
+        return OCRResult(text=TEXT.get(int(image[5, 5]) - 100, ""), confidence=0.95)
+
+    import core.job_queue as jq
+    profile = make_profile(tmp_path)
+    profile["separation"] = {"strategy": ["barcode"], "barcode_role": "cover_sheet",
+                             "blank_threshold": 0.02}
+    profile["ocr"] = cfg
+    profile["features"]["auto_index"] = True
+    profile["export"]["format"] = "image_pdf"
+    pipeline = Pipeline(
+        db, profile, [LocalFolderChannel(profile["delivery"]["local_folder"])],
+        export_document, working_dir=tmp_path / "staging", ocr_fn=ocr)
+    jobs = write_pages(tmp_path, ["text"] * 6)
+    for j in jobs:
+        j.batch_id = "batch-1"
+        img = cv2.imread(j.image_path, cv2.IMREAD_UNCHANGED)
+        img[5, 5] = 100 + j.page_no
+        cv2.imwrite(j.image_path, img)
+    monkeypatch.setattr(jq, "decode_barcodes", lambda image: (
+        [{"type": "CODE128", "value": "CIF-1", "rect": (0, 0, 9, 9)}]
+        if int(image[5, 5]) - 100 == 1 else []))
+    pipeline.start()
+    try:
+        pipeline.submit_batch("batch-1", jobs)
+        assert wait_for(lambda: any(d["storage_path"]
+                                    for d in db.list_documents("batch-1")))
+    finally:
+        pipeline.shutdown()
+    fields = json.loads(db.list_documents("batch-1")[0]["extracted_fields"])
+    assert fields["nic_number"] == "199012345678"       # from the page text
+    assert fields["account_number"] == "0012345678"     # from the cropped region

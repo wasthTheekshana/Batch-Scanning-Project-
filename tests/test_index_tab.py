@@ -441,7 +441,7 @@ def test_auto_extract_uses_each_pages_own_document_type(qtbot, env, monkeypatch,
     db.insert_document("d3", "b1", "p1", page_range="1-2", qc_score=90,
                        validation_status="auto_approved", extracted_fields={},
                        qc_detail={"flags": [], "pages": pages})
-    ocr_cfg = {"zones": [], "document_types": [
+    ocr_cfg = {"mode": "full_page", "zones": [], "document_types": [
         {"name": "NIC", "regex": "identity card",
          "zones": [{"name": "nic_number", "regex": r"ID No:\s*(\d{12})"}]},
         {"name": "App", "regex": "application form",

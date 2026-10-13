@@ -223,23 +223,28 @@ class IndexEditor(QWidget):
             import cv2
 
             from ocr.tesseract_engine import TesseractNotFound, ocr_page
-            from ocr.doc_types import document_types, page_zones
+            from ocr.doc_types import document_types, page_zone_groups
             from ocr.zone_extractor import (extract_fields,
                                             extract_fields_from_text)
             typed = bool(self._ocr_cfg and document_types(self._ocr_cfg))
+            project_mode = "full_page" if self.full_page else "zone"
             for page_no, path in page_paths:
                 image = cv2.imread(path, cv2.IMREAD_UNCHANGED)
                 if image is None:
                     continue
-                result = ocr_page(image) if (self.full_page or typed) else None
-                zones = self.zones
                 if typed:      # this page's zones: common + its document type
-                    zones, _name = page_zones(self._ocr_cfg, result.text)
-                if self.full_page:
-                    fields = extract_fields_from_text(
-                        result.text, result.confidence, zones)
+                    result = ocr_page(image)
+                    groups, _name = page_zone_groups(self._ocr_cfg, result.text)
                 else:
-                    fields = extract_fields(image, zones)
+                    groups = [(self.zones, project_mode)]
+                    result = ocr_page(image) if self.full_page else None
+                fields = {}
+                for zones, mode in groups:
+                    if mode == "full_page":
+                        fields.update(extract_fields_from_text(
+                            result.text, result.confidence, zones))
+                    else:
+                        fields.update(extract_fields(image, zones))
                 for name, fv in fields.items():
                     if fv.value and name not in best:
                         best[name] = (fv.value, fv.confidence, page_no)

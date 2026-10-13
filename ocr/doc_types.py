@@ -14,6 +14,11 @@ and its own index zones:
 A page takes the FIRST type whose pattern matches. Its fields are the common
 zones plus that type's zones. Field names should be unique across types;
 the document's fields are merged across its pages.
+
+A type may set its own "mode" ("zone": regions drawn on the form, "full_page":
+text patterns); without one it uses the project's ocr.mode. A customer file
+can therefore hold a boxed bank form (read by region) next to an ID card or
+letter (read by text pattern).
 """
 from __future__ import annotations
 
@@ -53,6 +58,27 @@ def page_zones(ocr_cfg: dict, text: str) -> tuple[list[dict], str | None]:
     own_names = {z.get("name") for z in own}
     return [z for z in common if z.get("name") not in own_names] + own, \
         doc_type["name"]
+
+
+def page_zone_groups(ocr_cfg: dict, text: str
+                     ) -> tuple[list[tuple[list[dict], str]], str | None]:
+    """([(zones, mode), ...], matched type name or None): the zones to read
+    from this page, grouped by how they are read. Common zones use the
+    project's mode, a type's zones use the type's own mode if it has one."""
+    project_mode = (ocr_cfg or {}).get("mode") or "zone"
+    common = list((ocr_cfg or {}).get("zones") or [])
+    doc_type = classify_page(text, ocr_cfg)
+    if doc_type is None:
+        return ([(common, project_mode)] if common else []), None
+    own = list(doc_type.get("zones") or [])
+    own_names = {z.get("name") for z in own}
+    groups = []
+    kept = [z for z in common if z.get("name") not in own_names]
+    if kept:
+        groups.append((kept, project_mode))
+    if own:
+        groups.append((own, doc_type.get("mode") or project_mode))
+    return groups, doc_type["name"]
 
 
 def all_zones(ocr_cfg: dict) -> list[dict]:

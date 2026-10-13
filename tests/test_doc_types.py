@@ -1,5 +1,6 @@
 from ocr.doc_types import (all_zones, classify_page, document_types,
-                           inherit_types, page_zones, type_runs)
+                           inherit_types, page_zone_groups, page_zones,
+                           type_runs)
 
 NIC = {"name": "NIC", "regex": "national identity card",
        "zones": [{"name": "nic_number", "regex": r"(\d{12})"}]}
@@ -75,3 +76,43 @@ def test_runs_give_one_bookmark_per_stretch_of_one_type():
     assert type_runs([None, "NIC", "NIC", "Application", "Application",
                       "NIC"]) == [(1, "NIC"), (3, "Application"), (5, "NIC")]
     assert type_runs([None, None]) == []
+
+
+def names(groups):
+    return [([z["name"] for z in zones], mode) for zones, mode in groups]
+
+
+def test_groups_read_common_zones_by_the_project_mode_and_types_by_their_own():
+    form = {"name": "Form", "regex": "loan form", "mode": "zone",
+            "zones": [{"name": "account", "x": 1, "y": 2, "w": 3, "h": 4}]}
+    ocr = {"mode": "full_page", "zones": [{"name": "branch", "regex": "b"}],
+           "document_types": [form, NIC]}
+    groups, name = page_zone_groups(ocr, "the loan form")
+    assert name == "Form"
+    assert names(groups) == [(["branch"], "full_page"), (["account"], "zone")]
+    groups, name = page_zone_groups(ocr, "NATIONAL IDENTITY CARD")
+    assert names(groups) == [(["branch"], "full_page"), (["nic_number"], "full_page")]
+
+
+def test_a_type_without_a_mode_follows_the_project():
+    ocr = {"mode": "zone", "document_types": [NIC]}
+    assert names(page_zone_groups(ocr, "national identity card")[0]) == [
+        (["nic_number"], "zone")]
+    assert names(page_zone_groups({"document_types": [NIC]},
+                                  "national identity card")[0]) == [
+        (["nic_number"], "zone")]            # no mode anywhere: zone, like the pipeline
+
+
+def test_unclassified_pages_get_just_the_common_zones_and_none_means_no_groups():
+    ocr = {"mode": "full_page", "zones": [{"name": "branch", "regex": "b"}],
+           "document_types": [NIC]}
+    assert names(page_zone_groups(ocr, "letter")[0]) == [(["branch"], "full_page")]
+    assert page_zone_groups({"mode": "zone", "document_types": [NIC]}, "letter") == ([], None)
+
+
+def test_a_type_zone_replaces_the_common_zone_of_the_same_name_in_groups():
+    ocr = {"mode": "full_page", "zones": [{"name": "ref", "regex": "c"}],
+           "document_types": [{"name": "T", "regex": "x", "mode": "zone",
+                               "zones": [{"name": "ref", "x": 0, "y": 0, "w": 1, "h": 1}]}]}
+    groups, _ = page_zone_groups(ocr, "x")
+    assert names(groups) == [(["ref"], "zone")]
