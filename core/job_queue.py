@@ -299,15 +299,19 @@ class Pipeline:
 
     def _ocr_worker(self) -> None:
         def handle(record: PageRecord):
-            if self.ocr_fn is not None and not record.is_blank:
+            rt = self._rt(record.job.batch_id, record.job.project_id)
+            # a "blank" page is only a separator (and so only skipped) in a
+            # project that separates by blank pages; elsewhere a sparse page
+            # (back of an ID card, a short form) is real content to index
+            drops_blanks = "blank_page" in rt.profile.get(
+                "separation", {}).get("strategy", [])
+            if self.ocr_fn is not None and not (record.is_blank and drops_blanks):
                 image = cv2.imread(record.job.image_path, cv2.IMREAD_UNCHANGED)
                 result = self.ocr_fn(image)
                 if result is not None:
                     record.ocr_text = result.text
                     record.ocr_confidence = result.confidence
-                self._extract_zone_fields(
-                    record, image,
-                    self._rt(record.job.batch_id, record.job.project_id))
+                self._extract_zone_fields(record, image, rt)
             self._emit("ocr", "done", job_id=record.job.job_id,
                        batch_id=record.job.batch_id)
             self.enhance_q.put(record)

@@ -305,3 +305,54 @@ def test_key_export_disabled_for_non_admin(qtbot, db, tmp_path):
     tab = BackupTab(svc, User("v", "view", "viewer"))
     qtbot.addWidget(tab)
     assert not tab.export_key_btn.isEnabled()
+
+
+def _count_ocr_calls(tmp_path, db, strategy, specs, batch_id):
+    calls = {"n": 0}
+
+    def counting_ocr(image):
+        calls["n"] += 1
+        return fake_ocr_full_page(image)
+
+    profile = make_profile(tmp_path)
+    profile["separation"] = {"strategy": strategy, "blank_threshold": 0.02,
+                             "fixed_pages": 2}
+    profile["features"]["auto_index"] = True
+    profile["ocr"]["mode"] = "full_page"
+    profile["ocr"]["zones"] = [{"name": "invoice_no",
+                                "regex": r"Invoice No:\s*(\S+)"}]
+    from core.job_queue import Pipeline
+    from delivery.local_folder import LocalFolderChannel
+    from export.batch_exporter import export_document
+    pipeline = Pipeline(
+        db, profile,
+        [LocalFolderChannel(profile["delivery"]["local_folder"])],
+        export_document, ocr_fn=counting_ocr,
+        working_dir=tmp_path / "staging")
+    pipeline.start()
+    try:
+        jobs = write_pages(tmp_path, specs)
+        for j in jobs:
+            j.batch_id = batch_id
+        pipeline.submit_batch(batch_id, jobs)
+        assert wait_for(lambda: len(db.list_documents(batch_id)) >= 1
+                        and all(d["validation_status"] != "pending_qc"
+                                or d["qc_detail"]
+                                for d in db.list_documents(batch_id)))
+    finally:
+        pipeline.shutdown()
+    return calls["n"]
+
+
+def test_sparse_page_is_still_ocred_when_the_project_does_not_drop_blanks(
+        tmp_path, db):
+    """The back of an ID card or a short form can be under the blank
+    threshold; without blank-page separation it is content, not a separator."""
+    assert _count_ocr_calls(tmp_path, db, ["fixed_pages"], ["text", "blank"],
+                            "b-keep") == 2
+
+
+def test_blank_separator_pages_are_still_skipped_by_ocr_when_dropping_blanks(
+        tmp_path, db):
+    assert _count_ocr_calls(tmp_path, db, ["blank_page"],
+                            ["text", "blank", "text"], "b-drop") == 2
