@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import tempfile
+import time
 from pathlib import Path
 from typing import List
 
@@ -34,6 +35,17 @@ FEEDER, FLATBED, DUPLEX = 1, 2, 4          # Document Handling Select flags
 A4_INCHES = (8.27, 11.69)                  # scan area when none is configured
 
 _PAPER_EMPTY = 0x80210003
+# "another process has locked a portion of the file" (a Windows lock violation)
+# and WIA's own "busy": the scanner is in use by another program, or is still
+# finishing the previous scan. Both usually clear within a few seconds.
+_BUSY = {0x80070021, 0x80210006}
+BUSY_MESSAGE = ("The scanner is in use by another program, or is still "
+                "finishing the last scan. Close any other scanning software "
+                "(Kodak Smart Touch or Capture, Windows Fax and Scan, another "
+                "DOK Scanner window), wait a few seconds and press Scan again.")
+CONNECT_TRIES = 4
+CONNECT_WAIT = 1.5      # seconds between tries
+
 _WIA_MESSAGES = {
     0x80210001: "The scanner reported an unspecified error.",
     0x80210002: "Paper jam - clear the feeder and scan again.",
@@ -135,14 +147,24 @@ class WIASource(BaseScannerSource):
         dm = _wia_device_manager()
         if dm is None:
             raise ScannerUnavailable("WIA not available on this machine")
-        try:
-            for info in dm.DeviceInfos:
-                if info.Type == 1 and info.Properties("Name").Value == device_name:
-                    self._device = info.Connect()
-                    return
-        except Exception as e:
-            raise ScannerUnavailable(f"WIA connect failed: {e}") from e
-        raise ScannerUnavailable(f"WIA device not found: {device_name}")
+        last: Exception | None = None
+        for attempt in range(CONNECT_TRIES):
+            try:
+                for info in dm.DeviceInfos:
+                    if info.Type == 1 and info.Properties("Name").Value == device_name:
+                        self._device = info.Connect()
+                        return
+            except Exception as e:
+                last = e
+                if _hresult(e) in _BUSY and attempt < CONNECT_TRIES - 1:
+                    time.sleep(CONNECT_WAIT)       # often clears by itself
+                    continue
+                if _hresult(e) in _BUSY:
+                    raise ScannerUnavailable(BUSY_MESSAGE) from e
+                raise ScannerUnavailable(
+                    self._describe(e, "WIA connect failed")) from e
+            raise ScannerUnavailable(f"WIA device not found: {device_name}")
+        raise ScannerUnavailable(BUSY_MESSAGE) from last
 
     def get_capabilities(self) -> ScannerCapabilities:
         self._require_connected()

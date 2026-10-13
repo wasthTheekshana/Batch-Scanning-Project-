@@ -78,6 +78,10 @@ class ScanWorker(QThread):
             try:
                 self.source.disconnect()
             finally:
+                # release the scanner's COM objects NOW: until they are
+                # collected the device can still look busy to the next scan
+                import gc
+                gc.collect()
                 if com is not None:
                     com.CoUninitialize()
 

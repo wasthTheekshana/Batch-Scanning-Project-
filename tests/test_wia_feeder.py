@@ -255,3 +255,67 @@ def test_devices_are_listed_and_connect_finds_them_by_name(monkeypatch):
 def test_no_wia_stack_means_no_devices(monkeypatch):
     monkeypatch.setattr(wia_source, "_wia_device_manager", lambda: None)
     assert WIASource().list_devices() == []
+
+
+# -- the scanner is busy / locked by something else ---------------------------------------
+class BusyInfo(FakeInfo):
+    """Connect() fails with the given HRESULT for the first `fail` calls."""
+
+    def __init__(self, name, device, code, fail):
+        super().__init__(name, device)
+        self.code, self.fail, self.calls = code, fail, 0
+
+    def Connect(self):
+        self.calls += 1
+        if self.calls <= self.fail:
+            raise ComErr(self.code)
+        return self._device
+
+
+def busy_source(monkeypatch, code, fail):
+    info = BusyInfo("KODAK S2050 Scanner", Device(Item([X])), code, fail)
+    monkeypatch.setattr(wia_source, "_wia_device_manager",
+                        lambda: FakeManager([info]))
+    waits = []
+    monkeypatch.setattr(wia_source.time, "sleep", lambda s: waits.append(s))
+    return info, waits
+
+
+def test_a_lock_that_clears_within_a_few_seconds_is_waited_out(monkeypatch):
+    info, waits = busy_source(monkeypatch, 0x80070021, fail=2)
+    src = WIASource()
+    src.connect("KODAK S2050 Scanner")                  # no error raised
+    assert info.calls == 3 and waits == [wia_source.CONNECT_WAIT] * 2
+    assert src.acquire(200, "grayscale", False) == [X]
+
+
+def test_a_lock_that_stays_gives_plain_instructions_not_a_windows_error(monkeypatch):
+    info, waits = busy_source(monkeypatch, 0x80070021, fail=99)
+    with pytest.raises(ScannerUnavailable) as caught:
+        WIASource().connect("KODAK S2050 Scanner")
+    message = str(caught.value)
+    assert message == wia_source.BUSY_MESSAGE
+    assert "another program" in message and "Smart Touch" in message
+    assert "0x" not in message and "locked a portion" not in message
+    assert info.calls == wia_source.CONNECT_TRIES
+    assert len(waits) == wia_source.CONNECT_TRIES - 1
+
+
+def test_the_wia_busy_code_is_treated_the_same_way(monkeypatch):
+    busy_source(monkeypatch, 0x80210006, fail=99)
+    with pytest.raises(ScannerUnavailable, match="another program"):
+        WIASource().connect("KODAK S2050 Scanner")
+
+
+def test_other_connect_errors_are_not_retried_and_are_described(monkeypatch):
+    info, waits = busy_source(monkeypatch, 0x80210005, fail=99)    # offline
+    with pytest.raises(ScannerUnavailable, match="offline"):
+        WIASource().connect("KODAK S2050 Scanner")
+    assert info.calls == 1 and waits == []
+
+
+def test_an_unknown_device_is_still_reported_without_waiting(monkeypatch):
+    info, waits = busy_source(monkeypatch, 0x80070021, fail=0)
+    with pytest.raises(ScannerUnavailable, match="not found"):
+        WIASource().connect("Some Other Scanner")
+    assert waits == []
