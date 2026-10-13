@@ -9,9 +9,9 @@ import re
 
 import cv2
 import numpy as np
-from PyQt6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog,
-                             QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-                             QPushButton, QSpinBox, QVBoxLayout)
+from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+                             QFileDialog, QFormLayout, QHBoxLayout, QLabel,
+                             QLineEdit, QPushButton, QSpinBox, QVBoxLayout)
 
 from ui.page_editor import SelectableImageView
 from ui.theme import mark
@@ -55,6 +55,21 @@ class ZoneDialog(QDialog):
             r"required in full-page mode, e.g. Invoice No:\s*(\S+)" if full_page
             else r"optional, e.g. (INV-\d+)")
         form.addRow("Clean-up regex", self.regex)
+        self.comb = QCheckBox("Each character is written in its own box "
+                              "(account no., NIC, date of birth...)")
+        self.comb.setChecked(bool(zone.get("comb")) if zone else False)
+        form.addRow(self.comb)
+        self.charset = QComboBox()
+        for label, key in (("Digits only", "digits"),
+                           ("Digits and letters", "alnum"),
+                           ("NIC (digits and V or X)", "nic"),
+                           ("Letters only", "letters")):
+            self.charset.addItem(label, key)
+        self.charset.setCurrentIndex(max(0, self.charset.findData(
+            (zone.get("charset") if zone else None) or "digits")))
+        form.addRow("Allowed characters", self.charset)
+        self.comb.toggled.connect(self.charset.setEnabled)
+        self.charset.setEnabled(self.comb.isChecked())
         coords = QHBoxLayout()
         self.x = QSpinBox(); self.y = QSpinBox()
         self.w = QSpinBox(); self.h = QSpinBox()
@@ -75,6 +90,9 @@ class ZoneDialog(QDialog):
         layout.addLayout(form)
 
         if full_page:
+            self.comb.setChecked(False)
+            self.comb.setEnabled(False)
+            self.charset.setEnabled(False)
             for sb in (self.x, self.y, self.w, self.h):
                 sb.setEnabled(False)
             self.hint_full_page = QLabel(
@@ -225,6 +243,9 @@ class ZoneDialog(QDialog):
             region = self._sample[y0:y1, x0:x1]
         try:
             from ocr.tesseract_engine import TesseractNotFound, ocr_page
+            if self.comb.isChecked() and not self.full_page:
+                from ocr.comb import read_comb
+                return read_comb(region, self.charset.currentData())
             return ocr_page(region)
         except TesseractNotFound:
             self.result.setText("Tesseract OCR is not installed on this "
@@ -308,4 +329,7 @@ class ZoneDialog(QDialog):
             zone["ref_w"], zone["ref_h"] = self._ref  # keep on re-edit
         if self.regex.text().strip():
             zone["regex"] = self.regex.text().strip()
+        if self.comb.isChecked():
+            zone["comb"] = True
+            zone["charset"] = self.charset.currentData()
         return zone

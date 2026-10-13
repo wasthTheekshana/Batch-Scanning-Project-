@@ -61,7 +61,13 @@ def extract_fields(img: np.ndarray, zones: list[dict], lang: str = "eng",
         y0 = max(0, min(zy, h - 1))
         x1 = max(x0 + 1, min(x0 + zw, w))
         y1 = max(y0 + 1, min(y0 + zh, h))
-        result = run_ocr(img[y0:y1, x0:x1])
+        strip = img[y0:y1, x0:x1]
+        if zone.get("comb"):
+            # one character per box (account no., NIC, date of birth)
+            from ocr.comb import read_comb
+            result = read_comb(strip, zone.get("charset") or "alnum")
+        else:
+            result = run_ocr(strip)
         value = result.text.strip()
         if zone.get("regex"):
             extracted = _extract_match_value(zone["regex"], value)
