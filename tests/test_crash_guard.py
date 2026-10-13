@@ -25,7 +25,29 @@ def boom(message=SECRET):
         return sys.exc_info()
 
 
-def test_the_traceback_goes_to_crash_log_with_the_detail(tmp_path):
+def test_crash_log_has_the_error_type_and_where_it_happened_but_not_its_text(tmp_path):
+    handler = crash_guard.install(tmp_path, show=None)
+    handler(*boom(SECRET))
+    text = (tmp_path / "crash.log").read_text(encoding="utf-8")
+    assert "ValueError (message withheld)" in text
+    assert "test_crash_guard.py" in text and " in boom" in text
+    assert SECRET not in text
+
+
+def test_a_chained_cause_never_leaks_its_text_either(tmp_path):
+    handler = crash_guard.install(tmp_path, show=None)
+    try:
+        try:
+            raise KeyError(SECRET)
+        except KeyError as inner:
+            raise RuntimeError("outer") from inner
+    except RuntimeError:
+        handler(*sys.exc_info())
+    assert SECRET not in (tmp_path / "crash.log").read_text(encoding="utf-8")
+
+
+def test_a_developer_can_opt_in_to_the_full_traceback_text(tmp_path, monkeypatch):
+    monkeypatch.setenv("DOKSCANNER_CRASH_DETAIL", "1")
     handler = crash_guard.install(tmp_path, show=None)
     handler(*boom("the real reason"))
     text = (tmp_path / "crash.log").read_text(encoding="utf-8")
@@ -144,7 +166,8 @@ def test_a_qt_button_whose_handler_raises_no_longer_aborts_the_program(tmp_path)
                          text=True, env=env, timeout=60)
     assert run.returncode == 0, run.stderr[-400:]
     assert "STILL ALIVE" in run.stdout and "SHOWN" in run.stdout
-    assert "ModuleNotFoundError" in (tmp_path / "crash.log").read_text(encoding="utf-8")
+    log = (tmp_path / "crash.log").read_text(encoding="utf-8")
+    assert "ModuleNotFoundError" in log and "reportlab.graphics" not in log
 
 
 def test_without_the_guard_the_same_click_kills_the_process(tmp_path):
