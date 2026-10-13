@@ -89,6 +89,15 @@ def selftest() -> int:
         ocr_page(np.full((60, 200), 255, np.uint8))
         return "tesseract runs"
 
+    def digit_model():
+        import numpy as np
+        from ocr import digits
+        if not digits.available():
+            raise RuntimeError("digit model file not found")
+        glyph = np.zeros((60, 40), np.uint8)
+        glyph[5:55, 17:23] = 255                      # a plain vertical stroke
+        return "reads " + digits.read_digit(glyph)[0]
+
     def scanner():
         from scanning.sources import available_sources
         return str(available_sources())
@@ -103,7 +112,8 @@ def selftest() -> int:
 
     for name, work in (("modules", modules), ("cover sheet PDF", cover_sheet),
                        ("barcode round trip", barcode_roundtrip),
-                       ("OCR engine", ocr), ("scanners", scanner),
+                       ("OCR engine", ocr), ("digit model", digit_model),
+                       ("scanners", scanner),
                        ("cover sheet dialog", dialog)):
         check(name, work)
     text = chr(10).join(lines) + chr(10)

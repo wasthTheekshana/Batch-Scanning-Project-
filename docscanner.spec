@@ -15,6 +15,7 @@ datas = [
     ("core/project_schema.json", "core"),
     ("separation/rule_schema.json", "separation"),
     ("core/templates", "core/templates"),
+    ("ocr/digit_model.npz", "ocr"),     # handwritten-digit model (ocr/digits.py)
 ]
 binaries = []
 if os.path.isdir("tessdata"):
