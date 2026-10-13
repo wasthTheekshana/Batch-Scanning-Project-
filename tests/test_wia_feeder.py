@@ -1,0 +1,140 @@
+"""WIA document-feeder scanning, against fake COM objects."""
+import pytest
+
+from scanning import wia_source
+from scanning.base import ScannerUnavailable
+from scanning.wia_source import WIASource
+
+
+class ComErr(Exception):
+    """Stands in for pywintypes.com_error (carries .hresult)."""
+
+    def __init__(self, scode):
+        # pywin32 shape: DISP_E_EXCEPTION, text, excepinfo (scode last), None
+        scode = scode - (1 << 32) if scode >= 1 << 31 else scode
+        super().__init__(-2147352567, "Exception occurred.",
+                         (0, None, "device text", None, 0, scode), None)
+
+
+class Prop:
+    def __init__(self, pid, value=0):
+        self.PropertyID = pid
+        self.Value = value
+
+
+class Image:
+    def __init__(self, data):
+        self._data = data
+
+    def SaveFile(self, path):
+        with open(path, "wb") as f:
+            f.write(self._data)
+
+
+class Item:
+    def __init__(self, sheets, error_after=None):
+        self.Properties = [Prop(int(p)) for p in (
+            "6147", "6148", "6151", "6152", "4103", "4104")]
+        self._sheets = list(sheets)
+        self._error_after = error_after
+        self.transfers = 0
+
+    def Transfer(self, fmt):
+        assert fmt == wia_source.WIA_FORMAT_PNG
+        self.transfers += 1
+        if self._error_after is not None and self.transfers > self._error_after:
+            raise ComErr(0x80210002)          # paper jam
+        if not self._sheets:
+            raise ComErr(0x80210003)          # feeder empty
+        return Image(self._sheets.pop(0))
+
+    def value(self, pid):
+        return next(p.Value for p in self.Properties if str(p.PropertyID) == pid)
+
+
+class Device:
+    def __init__(self, item):
+        self.Properties = [Prop(3088), Prop(3096, 5)]
+        self.Items = lambda n: item
+        self.item = item
+
+    def value(self, pid):
+        return next(p.Value for p in self.Properties if str(p.PropertyID) == pid)
+
+
+def source(item, **kw):
+    s = WIASource()
+    s._device = Device(item, **kw)
+    return s
+
+
+def test_every_sheet_in_the_feeder_is_returned_in_order():
+    item = Item([b"p1", b"p2", b"p3"])
+    seen = []
+    pages = source(item).acquire(300, "grayscale", True,
+                                 on_page=lambda data, n: seen.append((data, n)))
+    assert pages == [b"p1", b"p2", b"p3"]
+    assert seen == [(b"p1", 1), (b"p2", 2), (b"p3", 3)]
+    assert item.transfers == 4                 # the 4th call found it empty
+
+
+def test_settings_are_written_to_the_device_and_the_item():
+    item = Item([b"x"])
+    src = source(item)
+    src.acquire(300, "color", True)
+    assert src._device.value("3088") == wia_source.FEEDER | wia_source.DUPLEX
+    assert src._device.value("3096") == 0      # all pages
+    assert item.value("6147") == item.value("6148") == 300
+    assert item.value("6151") == 2480            # 8.27 in at 300 dpi, rounded to even
+    assert item.value("6152") == 3508            # 11.69 in at 300 dpi, rounded to even
+    assert (item.value("4103"), item.value("4104")) == (3, 24)
+
+
+@pytest.mark.parametrize("mode,expected", [("bw", (0, 1)), ("grayscale", (2, 8))])
+def test_colour_modes_map_to_wia_data_types(mode, expected):
+    item = Item([b"x"])
+    source(item).acquire(200, mode, False)
+    assert (item.value("4103"), item.value("4104")) == expected
+
+
+def test_simplex_asks_for_the_feeder_only():
+    src = source(Item([b"x"]))
+    src.acquire(200, "grayscale", False)
+    assert src._device.value("3088") == wia_source.FEEDER
+
+
+def test_empty_feeder_is_a_clear_error_not_an_empty_list():
+    with pytest.raises(ScannerUnavailable, match="feeder is empty"):
+        source(Item([])).acquire(300, "grayscale", True)
+
+
+def test_a_jam_after_some_pages_reports_the_jam_and_keeps_the_pages_seen():
+    item = Item([b"p1", b"p2", b"p3"], error_after=2)
+    got = []
+    with pytest.raises(ScannerUnavailable, match="Paper jam"):
+        source(item).acquire(300, "grayscale", False,
+                             on_page=lambda data, n: got.append(data))
+    assert got == [b"p1", b"p2"]
+
+
+def test_unknown_device_error_is_wrapped():
+    item = Item([b"x"])
+    item.Transfer = lambda fmt: (_ for _ in ()).throw(RuntimeError("boom"))
+    with pytest.raises(ScannerUnavailable, match="WIA acquire failed: boom"):
+        source(item).acquire(300, "grayscale", False)
+
+
+def test_runaway_feeder_is_capped():
+    item = Item([b"x"] * 10)
+    assert len(source(item).acquire(300, "grayscale", False, max_pages=4)) == 4
+
+
+def test_requires_a_connected_device():
+    with pytest.raises(ScannerUnavailable):
+        WIASource().acquire(300, "grayscale", False)
+
+
+def test_even_pixels_for_every_supported_dpi():
+    from scanning.wia_source import _even
+    assert all(_even(11.69 * d) % 2 == 0 for d in (75, 100, 150, 200, 240, 250,
+                                                    260, 300, 400, 500, 600))

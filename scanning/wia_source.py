@@ -17,10 +17,59 @@ log = logging.getLogger(__name__)
 
 WIA_FORMAT_PNG = "{B96B3CAF-0728-11D3-9D7B-0000F81EF32E}"
 
-# WIA property IDs
+# WIA property IDs (device level)
+WIA_DPS_DOCUMENT_HANDLING_SELECT = "3088"
+WIA_DPS_PAGES = "3096"
+# WIA property IDs (scan item)
 WIA_DPI_X = "6147"
 WIA_DPI_Y = "6148"
-WIA_COLOR_MODE = "6146"  # 0=color? per WIA_IPA_DATATYPE: 1=BW,2=gray,3=color
+WIA_EXTENT_X = "6151"
+WIA_EXTENT_Y = "6152"
+WIA_DATA_TYPE = "4103"
+WIA_BITS_PER_PIXEL = "4104"
+
+# WIA_IPA_DATATYPE value and bit depth per colour mode
+_DATA_TYPE = {"bw": (0, 1), "grayscale": (2, 8), "color": (3, 24)}
+FEEDER, FLATBED, DUPLEX = 1, 2, 4          # Document Handling Select flags
+A4_INCHES = (8.27, 11.69)                  # scan area when none is configured
+
+_PAPER_EMPTY = 0x80210003
+_WIA_MESSAGES = {
+    0x80210001: "The scanner reported an unspecified error.",
+    0x80210002: "Paper jam - clear the feeder and scan again.",
+    0x80210004: "Paper problem - check the pages in the feeder.",
+    0x80210005: "The scanner is offline - check the cable and power.",
+    0x80210006: "The scanner is busy - wait a moment and try again.",
+    0x80210007: "The scanner is warming up - try again in a moment.",
+    0x80210008: "The scanner needs attention - check its display.",
+    0x80210016: "The scanner cover is open - close it and scan again.",
+}
+
+
+def _hresult(exc: Exception) -> int | None:
+    """Unsigned WIA HRESULT of a COM error, or None for anything else.
+    pywin32 reports every automation failure as DISP_E_EXCEPTION and puts
+    the device's own code in the exception info (args[2][5])."""
+    detail = exc.args[2] if len(exc.args) > 2 else None
+    if isinstance(detail, tuple) and len(detail) > 5             and isinstance(detail[5], int) and detail[5]:
+        return detail[5] & 0xFFFFFFFF
+    code = getattr(exc, "hresult", None)
+    if code is None and exc.args and isinstance(exc.args[0], int):
+        code = exc.args[0]
+    return None if code is None else code & 0xFFFFFFFF
+
+
+def _even(pixels: float) -> int:
+    """The scan-area properties only accept even pixel counts."""
+    return round(pixels / 2) * 2
+
+
+def _set_props(collection, values: dict[str, object]) -> None:
+    """Write each {property id: value} that the device exposes and allows."""
+    for prop in collection:
+        pid = str(prop.PropertyID)
+        if pid in values:
+            prop.Value = values[pid]
 
 
 def _wia_device_manager():
@@ -65,26 +114,73 @@ class WIASource(BaseScannerSource):
         return ScannerCapabilities(max_dpi=600, supports_duplex=False,
                                    supports_adf=True)
 
-    def acquire(self, dpi: int, color: str, duplex: bool) -> List[bytes]:
+    def acquire(self, dpi: int, color: str, duplex: bool,
+                on_page=None, max_pages: int = 500) -> List[bytes]:
+        """Feed every sheet in the document feeder and return one PNG per
+        side. Stops when the feeder is empty; on_page(png_bytes, n) is
+        called as each page arrives so the caller can show progress and
+        keep pages already scanned if a later sheet jams."""
         self._require_connected()
-        color_map = {"bw": 1, "grayscale": 2, "color": 3}
         try:
+            self._configure(dpi, color, duplex)
             item = self._device.Items(1)
-            for prop in item.Properties:
-                pid = str(prop.PropertyID)
-                if pid in (WIA_DPI_X, WIA_DPI_Y):
-                    prop.Value = dpi
-                elif pid == WIA_COLOR_MODE:
-                    prop.Value = color_map.get(color, 2)
-            image = item.Transfer(WIA_FORMAT_PNG)
-            with tempfile.TemporaryDirectory() as td:
-                out = Path(td) / "scan.png"
-                image.SaveFile(str(out))
-                return [out.read_bytes()]
+            _set_props(item.Properties, {
+                WIA_DPI_X: dpi, WIA_DPI_Y: dpi,
+                WIA_EXTENT_X: _even(A4_INCHES[0] * dpi),
+                WIA_EXTENT_Y: _even(A4_INCHES[1] * dpi),
+                WIA_DATA_TYPE: _DATA_TYPE.get(color, _DATA_TYPE["grayscale"])[0],
+                WIA_BITS_PER_PIXEL: _DATA_TYPE.get(
+                    color, _DATA_TYPE["grayscale"])[1],
+            })
         except ScannerUnavailable:
             raise
         except Exception as e:
-            raise ScannerUnavailable(f"WIA acquire failed: {e}") from e
+            raise ScannerUnavailable(self._describe(e, "WIA setup failed")) from e
+
+        pages: List[bytes] = []
+        while len(pages) < max_pages:
+            try:
+                image = item.Transfer(WIA_FORMAT_PNG)
+                with tempfile.TemporaryDirectory() as td:
+                    out = Path(td) / "scan.png"
+                    image.SaveFile(str(out))
+                    data = out.read_bytes()
+            except Exception as e:
+                if _hresult(e) == _PAPER_EMPTY:
+                    if pages:
+                        break
+                    raise ScannerUnavailable(
+                        "The document feeder is empty - load paper and scan "
+                        "again.") from e
+                raise ScannerUnavailable(
+                    self._describe(e, "WIA acquire failed")) from e
+            pages.append(data)
+            if on_page is not None:
+                on_page(data, len(pages))
+        return pages
+
+    def _configure(self, dpi: int, color: str, duplex: bool) -> None:
+        """Feeder (and duplex if asked) for all pages; fall back to the
+        feeder alone when the device refuses the duplex flag."""
+        props = self._device.Properties
+        mode = FEEDER | (DUPLEX if duplex else 0)
+        try:
+            _set_props(props, {WIA_DPS_DOCUMENT_HANDLING_SELECT: mode,
+                               WIA_DPS_PAGES: 0})
+        except Exception:
+            if not duplex:
+                raise
+            _set_props(props, {WIA_DPS_DOCUMENT_HANDLING_SELECT: FEEDER,
+                               WIA_DPS_PAGES: 0})
+
+    @staticmethod
+    def _describe(exc: Exception, prefix: str) -> str:
+        code = _hresult(exc)
+        if code in _WIA_MESSAGES:
+            return _WIA_MESSAGES[code]
+        # the error text of a COM failure names a device/driver, never a
+        # document, so it is safe to show
+        return f"{prefix}: {exc}"
 
     def disconnect(self) -> None:
         self._device = None
