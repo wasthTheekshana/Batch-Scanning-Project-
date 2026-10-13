@@ -1,0 +1,110 @@
+{
+  "name": "Bank - Customer file",
+  "category": "Banking",
+  "config": {
+    "separation": {
+      "strategy": [
+        "barcode"
+      ],
+      "barcode_role": "auto",
+      "cover_max_chars": 40,
+      "blank_threshold": 0.02
+    },
+    "ocr": {
+      "lang": "eng",
+      "mode": "full_page",
+      "confidence_threshold": 0.75,
+      "zones": [],
+      "document_types": [
+        {
+          "name": "Application",
+          "regex": "application\\s+form|loan\\s+application|account\\s+opening|application\\s+no",
+          "zones": [
+            {
+              "name": "application_number",
+              "regex": "(?i)Application\\s*(?:No|Number|#)\\.?\\s*[:.]?\\s*([A-Z0-9][A-Z0-9\\-/]{3,})"
+            },
+            {
+              "name": "applicant_name",
+              "regex": "(?i)(?:Applicant|Customer|Full)\\s*Name\\s*[:.]?\\s*([A-Za-z.]+(?: [A-Za-z.]+){0,4}?)(?=\\s+(?:Product|NIC|ID|Date|Address|Mobile|Tel|Branch|Requested|Amount)\\b|$)"
+            },
+            {
+              "name": "product",
+              "regex": "(?i)Product\\s*[:.]?\\s*([A-Za-z]+(?: [A-Za-z]+){0,3}?)(?=\\s+(?:Requested|Amount|Branch|Date|Tenure|Rate)\\b|$)"
+            },
+            {
+              "name": "application_date",
+              "regex": "(?i)Application\\s*Date\\s*[:.]?\\s*(\\d{1,2}[ ./-](?:[A-Za-z]{3,9}|\\d{1,2})[ ./-]\\d{2,4})"
+            }
+          ]
+        },
+        {
+          "name": "NIC",
+          "regex": "national\\s+identity\\s+card|identity\\s+card",
+          "zones": [
+            {
+              "name": "nic_number",
+              "regex": "\\b(\\d{9}[VvXx]|\\d{12})\\b"
+            },
+            {
+              "name": "nic_name",
+              "regex": "(?i)Name\\s*[:.]?\\s*([A-Za-z.]+(?: [A-Za-z.]+){0,4}?)(?=\\s+(?:ID|NIC|Date|Address|Sex|Gender|Given)\\b|$)"
+            },
+            {
+              "name": "nic_date_of_birth",
+              "regex": "(?i)(?:Date\\s*of\\s*Birth|DOB)\\s*[:.]?\\s*(\\d{1,2}[ ./-](?:[A-Za-z]{3,9}|\\d{1,2})[ ./-]\\d{2,4})"
+            }
+          ]
+        },
+        {
+          "name": "Letter",
+          "regex": "to\\s+whom\\s+it\\s+may\\s+concern|dear\\s+(?:sir|madam)|confirmation\\s+of|subject\\s*:",
+          "zones": [
+            {
+              "name": "letter_subject",
+              "regex": "(?i)Subject\\s*:\\s*([^:]{3,80}?)(?=\\s+(?:Dear|To whom|Ref)\\b|$)"
+            },
+            {
+              "name": "letter_reference",
+              "regex": "(?i)(?:Our\\s*)?Ref(?:erence)?\\s*(?:No)?\\.?\\s*[:.]\\s*([A-Z0-9][A-Z0-9\\-/]{2,})"
+            },
+            {
+              "name": "letter_date",
+              "regex": "(?i)(?<!of )Date\\s*[:.]?\\s*(\\d{1,2}[ ./-](?:[A-Za-z]{3,9}|\\d{1,2})[ ./-]\\d{2,4})"
+            }
+          ]
+        }
+      ]
+    },
+    "export": {
+      "filename_template": "{barcode}_{counter:04d}"
+    },
+    "qc": {
+      "enabled": true,
+      "stages": [
+        "punch_hole",
+        "rotation",
+        "margin",
+        "color",
+        "advanced"
+      ],
+      "pass_score": 85,
+      "blur_warn_threshold": 80,
+      "blur_fail_threshold": 30,
+      "dpi_warn": 200,
+      "dpi_fail": 150
+    },
+    "enhancement_profile": {
+      "deskew": true,
+      "crop": true,
+      "clahe": true,
+      "despeckle": true,
+      "whiten_bg": true,
+      "target_dpi": 300
+    },
+    "features": {
+      "auto_index": true,
+      "duplicate_check": true
+    }
+  }
+}

@@ -243,24 +243,21 @@ def run() -> int:
 # ---------------------------------------------------------------------------
 # Bank scenario: one PDF per customer, split by a barcode cover sheet
 # ---------------------------------------------------------------------------
-BANK_ZONES = [
-    {"name": "nic_number", "regex":
-        r"(?i)ID\s*No\.?\s*[:.]?\s*(\d{9}[VvXx]|\d{12})"},
-    {"name": "applicant_name", "regex":
-        r"(?i)Applicant Name\s*[:.]?\s*([A-Za-z]+(?: [A-Za-z]+)*?)(?= Product|$)"},
-    {"name": "application_number", "regex": r"(APP-\d{4,})"},
-]
-
 CUSTOMERS = [
     {"cif": "CIF-100234", "name": "Nimal Perera", "nic": "199012345678",
-     "app": "APP-55001", "pages": ["nic_front", "nic_back", "app_1", "app_2",
-                                   "letter"]},
+     "app": "APP-55001", "style": "cover",
+     "pages": ["nic_front", "nic_back", "app_1", "app_2", "letter"]},
     {"cif": "CIF-100235", "name": "Kamala Silva", "nic": "856789012V",
-     "app": "APP-55002", "pages": ["nic_front", "app_1"]},
+     "app": "APP-55002", "style": "sticker", "pages": ["nic_front", "app_1"]},
 ]
 
 
-def _bank_page(c, kind: str, cust: dict, w: float, h: float) -> None:
+def _bank_page(c, kind: str, cust: dict, w: float, h: float,
+               sticker: bool = False) -> None:
+    if sticker:        # a barcode label stuck on the right of the first page
+        from reportlab.graphics.barcode import code128
+        code128.Code128(cust["cif"], barWidth=1.1, barHeight=40,
+                        quiet=True).drawOn(c, w - 190, h - 150)
     c.setFillGray(0.1)
     c.rect(0, h - 36, w, 36, stroke=0, fill=1)     # ink so it is not "blank"
     c.setFillGray(0)
@@ -297,13 +294,15 @@ def build_bank() -> dict[str, Path]:
     parts: list[Path] = []
     out: dict[str, Path] = {}
     for cust in CUSTOMERS:
-        cover = KIT / f"bank_cover_{cust['cif']}.pdf"
-        _cover_pdf(cover, cust["cif"])
-        parts.append(cover)
+        if cust["style"] == "cover":
+            cover = KIT / f"bank_cover_{cust['cif']}.pdf"
+            _cover_pdf(cover, cust["cif"])
+            parts.append(cover)
         for n, kind in enumerate(cust["pages"], 1):
             path = KIT / f"bank_{cust['cif']}_{n}_{kind}.pdf"
             c = canvas.Canvas(str(path), pagesize=A4)
-            _bank_page(c, kind, cust, *A4)
+            _bank_page(c, kind, cust, *A4,
+                       sticker=(cust["style"] == "sticker" and n == 1))
             c.showPage()
             c.save()
             parts.append(path)
@@ -324,67 +323,69 @@ def run_bank() -> int:
     report = h.Report()
 
     def scenario(app, win):
-        import copy
         import json
         import uuid
 
         import fitz
 
-        from core.profile_manager import DEFAULT_PROJECT, ProfileManager
+        from core.profile_manager import ProfileManager
+        from core.template_manager import TemplateManager
         from scanning.file_import import import_files
 
         root = Path(os.environ["LOCALAPPDATA"]) / "DOKScanner"
         pm = ProfileManager(root / "projects", win.db, data_root=root)
-        cfg = copy.deepcopy(DEFAULT_PROJECT)
-        cfg["separation"]["strategy"] = ["barcode"]
-        cfg["ocr"]["mode"] = "full_page"
-        cfg["ocr"]["zones"] = BANK_ZONES
-        cfg["export"]["filename_template"] = "{barcode}"
-        cfg = pm.create("Bank - Customer file", config=cfg)
+        manager = TemplateManager(win.db)
+        manager.seed_built_ins()
+        template = next(t for t in manager.list_templates()
+                        if t["name"] == "Bank - Customer file")
+        cfg = pm.create("Bank - Customer file",
+                        config=manager.build_project_config(
+                            template["template_id"]))
         pid = cfg["project_id"]
 
         batch_id = str(uuid.uuid4())
         jobs = import_files([files["batch"]], batch_id, pid, sandbox / "staging")
-        report.check("batch pages", len(jobs) == 9, f"({len(jobs)})")
+        report.check("batch pages", len(jobs) == 8, f"({len(jobs)})")
         win.start_batch(batch_id, jobs)
         h.wait_for(app, lambda: len(win.db.list_documents()) >= 2, 120)
-        h.pump(app, 3)
+        h.pump(app, 8)
         docs = {json.loads(d["extracted_fields"] or "{}").get("barcode"): d
                 for d in win.db.list_documents()}
         report.check("one document per customer",
                      set(docs) == {"CIF-100234", "CIF-100235"}, str(sorted(docs)))
-        # operator accepts any document QC held (cover sheets score low)
-        for d in docs.values():
-            if d["validation_status"] == "pending_qc":
-                report.note(f"{d['page_range']} held for QC review -> accepting")
-                win.db.update_document(d["document_id"],
-                                       validation_status="corrected")
-                win.pipeline.resubmit_document(d["document_id"])
-        h.pump(app, 8)
+        report.check("nothing held for QC (the cover sheet is not scored)",
+                     all(d["validation_status"] == "auto_approved"
+                         for d in docs.values()),
+                     str({k: d["validation_status"] for k, d in docs.items()}))
         out_dir = root / "output"
-        pdfs = {p.stem: p for p in out_dir.rglob("*.pdf")}
+        pdfs = {p.name.split("_")[0]: p for p in out_dir.rglob("*.pdf")}
         report.check("one PDF per customer, named by its barcode",
                      {"CIF-100234", "CIF-100235"} <= set(pdfs), str(sorted(pdfs)))
-        for cif, pages in (("CIF-100234", 6), ("CIF-100235", 3)):
+        expected = {"CIF-100234": (5, [[1, "NIC", 1], [1, "Application", 3],
+                                       [1, "Letter", 5]]),
+                    "CIF-100235": (2, [[1, "NIC", 1], [1, "Application", 2]])}
+        for cif, (pages, toc) in expected.items():
             if cif in pdfs:
                 with fitz.open(str(pdfs[cif])) as pdf:
-                    report.check(f"{cif}.pdf holds that customer's pages only",
+                    report.check(f"{cif}.pdf: that customer's pages, no cover",
                                  pdf.page_count == pages,
                                  f"({pdf.page_count} pages, expected {pages})")
-        for cif, d in docs.items():
-            f = json.loads(win.db.get_document(d["document_id"])["extracted_fields"])
+                    report.check(f"{cif}.pdf: bookmarks per document type",
+                                 pdf.get_toc() == toc, str(pdf.get_toc()))
+        fields = {cif: json.loads(win.db.get_document(d["document_id"])
+                                  ["extracted_fields"]) for cif, d in docs.items()}
+        for cif, f in fields.items():
             print(f"    {cif}: {f}", flush=True)
-        a = json.loads(win.db.get_document(docs["CIF-100234"]["document_id"])
-                       ["extracted_fields"])
-        report.check("fields gathered from the NIC and application pages",
+        a, b = fields["CIF-100234"], fields["CIF-100235"]
+        report.check("first customer: fields from NIC, application and letter",
                      a.get("nic_number") == "199012345678"
                      and a.get("application_number") == "APP-55001"
-                     and a.get("applicant_name") == "Nimal Perera", str(a))
-        b = json.loads(win.db.get_document(docs["CIF-100235"]["document_id"])
-                       ["extracted_fields"])
-        report.check("second customer has their own fields",
+                     and a.get("applicant_name") == "Nimal Perera"
+                     and a.get("doc_types") == "NIC, Application, Letter", str(a))
+        report.check("second customer (barcode sticker): own fields",
                      b.get("nic_number") == "856789012V"
-                     and b.get("application_number") == "APP-55002", str(b))
+                     and b.get("application_number") == "APP-55002"
+                     and b.get("doc_types") == "NIC, Application", str(b))
         return report.summary()
 
     code = h.run_main(scenario)

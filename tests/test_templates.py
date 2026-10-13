@@ -166,19 +166,25 @@ def test_seed_built_ins_missing_directory_is_a_noop(db, tmp_path):
     assert tm.list_templates() == []
 
 
-def test_all_five_built_in_templates_load_and_seed(db):
-    """Guards against a JSON typo in any of the five shipped files -
-    exercises the real core/templates/ directory, not a synthetic one."""
+def test_all_built_in_templates_load_and_seed(db):
+    """Guards against a JSON typo in any shipped file - exercises the real
+    core/templates/ directory, not a synthetic one."""
     tm = TemplateManager(db)
     tm.seed_built_ins()  # default path: core/templates/ next to this module
     templates = tm.list_templates()
     names = {t["name"] for t in templates}
     assert names == {"Banking", "Insurance", "HR / Personnel",
-                     "Legal / Contracts", "Invoices / Receipts"}
+                     "Legal / Contracts", "Invoices / Receipts",
+                     "Bank - Customer file"}
     for t in templates:
         assert t["built_in"] is True
-        assert len(t["config"]["ocr"]["zones"]) == 5
-        for zone in t["config"]["ocr"]["zones"]:
+        ocr = t["config"]["ocr"]
+        if t["name"] == "Bank - Customer file":
+            # fields live in per-type sections, not the common zone list
+            assert ocr["zones"] == [] and ocr["document_types"]
+            continue
+        assert len(ocr["zones"]) == 5
+        for zone in ocr["zones"]:
             assert "x" not in zone and "y" not in zone  # unpositioned
             assert zone["name"] and zone["regex"]
 
