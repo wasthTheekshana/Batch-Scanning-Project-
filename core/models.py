@@ -36,10 +36,12 @@ class PageRecord:
     working_path: str = ""               # enhanced/QC-fixed working copy
     ocr_text: str = ""
     ocr_confidence: float = 0.0
+    ocr_words: list = field(default_factory=list)   # word boxes, to align forms
     barcodes: list = field(default_factory=list)
     is_blank: bool = False
     ink_density: float = 1.0             # share of dark pixels (0 = empty page)
     is_custody_label: bool = False
+    rotation: int = 0                    # clockwise degrees that make the page upright
     doc_type: str | None = None          # project document type of this page
     qc_score: int | None = None
     qc_grade: str = ""                   # PASS / WARN / FAIL

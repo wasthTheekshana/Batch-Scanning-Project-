@@ -86,6 +86,7 @@
               "name": {"type": "string", "minLength": 1},
               "regex": {"type": "string"},
               "continuation_regex": {"type": "string"},
+              "anchors": {"type": "array"},
               "mode": {"type": "string", "enum": ["zone", "full_page"]},
               "zones": {"type": "array"}
             }

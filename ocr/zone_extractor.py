@@ -82,17 +82,30 @@ def prepare_strip(strip: np.ndarray) -> np.ndarray:
 
 
 def extract_fields(img: np.ndarray, zones: list[dict], lang: str = "eng",
-                   ocr_fn: Callable[[np.ndarray], OCRResult] | None = None
+                   ocr_fn: Callable[[np.ndarray], OCRResult] | None = None,
+                   words: list[dict] | None = None
                    ) -> dict[str, FieldValue]:
     """zones: [{'name': 'invoice_no', 'x':..,'y':..,'w':..,'h':..,
     'regex': optional, 'ref_w'/'ref_h': optional sample dimensions}].
-    ocr_fn is injectable for tests."""
+    ocr_fn is injectable for tests. When the zones carry `anchors` (printed
+    words of the blank form) and `words` (the page's OCR words) are given,
+    the zones are first lined up with this scan (ocr.align), so a form that
+    was printed smaller or fed in crooked is still read in the right boxes."""
     run_ocr = ocr_fn or (lambda region, psm=None, min_conf=0,
                          line_min_conf=0: ocr_page(
         region, lang=lang, psm=psm, min_conf=min_conf,
         line_min_conf=line_min_conf))
     h, w = img.shape[:2]
     fields: dict[str, FieldValue] = {}
+    anchors = next((z["anchors"] for z in zones if z.get("anchors")), None)
+    if anchors and words:
+        from ocr.align import dewarp, estimate_transform
+        matrix = estimate_transform(anchors, words, tolerance=max(8.0, 0.006 * w))
+        ref = next(((z["ref_w"], z["ref_h"]) for z in zones
+                    if z.get("ref_w") and z.get("ref_h")), None)
+        if matrix is not None and ref is not None:
+            img = dewarp(img, matrix, *ref)         # the form, straight and on its template
+            h, w = img.shape[:2]
     for zone in zones:
         if not all(k in zone for k in ("x", "y", "w", "h")):
             continue  # not yet positioned (e.g. a fresh template zone)

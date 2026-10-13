@@ -35,7 +35,11 @@ DOCUMENT_TYPES = [
          {"name": "application_date",
           "regex": r"(?i)Application\s*Date\s*[:.]?\s*" + DATE}]},
     {"name": "NIC",
-     "regex": r"national\s+identity\s+card|identity\s+card",
+     # the card's title (OCR often drops the start of "IDENTITY", leaving
+     # "NTITY CARD") or a line only a card has. Numbers alone are not used: a
+     # letter with a long reference number would be taken for a card.
+     "regex": r"national\s+identity\s+card|identity\s+card|ntity\s+card"
+              r"|holder.?s\s+signature",
      "zones": [
          {"name": "nic_number", "regex": r"\b(\d{9}[VvXx]|\d{12})\b"},
          {"name": "nic_name",

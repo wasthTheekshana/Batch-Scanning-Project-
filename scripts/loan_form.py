@@ -41,6 +41,33 @@ LATER_PAGES_PATTERN = r"course\s+details|supplementary\s+limit|relative\s+mentio
 SAMPLE = {name: value for name, *_rest, value in FIELDS}
 
 
+ANCHORS_FILE = Path(__file__).with_name("loan_form_anchors.json")
+
+
+def build_anchors(src: str | Path) -> list[dict]:
+    """Distinctive printed words of the blank form with their positions (page 1,
+    in points): what lets the reader line the zones up with any scan of it.
+    Written to loan_form_anchors.json; only words and coordinates, never the
+    form itself."""
+    import json
+
+    import fitz
+
+    from ocr.align import build_anchors as pick
+    with fitz.open(str(src)) as doc:
+        words = [{"text": w[4], "x": (w[0] + w[2]) / 2, "y": (w[1] + w[3]) / 2}
+                 for w in doc[0].get_text("words")]
+    anchors = pick(words)
+    ANCHORS_FILE.write_text(json.dumps(anchors, indent=1) + chr(10),
+                            encoding="utf-8")
+    return anchors
+
+
+def anchors() -> list[dict]:
+    import json
+    return json.loads(ANCHORS_FILE.read_text(encoding="utf-8"))         if ANCHORS_FILE.exists() else []
+
+
 def zones() -> list[dict]:
     return [{"name": name, "x": x, "y": y, "w": w, "h": h, **REF, **extra}
             for name, x, y, w, h, extra, _ in FIELDS]
@@ -48,9 +75,12 @@ def zones() -> list[dict]:
 
 def document_type() -> dict:
     """The document type for the Bank template (regions, not text patterns)."""
-    return {"name": "Education loan application", "regex": TITLE_PATTERN,
-            "continuation_regex": LATER_PAGES_PATTERN,
-            "mode": "zone", "zones": zones()}
+    doc_type = {"name": "Education loan application", "regex": TITLE_PATTERN,
+                "continuation_regex": LATER_PAGES_PATTERN,
+                "mode": "zone", "zones": zones()}
+    if anchors():
+        doc_type["anchors"] = anchors()
+    return doc_type
 
 
 def _comb_cells(page, x, y, w, h):

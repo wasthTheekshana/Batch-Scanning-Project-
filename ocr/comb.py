@@ -76,13 +76,22 @@ def find_cells(binary: np.ndarray) -> list[tuple[int, int]]:
     return [(a, b) for a, b in spans if 0.6 * typical <= b - a <= 1.5 * typical]
 
 
+DARK_BORDER = 80       # borders this dark: a black-and-white or black-ink form
+
+
 def ink_level(gray: np.ndarray, loose: np.ndarray) -> int:
-    """Grey level below which a pixel is entry ink: a little darker than the
-    box borders (measured on the vertical divider pixels)."""
+    """Grey level below which a pixel is entry ink. On a colour/grey form the
+    printed boxes are lighter than what is typed in, so entry ink is a little
+    darker than the borders (measured on the vertical divider pixels). On a
+    black-and-white scan the borders are as dark as the ink: nothing can be
+    told apart by darkness, so everything dark counts and the box lines are
+    removed by shape instead."""
     lines = _vertical_lines(loose) > 0
     if np.count_nonzero(lines) < 10:
         return DEFAULT_INK
     border = int(np.median(gray[lines]))
+    if border < DARK_BORDER:
+        return DEFAULT_INK
     return max(INK_FLOOR, min(INK_CEIL, border - INK_BELOW_BORDER))
 
 
@@ -134,11 +143,36 @@ def _variants(cell: np.ndarray):
                                  cv2.BORDER_CONSTANT, value=255)
 
 
+CONFIDENT = 0.50       # a Tesseract reading at least this sure is trusted (measured: its
+                       # wrong digits were all at 0.45 or below, its right ones 0.54+)
+MODEL_MIN = 0.50       # the digit model must be at least this sure to be used
+DIGIT_BOXES = set("0123456789VvXx")
+
+
 def _read_char(cell: np.ndarray, whitelist: str) -> tuple[str, float]:
-    """One character from a cell image (white ink on black): the reading
-    with the most total confidence across several enlargements. When none
+    """One character from a cell image (white ink on black).
+
+    Tesseract reads typed characters perfectly and says how sure it is. When
+    it is not sure (handwriting), a digit box is read by the small digit
+    model instead (ocr.digits), which handles pen strokes far better. The
+    engine's readings come from several enlargements, voted on; when none
     finds a character, an unrestricted reading is mapped back to a character
     the box allows (a digit box that reads "g" means 9)."""
+    char, conf = _tesseract_char(cell, whitelist)
+    if not set(whitelist) <= DIGIT_BOXES:
+        return char, conf                            # letters: engine only
+    if char and conf >= CONFIDENT:
+        return char, conf
+    if char in ("V", "v", "X", "x") and conf >= 0.5:
+        return char, conf                            # the letter of an old NIC
+    from ocr.digits import read_digit
+    digit, probability = read_digit(cell)
+    if digit and probability >= MODEL_MIN and digit in whitelist:
+        return digit, probability * 0.9
+    return char, conf
+
+
+def _tesseract_char(cell: np.ndarray, whitelist: str) -> tuple[str, float]:
     votes: dict[str, list[float]] = {}
     images = list(_variants(cell))
     for image in images:
@@ -163,14 +197,34 @@ def _read_char(cell: np.ndarray, whitelist: str) -> tuple[str, float]:
     return best, sum(votes[best]) / len(votes[best])
 
 
-def read_comb(strip: np.ndarray, charset: str = "alnum") -> OCRResult:
-    """The characters written in a strip of boxes, left to right."""
-    whitelist = CHARSETS.get(charset, charset or CHARSETS["alnum"])
+def _clean_cell(cell: np.ndarray) -> np.ndarray:
+    """What is left of the box lines inside a cell, removed: a scanned line
+    is rarely a perfect 1-pixel row, so thick, wavy or dotted pieces of the
+    top and bottom borders survive the shape test. Rows that are mostly ink
+    and thin, wide fragments go; the digit's strokes stay."""
+    import cv2
+    out = (cell > 0).astype(np.uint8) * 255
+    height, width = out.shape
+    out[(out > 0).mean(axis=1) > 0.6] = 0                        # solid bars
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(out, connectivity=8)
+    for i in range(1, count):
+        w, h, area = (stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT],
+                      stats[i, cv2.CC_STAT_AREA])
+        fragment = h <= max(3, 0.1 * height) and w >= 0.3 * width
+        speck = area < 0.008 * height * width
+        if fragment or speck:
+            out[labels == i] = 0
+    return out
+
+
+def split_cells(strip: np.ndarray) -> list[np.ndarray]:
+    """The entry ink of each box of a strip, left to right (empty boxes are
+    left out). Empty list when the strip is not a row of boxes."""
     gray = _gray(strip)
     loose = _dark(gray, FIND_CUT)
     marks = np.nonzero(loose)
     if len(marks[0]) == 0:
-        return OCRResult(text="", confidence=0.0)
+        return []
     # trim the slack the zone leaves around the boxes: all the size tests
     # below are relative to the boxes themselves
     top, bottom = marks[0].min(), marks[0].max() + 1
@@ -178,15 +232,24 @@ def read_comb(strip: np.ndarray, charset: str = "alnum") -> OCRResult:
     gray, loose = gray[top:bottom, left:right], loose[top:bottom, left:right]
     cells = find_cells(loose)
     if len(cells) < MIN_CELLS:
-        return OCRResult(text="", confidence=0.0)
+        return []
     ink = _strip_lines(_dark(gray, ink_level(gray, loose)))
     height = ink.shape[0]
     margin = max(2, int(height * 0.06))
     inked = []
     for x0, x1 in cells:
         cell = ink[margin:height - margin, x0 + 5:x1 - 4]
+        if cell.size:
+            cell = _clean_cell(cell)
         if cell.size and np.count_nonzero(cell) / cell.size >= INK_MIN:
             inked.append(cell)                         # empty boxes are skipped
+    return inked
+
+
+def read_comb(strip: np.ndarray, charset: str = "alnum") -> OCRResult:
+    """The characters written in a strip of boxes, left to right."""
+    whitelist = CHARSETS.get(charset, charset or CHARSETS["alnum"])
+    inked = split_cells(strip)
     # each reading runs the OCR engine as a separate process: do several at once
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         readings = list(pool.map(lambda c: _read_char(c, whitelist), inked))

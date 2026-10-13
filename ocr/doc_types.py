@@ -95,6 +95,8 @@ def page_zone_groups(ocr_cfg: dict, text: str
     if kept:
         groups.append((kept, project_mode))
     if own:
+        if doc_type.get("anchors"):      # lets the reader line zones up with the scan
+            own = [{**z, "anchors": doc_type["anchors"]} for z in own]
         groups.append((own, doc_type.get("mode") or project_mode))
     return groups, doc_type["name"]
 

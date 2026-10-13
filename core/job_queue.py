@@ -32,6 +32,7 @@ from imaging.deskew import deskew
 from imaging.enhance import apply_profile
 from qc.pipeline import run_qc
 from ocr.doc_types import inherit_types, page_zone_groups
+from ocr.orientation import turn, upright
 from separation.barcode import decode_barcodes, filter_barcodes
 from separation.rule_engine import RuleEngine, RuleSetError
 from separation.splitter import split_documents
@@ -316,9 +317,15 @@ class Pipeline:
             if self.ocr_fn is not None and not skip_ocr:
                 image = cv2.imread(record.job.image_path, cv2.IMREAD_UNCHANGED)
                 result = self.ocr_fn(image)
+                if not record.barcodes:        # a barcode page is known: leave it
+                    # a page fed upside down or sideways reads as gibberish:
+                    # read it the other ways up and keep the one that reads
+                    record.rotation, image, result = upright(
+                        image, result, self.ocr_fn)
                 if result is not None:
                     record.ocr_text = result.text
                     record.ocr_confidence = result.confidence
+                    record.ocr_words = list(getattr(result, "words", None) or [])
                 self._extract_zone_fields(record, image, rt)
             self._emit("ocr", "done", job_id=record.job.job_id,
                        batch_id=record.job.batch_id)
@@ -351,7 +358,7 @@ class Pipeline:
                     from ocr.zone_extractor import extract_fields
                     fields.update(extract_fields(
                         image, zones, lang=ocr_cfg.get("lang", "eng"),
-                        ocr_fn=self.ocr_fn))
+                        ocr_fn=self.ocr_fn, words=record.ocr_words))
             except Exception as e:
                 log.warning("zone extraction failed for page %s: %s",
                             record.job.page_no, e)
@@ -377,7 +384,8 @@ class Pipeline:
             profile = self._rt(record.job.batch_id,
                                record.job.project_id).profile.get(
                 "enhancement_profile", {})
-            image = cv2.imread(record.job.image_path, cv2.IMREAD_UNCHANGED)
+            image = turn(cv2.imread(record.job.image_path, cv2.IMREAD_UNCHANGED),
+                         record.rotation)
             if not record.is_empty:
                 if profile.get("deskew"):
                     image, _ = deskew(image)
@@ -412,6 +420,7 @@ class Pipeline:
             record.qc_detail = {**record.qc_detail,
                                 "original_path": record.job.image_path,
                                 "working_path": record.working_path,
+                                "rotation": record.rotation,
                                 "ocr_text": record.ocr_text}
             self.db.mark_job(record.job.job_id, "complete")
             self._emit("qc", "done", job_id=record.job.job_id,

@@ -86,3 +86,43 @@ def test_only_the_first_page_carries_the_form_title():
         hits = [bool(re.search(loan_form.TITLE_PATTERN, page.get_text(), re.I))
                 for page in doc]
     assert hits == [True, False, False, False]
+
+
+# -- a printed-and-scanned copy: smaller, shifted, slightly crooked -----------------------------
+def distorted(filled, scale=0.95, angle=1.2, shift=(60, 45), dpi=200):
+    """The filled form as a scan of a printed copy: shrunk by the printer's
+    fit-to-page, offset by its margins and put in the scanner slightly crooked."""
+    import cv2
+    page = render(filled, dpi)
+    h, w = page.shape
+    matrix = cv2.getRotationMatrix2D((w / 2, h / 2), angle, scale)
+    matrix[:, 2] += shift
+    return cv2.warpAffine(page, matrix, (w, h), borderValue=255)
+
+
+@pytest.mark.parametrize("scale,angle,shift", [(0.95, 1.2, (60, 45)),
+                                               (0.90, -0.8, (-30, 80)),
+                                               (1.0, 0.0, (0, 0))])
+def test_a_shrunk_shifted_crooked_copy_is_still_read_in_the_right_boxes(filled, scale, angle, shift):
+    page = distorted(filled, scale, angle, shift)
+    words = ocr_page(page).words
+    zones = [{**z, "anchors": loan_form.anchors()} for z in loan_form.zones()]
+    got = extract_fields(page, zones, words=words)
+    exact = [name for name in loan_form.SAMPLE if got[name].value == loan_form.SAMPLE[name]]
+    # the boxed numbers and the printed lines must all be right; a crooked page
+    # may cost one free-text line
+    assert len(exact) >= 8, {n: got[n].value for n in loan_form.SAMPLE if n not in exact}
+    for name in ("account_number", "nic_number", "passport_number", "date_of_birth"):
+        assert got[name].value == loan_form.SAMPLE[name], name
+
+
+def test_without_alignment_the_same_shrunk_copy_is_read_in_the_wrong_boxes(filled):
+    """What the alignment is for: the template positions alone miss."""
+    page = distorted(filled, 0.90, 0.0, (-30, 80))
+    got = extract_fields(page, loan_form.zones())          # no anchors, no words
+    wrong = [n for n in loan_form.SAMPLE if got[n].value != loan_form.SAMPLE[n]]
+    assert len(wrong) >= 4
+
+
+def test_the_templates_form_type_carries_the_anchors():
+    assert loan_form.document_type().get("anchors")

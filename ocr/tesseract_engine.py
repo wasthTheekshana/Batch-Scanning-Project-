@@ -6,7 +6,7 @@ TesseractNotFound so the pipeline can keep moving pages without OCR.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -19,6 +19,9 @@ class TesseractNotFound(Exception):
 class OCRResult:
     text: str
     confidence: float  # 0.0 – 1.0 mean word confidence
+    # every kept word with its box in image pixels, for aligning forms:
+    # [{"text", "left", "top", "width", "height", "conf"}]
+    words: list = field(default_factory=list)
 
 
 def _pytesseract():
@@ -52,21 +55,25 @@ def ocr_page(img: np.ndarray, lang: str = "eng",
                                 config="" if psm is None else f"--psm {psm}")
     except pt.TesseractNotFoundError as e:
         raise TesseractNotFound(str(e)) from e
-    lines: dict[tuple, list[tuple[str, float]]] = {}
+    lines: dict[tuple, list[tuple]] = {}
     for i, (word, conf) in enumerate(zip(data["text"], data["conf"])):
         if word.strip() and float(conf) >= max(0, min_conf):
             key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
-            lines.setdefault(key, []).append((word, float(conf)))
-    words, confs = [], []
+            box = {"text": word, "left": int(data["left"][i]),
+                   "top": int(data["top"][i]), "width": int(data["width"][i]),
+                   "height": int(data["height"][i]), "conf": float(conf)}
+            lines.setdefault(key, []).append((word, float(conf), box))
+    words, confs, boxes = [], [], []
     for entries in lines.values():
-        if sum(c for _, c in entries) / len(entries) < line_min_conf:
+        if sum(c for _, c, _ in entries) / len(entries) < line_min_conf:
             continue
-        for word, conf in entries:
+        for word, conf, box in entries:
             words.append(word)
             confs.append(conf)
+            boxes.append(box)
     text = " ".join(words)
     confidence = (sum(confs) / len(confs) / 100.0) if confs else 0.0
-    return OCRResult(text=text, confidence=confidence)
+    return OCRResult(text=text, confidence=confidence, words=boxes)
 
 
 def ocr_text(img: np.ndarray, lang: str = "eng") -> str:

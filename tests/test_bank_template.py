@@ -122,3 +122,27 @@ def test_a_customers_pages_split_on_the_barcode_and_the_cover_is_dropped():
         TEMPLATE["config"]["separation"])
     assert [[p["page_no"] for p in d["pages"]] for d in docs] == [[2], [4]]
     assert [d["barcode"] for d in docs] == ["CIF-1", "CIF-2"]
+
+
+def test_an_id_card_is_recognised_even_when_ocr_drops_the_start_of_identity():
+    """Real scan of a card turned upright: the title came out as "NTITY CARD"."""
+    text = ("Commesd gocos NTITY CARD 198400300911 Name : A B CARDHOLDER "
+            "Male Date of Birth: 1984/01/03 Holder's Signature")
+    doc_type, fields = read(text)
+    assert doc_type == "NIC" and fields["nic_number"] == "198400300911"
+
+
+def test_the_holders_signature_line_identifies_a_card_whose_title_was_not_read():
+    doc_type, fields = read("garbled 856789012V Name: A B Holder Holder's Signature")
+    assert doc_type == "NIC" and fields["nic_number"] == "856789012V"
+
+
+def test_a_loan_form_that_contains_an_nic_number_is_still_the_form():
+    """Types are tried in order: the form's own title claims the page before
+    the NIC type's number pattern can."""
+    text = "EDUCATION LOAN APPLICATION Account Number NIC No. 198400300911"
+    assert read(text)[0] == "Education loan application"
+
+
+def test_a_plain_letter_with_a_reference_number_is_not_taken_for_a_card():
+    assert read("Dear Sir, our reference 202604170001 is attached")[0] == "Letter"

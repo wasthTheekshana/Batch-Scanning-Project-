@@ -228,10 +228,13 @@ class IndexEditor(QWidget):
                                             extract_fields_from_text)
             typed = bool(self._ocr_cfg and document_types(self._ocr_cfg))
             project_mode = "full_page" if self.full_page else "zone"
+            from ocr.orientation import turn
+            rotations = self._page_rotations(doc)
             for page_no, path in page_paths:
                 image = cv2.imread(path, cv2.IMREAD_UNCHANGED)
                 if image is None:
                     continue
+                image = turn(image, rotations.get(page_no, 0))
                 if typed:      # this page's zones: common + its document type
                     result = ocr_page(image)
                     groups, _name = page_zone_groups(self._ocr_cfg, result.text)
@@ -244,7 +247,10 @@ class IndexEditor(QWidget):
                         fields.update(extract_fields_from_text(
                             result.text, result.confidence, zones))
                     else:
-                        fields.update(extract_fields(image, zones))
+                        page_words = getattr(result, "words", None)
+                        fields.update(extract_fields(
+                            image, zones,
+                            **({"words": page_words} if page_words else {})))
                 for name, fv in fields.items():
                     if fv.value and name not in best:
                         best[name] = (fv.value, fv.confidence, page_no)
@@ -273,6 +279,16 @@ class IndexEditor(QWidget):
                                "zones → Test zone)")
         self.hint.setText("\n".join(results) if results else
                           "No zone fields configured.")
+
+    def _page_rotations(self, doc) -> dict[str, int]:
+        """page_no -> clockwise degrees that make that page upright (pages
+        that were fed the wrong way up are read upright, as the pipeline did)."""
+        try:
+            pages = json.loads(doc["qc_detail"] or "{}").get("pages", {})
+        except json.JSONDecodeError:
+            return {}
+        return {no: int(info.get("rotation") or 0) for no, info in pages.items()
+                if isinstance(info, dict)}
 
     def _page_originals(self, doc) -> list[tuple[str, str]]:
         """[(page_no, original_image_path)] for every page on disk."""
