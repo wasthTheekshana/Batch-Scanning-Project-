@@ -28,6 +28,12 @@ WRITE_FAILED_TEXT = ("The project file could not be written. Close other "
                      "programs using it and try again.")
 QC_STAGES = ["punch_hole", "rotation", "margin", "color", "advanced"]
 STRATEGIES = ["barcode", "blank_page", "zone", "fixed_pages"]
+BARCODE_ROLES = [
+    ("the first page of a document (barcode sticker on the page)",
+     "first_page"),
+    ("a separate cover sheet (not part of the document)", "cover_sheet"),
+    ("automatic: a cover sheet if it has hardly any other text", "auto"),
+]
 OPERATORS = ["eq", "neq", "contains", "not_contains", "is_empty",
              "is_not_empty", "gt", "lt", "gte", "lte", "matches_regex"]
 ACTIONS = ["set_folder", "set_filename", "set_validation_status",
@@ -277,6 +283,16 @@ class WorkflowDesigner(QWidget):
         self.fixed_pages.setSpecialValueText("(off)")
         self.fixed_pages.setEnabled(self.can_edit)
         fixed_row.addRow("Fixed pages per document", self.fixed_pages)
+        self.barcode_role = QComboBox()
+        for label, key in BARCODE_ROLES:
+            self.barcode_role.addItem(label, key)
+        self.barcode_role.setEnabled(self.can_edit)
+        fixed_row.addRow("A page with a barcode is", self.barcode_role)
+        self.barcode_pattern = QLineEdit()
+        self.barcode_pattern.setPlaceholderText(
+            r"optional, e.g. ^CIF-\d+$ (other barcodes are ignored)")
+        self.barcode_pattern.setEnabled(self.can_edit)
+        fixed_row.addRow("Only barcodes matching", self.barcode_pattern)
         s_layout.addLayout(fixed_row)
         layout.addWidget(sep_box)
 
@@ -374,6 +390,32 @@ class WorkflowDesigner(QWidget):
             zone_btns.addWidget(b)
         z_layout.addLayout(zone_btns)
         layout.addWidget(zone_box)
+
+        # document types (one customer file = several kinds of page)
+        type_box = self.type_box = QGroupBox(
+            "Document types (separate index fields per kind of document)")
+        t_layout = QVBoxLayout(type_box)
+        t_layout.addWidget(QLabel(
+            "Use when one project scans several kinds of document (NIC, "
+            "application, letter...). Each type has a pattern that "
+            "recognises its pages and its own index fields; the fields above "
+            "apply to every page. The exported PDF gets a bookmark for each "
+            "type."))
+        self.type_list = QListWidget()
+        t_layout.addWidget(self.type_list)
+        type_btns = QHBoxLayout()
+        self.add_type_btn = QPushButton("Add document type…")
+        self.edit_type_btn = QPushButton("Edit…")
+        self.del_type_btn = QPushButton("Remove")
+        self.add_type_btn.clicked.connect(self.add_type)
+        self.edit_type_btn.clicked.connect(self.edit_type)
+        self.del_type_btn.clicked.connect(
+            lambda: self.type_list.takeItem(self.type_list.currentRow()))
+        for b in (self.add_type_btn, self.edit_type_btn, self.del_type_btn):
+            b.setEnabled(self.can_edit)
+            type_btns.addWidget(b)
+        t_layout.addLayout(type_btns)
+        layout.addWidget(type_box)
 
         # SFTP delivery (Phase 3)
         sftp_box = self.sftp_box = QGroupBox("SFTP delivery (LAN)")
@@ -538,6 +580,7 @@ class WorkflowDesigner(QWidget):
                      self.sftp_remote_path):
             edit.clear()
         self.zone_list.clear()
+        self.type_list.clear()
         self.rule_list.clear()
 
     def _show_unreadable(self) -> None:
@@ -573,7 +616,7 @@ class WorkflowDesigner(QWidget):
 
     def _central_boxes(self) -> tuple[QGroupBox, ...]:
         return (self.feature_box, self.sep_box, self.qc_box, self.zone_box,
-                self.rule_box)
+                self.type_box, self.rule_box)
 
     def _apply_qc_preset(self, text: str) -> None:
         """Fill all five QC threshold fields at once from a named
@@ -600,6 +643,9 @@ class WorkflowDesigner(QWidget):
         for key, cb in self.strategy_checks.items():
             cb.setChecked(key in cfg["separation"]["strategy"])
         self.fixed_pages.setValue(cfg["separation"].get("fixed_pages") or 0)
+        self.barcode_role.setCurrentIndex(max(0, self.barcode_role.findData(
+            cfg["separation"].get("barcode_role", "first_page"))))
+        self.barcode_pattern.setText(cfg["separation"].get("barcode_pattern", ""))
         qc = cfg["qc"]
         self.qc_enabled.setChecked(qc["enabled"])
         for stage, cb in self.qc_stage_checks.items():
@@ -636,6 +682,9 @@ class WorkflowDesigner(QWidget):
         self.zone_list.clear()
         for zone in cfg.get("ocr", {}).get("zones", []):
             self._append_zone(zone)
+        self.type_list.clear()
+        for doc_type in cfg.get("ocr", {}).get("document_types", []):
+            self._append_type(doc_type)
         sftp = cfg["delivery"].get("sftp", {})
         # after the feature toggles above (their signals also set these)
         self.sftp_enabled.setChecked(bool(sftp.get("enabled")))
@@ -666,6 +715,12 @@ class WorkflowDesigner(QWidget):
         cfg["separation"]["strategy"] = [
             k for k, cb in self.strategy_checks.items() if cb.isChecked()]
         cfg["separation"]["fixed_pages"] = self.fixed_pages.value() or None
+        cfg["separation"]["barcode_role"] = self.barcode_role.currentData()
+        pattern = self.barcode_pattern.text().strip()
+        if pattern:
+            cfg["separation"]["barcode_pattern"] = pattern
+        else:
+            cfg["separation"].pop("barcode_pattern", None)
         cfg["qc"]["enabled"] = self.qc_enabled.isChecked()
         cfg["qc"]["stages"] = [s for s, cb in self.qc_stage_checks.items()
                                if cb.isChecked()]
@@ -696,6 +751,12 @@ class WorkflowDesigner(QWidget):
         cfg["ocr"]["zones"] = [
             self.zone_list.item(i).data(Qt.ItemDataRole.UserRole)
             for i in range(self.zone_list.count())]
+        types = [self.type_list.item(i).data(Qt.ItemDataRole.UserRole)
+                 for i in range(self.type_list.count())]
+        if types:
+            cfg["ocr"]["document_types"] = types
+        else:
+            cfg["ocr"].pop("document_types", None)
         cfg["rules"]["rules"] = [
             self.rule_list.item(i).data(Qt.ItemDataRole.UserRole)
             for i in range(self.rule_list.count())]
@@ -766,6 +827,43 @@ class WorkflowDesigner(QWidget):
             if zone:
                 item.setData(Qt.ItemDataRole.UserRole, zone)
                 item.setText(self._zone_label(zone, self._is_full_page_mode()))
+
+    # -- document types ------------------------------------------------------
+    @staticmethod
+    def _type_label(doc_type: dict) -> str:
+        count = len(doc_type.get("zones") or [])
+        return (f"{doc_type['name']} — recognised by /{doc_type.get('regex', '')}/"
+                f" · {count} field{'s' if count != 1 else ''}")
+
+    def _append_type(self, doc_type: dict) -> None:
+        item = QListWidgetItem(self._type_label(doc_type))
+        item.setData(Qt.ItemDataRole.UserRole, doc_type)
+        self.type_list.addItem(item)
+
+    def _type_names(self, skip_row: int = -1) -> tuple:
+        return tuple(self.type_list.item(i).data(Qt.ItemDataRole.UserRole)["name"]
+                     for i in range(self.type_list.count()) if i != skip_row)
+
+    def add_type(self) -> None:
+        from ui.document_type_dialog import DocumentTypeDialog
+        dlg = DocumentTypeDialog(parent=self, full_page=self._is_full_page_mode(),
+                                 taken_names=self._type_names())
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._append_type(dlg.build_type())
+
+    def edit_type(self) -> None:
+        item = self.type_list.currentItem()
+        if item is None:
+            return
+        from ui.document_type_dialog import DocumentTypeDialog
+        dlg = DocumentTypeDialog(
+            item.data(Qt.ItemDataRole.UserRole), parent=self,
+            full_page=self._is_full_page_mode(),
+            taken_names=self._type_names(self.type_list.currentRow()))
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            doc_type = dlg.build_type()
+            item.setData(Qt.ItemDataRole.UserRole, doc_type)
+            item.setText(self._type_label(doc_type))
 
     def _refuse_if_managed(self) -> bool:
         """True (after telling the user) when the shown project is managed
