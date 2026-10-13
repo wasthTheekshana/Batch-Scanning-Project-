@@ -152,6 +152,11 @@ def revoke_all_sessions(admin: AdminUser = Depends(require_admin),
 @router.post("/users/{user_id}/disable")
 def disable_user(user_id: int, admin: AdminUser = Depends(require_admin),
                  db: Session = Depends(get_db)):
+    # Lock every admin row first (a handful): two admins disabling each
+    # other at the same moment would otherwise each see the other as still
+    # active and both succeed, leaving nobody able to sign in. The second
+    # request waits here and then counts the first one's committed result.
+    db.execute(select(AdminUser.id).with_for_update()).all()
     user = _get(db, user_id)
     if user.id == admin.id:
         raise HTTPException(409, "you cannot disable yourself")

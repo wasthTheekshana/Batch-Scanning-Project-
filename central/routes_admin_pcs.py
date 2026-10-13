@@ -67,7 +67,9 @@ def create_pc(body: PcIn, request: Request,
 
 
 @router.get("/pcs")
-def list_pcs(db: Session = Depends(get_db)):
+def list_pcs(request: Request, db: Session = Depends(get_db)):
+    from central.routes_admin_overview import is_online, online_window
+    window = online_window(db, request)
     assigned: dict[str, list[str]] = {}
     for a in db.scalars(select(PcAssignment)):
         assigned.setdefault(a.pc_id, []).append(a.project_id)
@@ -75,6 +77,7 @@ def list_pcs(db: Session = Depends(get_db)):
              "registered": p.api_key_hash is not None,
              "registered_at": _iso(p.registered_at),
              "last_seen_at": _iso(p.last_seen_at),
+             "online": is_online(p, window),
              "assigned_project_ids": sorted(assigned.get(p.id, []))}
             for p in db.scalars(select(Pc).order_by(Pc.display_name))]
 
@@ -100,5 +103,43 @@ def revoke_key(pc_id: str, admin: AdminUser = Depends(require_admin),
     # A pending enrollment code would otherwise mint a fresh key.
     db.execute(delete(EnrollmentCode).where(EnrollmentCode.pc_id == pc.id))
     record(db, f"admin:{admin.username}", "pc_key_revoked", {"pc_id": pc.id})
+    db.commit()
+    return Response(status_code=204)
+
+
+class PcRename(BaseModel):
+    display_name: SafeStr = Field(min_length=1, max_length=200)
+
+
+@router.patch("/pcs/{pc_id}")
+def rename_pc(pc_id: str, body: PcRename,
+              admin: AdminUser = Depends(require_admin),
+              db: Session = Depends(get_db)):
+    pc = _get_pc(db, pc_id)
+    other = db.scalar(select(Pc).where(Pc.display_name == body.display_name,
+                                       Pc.id != pc.id))
+    if other:
+        raise HTTPException(409, "a PC with that name already exists")
+    old, pc.display_name = pc.display_name, body.display_name
+    record(db, f"admin:{admin.username}", "pc_renamed",
+           {"pc_id": pc.id, "from": old, "to": body.display_name})
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "a PC with that name already exists")
+    return {"id": pc.id, "display_name": pc.display_name}
+
+
+@router.delete("/pcs/{pc_id}", status_code=204)
+def delete_pc(pc_id: str, admin: AdminUser = Depends(require_admin),
+              db: Session = Depends(get_db)):
+    pc = _get_pc(db, pc_id)
+    name = pc.display_name
+    db.execute(delete(EnrollmentCode).where(EnrollmentCode.pc_id == pc.id))
+    db.execute(delete(PcAssignment).where(PcAssignment.pc_id == pc.id))
+    db.delete(pc)
+    record(db, f"admin:{admin.username}", "pc_deleted",
+           {"pc_id": pc_id, "display_name": name})
     db.commit()
     return Response(status_code=204)
