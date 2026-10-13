@@ -23,6 +23,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 KIT = REPO / "demo_kit"
+FORM = REPO / "docs" / "education-loan-english.pdf"      # the bank's real form
 
 INVOICES = [
     ("ACME-1", "ACME TRADING (PVT) LTD", "INV-20391", "18 Mar 2026",
@@ -248,7 +249,8 @@ CUSTOMERS = [
      "app": "APP-55001", "style": "cover",
      "pages": ["nic_front", "nic_back", "app_1", "app_2", "letter"]},
     {"cif": "CIF-100235", "name": "Kamala Silva", "nic": "856789012V",
-     "app": "APP-55002", "style": "sticker", "pages": ["nic_front", "app_1"]},
+     "app": "APP-55002", "style": "sticker",
+     "pages": ["nic_front", "loan_form" if FORM.exists() else "app_1"]},
 ]
 
 
@@ -300,6 +302,17 @@ def build_bank() -> dict[str, Path]:
             parts.append(cover)
         for n, kind in enumerate(cust["pages"], 1):
             path = KIT / f"bank_{cust['cif']}_{n}_{kind}.pdf"
+            if kind == "loan_form":       # the real 4-page form, typed in
+                sys.path.insert(0, str(REPO / "scripts"))
+                import loan_form
+                loan_form.fill_first_page(
+                    FORM, path, all_pages=True,
+                    values={"applicant_name": cust["name"].upper(),
+                            "nic_number": cust["nic"], "date_of_birth": "05031985",
+                            "email": "kamala.silva@example.com",
+                            "mobile": "0719876543", "account_number": "0098765432"})
+                parts.append(path)
+                continue
             c = canvas.Canvas(str(path), pagesize=A4)
             _bank_page(c, kind, cust, *A4,
                        sticker=(cust["style"] == "sticker" and n == 1))
@@ -345,7 +358,8 @@ def run_bank() -> int:
 
         batch_id = str(uuid.uuid4())
         jobs = import_files([files["batch"]], batch_id, pid, sandbox / "staging")
-        report.check("batch pages", len(jobs) == 8, f"({len(jobs)})")
+        expected_pages = 11 if FORM.exists() else 8      # the real form has 4 pages
+        report.check("batch pages", len(jobs) == expected_pages, f"({len(jobs)})")
         win.start_batch(batch_id, jobs)
         h.wait_for(app, lambda: len(win.db.list_documents()) >= 2, 120)
         h.pump(app, 8)
@@ -363,7 +377,10 @@ def run_bank() -> int:
                      {"CIF-100234", "CIF-100235"} <= set(pdfs), str(sorted(pdfs)))
         expected = {"CIF-100234": (5, [[1, "NIC", 1], [1, "Application", 3],
                                        [1, "Letter", 5]]),
-                    "CIF-100235": (2, [[1, "NIC", 1], [1, "Application", 2]])}
+                    "CIF-100235": ((5, [[1, "NIC", 1],
+                                       [1, "Education loan application", 2]])
+                                   if FORM.exists() else
+                                   (2, [[1, "NIC", 1], [1, "Application", 2]]))}
         for cif, (pages, toc) in expected.items():
             if cif in pdfs:
                 with fitz.open(str(pdfs[cif])) as pdf:
@@ -382,10 +399,20 @@ def run_bank() -> int:
                      and a.get("application_number") == "APP-55001"
                      and a.get("applicant_name") == "Nimal Perera"
                      and a.get("doc_types") == "NIC, Application, Letter", str(a))
-        report.check("second customer (barcode sticker): own fields",
-                     b.get("nic_number") == "856789012V"
-                     and b.get("application_number") == "APP-55002"
-                     and b.get("doc_types") == "NIC, Application", str(b))
+        if FORM.exists():
+            report.check("second customer (barcode sticker + the real bank form)",
+                         b.get("nic_number") == "856789012V"
+                         and b.get("applicant_name") == "KAMALA SILVA"
+                         and b.get("account_number") == "0098765432"
+                         and b.get("date_of_birth") == "05031985"
+                         and b.get("email") == "kamala.silva@example.com"
+                         and b.get("doc_types") == "NIC, Education loan application",
+                         str(b))
+        else:
+            report.check("second customer (barcode sticker): own fields",
+                         b.get("nic_number") == "856789012V"
+                         and b.get("application_number") == "APP-55002"
+                         and b.get("doc_types") == "NIC, Application", str(b))
         return report.summary()
 
     code = h.run_main(scenario)

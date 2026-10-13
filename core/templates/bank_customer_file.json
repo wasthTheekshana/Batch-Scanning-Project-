@@ -17,6 +17,116 @@
       "zones": [],
       "document_types": [
         {
+          "name": "Education loan application",
+          "regex": "education\\s+loan\\s+application",
+          "continuation_regex": "course\\s+details|supplementary\\s+limit|relative\\s+mentioned\\s+below",
+          "mode": "zone",
+          "zones": [
+            {
+              "name": "account_number",
+              "x": 98,
+              "y": 205,
+              "w": 154,
+              "h": 17,
+              "ref_w": 595,
+              "ref_h": 842,
+              "comb": true,
+              "charset": "digits",
+              "regex": "(\\d{6,})"
+            },
+            {
+              "name": "branch",
+              "x": 98,
+              "y": 226,
+              "w": 154,
+              "h": 14,
+              "ref_w": 595,
+              "ref_h": 842,
+              "lines": 1,
+              "regex": "^[\\s|.,;:_-]*([^|]+?)[\\s|.,;:_-]*$"
+            },
+            {
+              "name": "applicant_name",
+              "x": 87,
+              "y": 290,
+              "w": 204,
+              "h": 28,
+              "ref_w": 595,
+              "ref_h": 842,
+              "lines": 2,
+              "regex": "^[\\s|.,;:_-]*([^|]+?)[\\s|.,;:_-]*$"
+            },
+            {
+              "name": "date_of_birth",
+              "x": 87,
+              "y": 320,
+              "w": 135,
+              "h": 16,
+              "ref_w": 595,
+              "ref_h": 842,
+              "comb": true,
+              "charset": "digits",
+              "regex": "(\\d{8})"
+            },
+            {
+              "name": "mobile",
+              "x": 64,
+              "y": 505,
+              "w": 86,
+              "h": 15,
+              "ref_w": 595,
+              "ref_h": 842,
+              "lines": 1,
+              "regex": "(\\d[\\d ]{7,}\\d)"
+            },
+            {
+              "name": "email",
+              "x": 64,
+              "y": 534,
+              "w": 226,
+              "h": 14,
+              "ref_w": 595,
+              "ref_h": 842,
+              "lines": 1,
+              "regex": "(\\S+@\\S+)"
+            },
+            {
+              "name": "nic_number",
+              "x": 66,
+              "y": 553,
+              "w": 182,
+              "h": 19,
+              "ref_w": 595,
+              "ref_h": 842,
+              "comb": true,
+              "charset": "nic",
+              "regex": "(\\d{9}[VvXx]|\\d{12})"
+            },
+            {
+              "name": "passport_number",
+              "x": 95,
+              "y": 572,
+              "w": 154,
+              "h": 19,
+              "ref_w": 595,
+              "ref_h": 842,
+              "comb": true,
+              "charset": "alnum"
+            },
+            {
+              "name": "address",
+              "x": 28,
+              "y": 427,
+              "w": 264,
+              "h": 32,
+              "ref_w": 595,
+              "ref_h": 842,
+              "lines": 2,
+              "regex": "^[\\s|.,;:_-]*([^|]+?)[\\s|.,;:_-]*$"
+            }
+          ]
+        },
+        {
           "name": "Application",
           "regex": "application\\s+form|loan\\s+application|account\\s+opening|application\\s+no",
           "zones": [

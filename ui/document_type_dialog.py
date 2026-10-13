@@ -31,6 +31,11 @@ class DocumentTypeDialog(QDialog):
         self.regex.setPlaceholderText(
             "e.g. national identity card|identity card no")
         form.addRow("Recognised when the page text matches", self.regex)
+        self.continuation = QLineEdit(
+            doc_type.get("continuation_regex", "") if doc_type else "")
+        self.continuation.setPlaceholderText(
+            "optional: headings of this form's later pages")
+        form.addRow("Later pages of the same form", self.continuation)
         self.mode = QComboBox()
         self.mode.addItem("Same as the project", None)
         self.mode.addItem("Text patterns (find each value by its label)", "full_page")
@@ -127,10 +132,12 @@ class DocumentTypeDialog(QDialog):
         if not pattern:
             return ("Enter the pattern that recognises this type's pages "
                     "(for example: national identity card).")
-        try:
-            re.compile(pattern)
-        except re.error:
-            return "The recognition pattern is not a valid regular expression."
+        for text in (pattern, self.continuation.text().strip()):
+            try:
+                re.compile(text)
+            except re.error:
+                return ("A recognition pattern is not a valid regular "
+                        "expression.")
         if not self.zones():
             return "Add at least one index field."
         return ""
@@ -144,6 +151,8 @@ class DocumentTypeDialog(QDialog):
     def build_type(self) -> dict:
         doc_type = {"name": self.name.text().strip(),
                     "regex": self.regex.text().strip(), "zones": self.zones()}
+        if self.continuation.text().strip():
+            doc_type["continuation_regex"] = self.continuation.text().strip()
         if self.mode.currentData():
             doc_type["mode"] = self.mode.currentData()
         return doc_type

@@ -68,6 +68,11 @@ class ZoneDialog(QDialog):
         self.charset.setCurrentIndex(max(0, self.charset.findData(
             (zone.get("charset") if zone else None) or "digits")))
         form.addRow("Allowed characters", self.charset)
+        self.lines = QSpinBox()
+        self.lines.setRange(0, 10)
+        self.lines.setSpecialValueText("(automatic)")
+        self.lines.setValue(int(zone.get("lines") or 0) if zone else 0)
+        form.addRow("Lines of text in the region", self.lines)
         self.comb.toggled.connect(self.charset.setEnabled)
         self.charset.setEnabled(self.comb.isChecked())
         coords = QHBoxLayout()
@@ -93,6 +98,7 @@ class ZoneDialog(QDialog):
             self.comb.setChecked(False)
             self.comb.setEnabled(False)
             self.charset.setEnabled(False)
+            self.lines.setEnabled(False)
             for sb in (self.x, self.y, self.w, self.h):
                 sb.setEnabled(False)
             self.hint_full_page = QLabel(
@@ -332,4 +338,6 @@ class ZoneDialog(QDialog):
         if self.comb.isChecked():
             zone["comb"] = True
             zone["charset"] = self.charset.currentData()
+        elif self.lines.value():
+            zone["lines"] = self.lines.value()
         return zone

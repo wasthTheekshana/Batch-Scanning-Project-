@@ -37,18 +37,33 @@ def is_available() -> bool:
         return False
 
 
-def ocr_page(img: np.ndarray, lang: str = "eng") -> OCRResult:
-    """Full-page OCR with mean word confidence."""
+def ocr_page(img: np.ndarray, lang: str = "eng",
+             psm: int | None = None, min_conf: float = 0,
+             line_min_conf: float = 0) -> OCRResult:
+    """Full-page OCR with mean word confidence. psm selects the page
+    segmentation mode (7: one line of text, 6: a block of lines); the
+    default suits a whole page and mangles a thin cropped strip. Words the
+    engine is less sure of than min_conf (box edges read as symbols) are
+    dropped, and so are whole lines whose average confidence is under
+    line_min_conf (a box's debris read as a line of its own)."""
     pt = _pytesseract()
     try:
-        data = pt.image_to_data(img, lang=lang, output_type=pt.Output.DICT)
+        data = pt.image_to_data(img, lang=lang, output_type=pt.Output.DICT,
+                                config="" if psm is None else f"--psm {psm}")
     except pt.TesseractNotFoundError as e:
         raise TesseractNotFound(str(e)) from e
+    lines: dict[tuple, list[tuple[str, float]]] = {}
+    for i, (word, conf) in enumerate(zip(data["text"], data["conf"])):
+        if word.strip() and float(conf) >= max(0, min_conf):
+            key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
+            lines.setdefault(key, []).append((word, float(conf)))
     words, confs = [], []
-    for word, conf in zip(data["text"], data["conf"]):
-        if word.strip() and float(conf) >= 0:
+    for entries in lines.values():
+        if sum(c for _, c in entries) / len(entries) < line_min_conf:
+            continue
+        for word, conf in entries:
             words.append(word)
-            confs.append(float(conf))
+            confs.append(conf)
     text = " ".join(words)
     confidence = (sum(confs) / len(confs) / 100.0) if confs else 0.0
     return OCRResult(text=text, confidence=confidence)

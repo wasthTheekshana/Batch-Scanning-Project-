@@ -76,9 +76,14 @@ def test_a_date_of_birth_is_not_taken_for_the_letter_date():
     assert "letter_date" not in fields
 
 
-def test_field_names_are_unique_across_the_types():
-    names = [z["name"] for t in OCR["document_types"] for z in t["zones"]]
-    assert len(names) == len(set(names)) == len(all_zones(OCR))
+def test_field_names_are_unique_within_each_type_and_shared_names_mean_the_same_field():
+    for doc_type in OCR["document_types"]:
+        names = [z["name"] for z in doc_type["zones"]]
+        assert len(names) == len(set(names)), doc_type["name"]
+    # the two application types both fill applicant_name: one index field
+    shared = [z["name"] for t in OCR["document_types"] for z in t["zones"]]
+    assert shared.count("applicant_name") == 2
+    assert [z["name"] for z in all_zones(OCR)].count("applicant_name") == 1
 
 
 # -- the template as a project -----------------------------------------------------------
@@ -101,7 +106,7 @@ def test_the_template_is_seeded_and_builds_a_valid_project(tmp_path, db):
         "Bank - Customer file", config=cfg)       # validates against the schema
     assert created["separation"]["barcode_role"] == "auto"
     assert [t["name"] for t in created["ocr"]["document_types"]] == [
-        "Application", "NIC", "Letter"]
+        "Education loan application", "Application", "NIC", "Letter"]
     assert created["export"]["filename_template"] == "{barcode}_{counter:04d}"
     assert created["export"]["output_path"].endswith("output")
 

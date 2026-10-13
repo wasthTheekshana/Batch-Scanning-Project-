@@ -44,13 +44,53 @@ def scaled_rect(zone: dict, img_w: int, img_h: int) -> tuple[int, int, int, int]
     return x, y, w, h
 
 
+MIN_STRIP_HEIGHT = 48     # pixels: shorter crops are enlarged before OCR
+
+
+def prepare_strip(strip: np.ndarray) -> np.ndarray:
+    """A crop from a form, made readable: the printed box lines that run
+    through or beside the entry are erased (they merge with letters and
+    swallow the first or last character), and a thin crop is enlarged (the
+    engine misses text on images only ~30 px high)."""
+    import cv2
+    gray = cv2.cvtColor(strip, cv2.COLOR_BGR2GRAY) if strip.ndim == 3 else strip
+    if gray.size == 0:
+        return strip
+    h, w = gray.shape
+    marks = (gray < 200).astype(np.uint8) * 255
+    horizontal = cv2.morphologyEx(
+        marks, cv2.MORPH_OPEN,
+        cv2.getStructuringElement(cv2.MORPH_RECT, (max(15, int(w * 0.35)), 1)))
+    vertical = cv2.morphologyEx(
+        marks, cv2.MORPH_OPEN,
+        cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(10, int(h * 0.9)))))
+    lines = cv2.dilate(cv2.bitwise_or(horizontal, vertical), np.ones((3, 3), np.uint8)) > 0
+    cleaned = gray.copy()
+    if lines.any():
+        # erase only what is as light as the printed lines: the entry itself
+        # (darker ink, e.g. the tail of a "y" crossing a box edge) is kept
+        border = int(np.median(gray[lines]))
+        cleaned[lines & (gray >= border - 25)] = 255
+    if h < MIN_STRIP_HEIGHT:
+        scale = MIN_STRIP_HEIGHT / h
+        cleaned = cv2.resize(cleaned, None, fx=scale, fy=scale,
+                             interpolation=cv2.INTER_CUBIC)
+    # the engine drops characters that touch the image edge
+    cleaned = cv2.copyMakeBorder(cleaned, 12, 12, 12, 12, cv2.BORDER_CONSTANT,
+                                 value=255)
+    return cleaned
+
+
 def extract_fields(img: np.ndarray, zones: list[dict], lang: str = "eng",
                    ocr_fn: Callable[[np.ndarray], OCRResult] | None = None
                    ) -> dict[str, FieldValue]:
     """zones: [{'name': 'invoice_no', 'x':..,'y':..,'w':..,'h':..,
     'regex': optional, 'ref_w'/'ref_h': optional sample dimensions}].
     ocr_fn is injectable for tests."""
-    run_ocr = ocr_fn or (lambda region: ocr_page(region, lang=lang))
+    run_ocr = ocr_fn or (lambda region, psm=None, min_conf=0,
+                         line_min_conf=0: ocr_page(
+        region, lang=lang, psm=psm, min_conf=min_conf,
+        line_min_conf=line_min_conf))
     h, w = img.shape[:2]
     fields: dict[str, FieldValue] = {}
     for zone in zones:
@@ -66,8 +106,21 @@ def extract_fields(img: np.ndarray, zones: list[dict], lang: str = "eng",
             # one character per box (account no., NIC, date of birth)
             from ocr.comb import read_comb
             result = read_comb(strip, zone.get("charset") or "alnum")
+        elif ocr_fn is not None:
+            result = ocr_fn(strip)
         else:
-            result = run_ocr(strip)
+            # a cropped strip is a line (or a few), not a page
+            lines = int(zone.get("lines") or 0)
+            if not lines:
+                lines = 1 if strip.shape[0] <= 0.2 * strip.shape[1] else 2
+            result = run_ocr(prepare_strip(strip), psm=7 if lines == 1 else 6,
+                             min_conf=0 if lines == 1 else 45)
+            printable = re.sub(r"[^\x20-\x7e\n]", "", result.text)
+            if lines > 1:      # keep real lines, drop the box-edge debris
+                printable = " ".join(
+                    ln.strip() for ln in printable.splitlines()
+                    if re.search(r"[A-Za-z0-9]{2}", ln))
+            result = OCRResult(text=printable, confidence=result.confidence)
         value = result.text.strip()
         if zone.get("regex"):
             extracted = _extract_match_value(zone["regex"], value)

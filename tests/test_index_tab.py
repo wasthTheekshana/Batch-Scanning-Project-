@@ -83,7 +83,8 @@ def test_auto_extract_fills_fields(qtbot, env, monkeypatch):
     editor.doc_list.setCurrentRow(0)
     monkeypatch.setattr(
         "ocr.zone_extractor.ocr_page",
-        lambda img, lang="eng": OCRResult(text="No: INV-4242", confidence=0.9))
+        lambda img, lang="eng", **options: OCRResult(text="No: INV-4242",
+                                                     confidence=0.9))
     editor.auto_extract()
     assert editor._inputs["invoice_no"].text() == "INV-4242"
 

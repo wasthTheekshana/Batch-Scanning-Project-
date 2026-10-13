@@ -1,6 +1,6 @@
 from ocr.doc_types import (all_zones, classify_page, document_types,
-                           inherit_types, page_zone_groups, page_zones,
-                           type_runs)
+                           inherit_types, match_page, page_zone_groups,
+                           page_zones, type_runs)
 
 NIC = {"name": "NIC", "regex": "national identity card",
        "zones": [{"name": "nic_number", "regex": r"(\d{12})"}]}
@@ -116,3 +116,38 @@ def test_a_type_zone_replaces_the_common_zone_of_the_same_name_in_groups():
                                "zones": [{"name": "ref", "x": 0, "y": 0, "w": 1, "h": 1}]}]}
     groups, _ = page_zone_groups(ocr, "x")
     assert names(groups) == [(["ref"], "zone")]
+
+
+FORM = {"name": "Form", "regex": "loan application", "continuation_regex": "course details",
+        "mode": "zone", "zones": [{"name": "account", "x": 1, "y": 2, "w": 3, "h": 4}]}
+GENERIC = {"name": "Generic", "regex": "application form", "zones": [{"name": "g", "regex": "(x)"}]}
+FORMS = {"mode": "full_page", "document_types": [FORM, GENERIC]}
+
+
+def test_a_later_page_of_a_form_is_typed_but_its_fields_are_not_read():
+    page = "Course Details ... (see the application form for terms)"
+    doc_type, reads = match_page(page, FORMS)
+    assert doc_type is FORM and reads is False
+    assert page_zone_groups(FORMS, page) == ([], "Form")
+
+
+def test_the_title_page_of_the_form_is_typed_and_read():
+    doc_type, reads = match_page("LOAN APPLICATION  Account number", FORMS)
+    assert doc_type is FORM and reads is True
+    assert names(page_zone_groups(FORMS, "loan application")[0]) == [(["account"], "zone")]
+
+
+def test_an_earlier_type_claims_a_page_before_a_later_types_pattern_is_tried():
+    """The generic type would match "application form" on the form's later
+    page, but the specific form is listed first and claims it by its heading."""
+    assert classify_page("course details application form", FORMS) is FORM
+
+
+def test_pages_that_match_nothing_have_no_type_even_with_continuations():
+    assert match_page("a letter", FORMS) == (None, False)
+
+
+def test_a_broken_continuation_pattern_is_skipped_not_fatal():
+    ocr = {"document_types": [{"name": "A", "regex": "x", "continuation_regex": "(",
+                               "zones": []}, {"name": "B", "regex": "y", "zones": []}]}
+    assert classify_page("y", ocr)["name"] == "B"

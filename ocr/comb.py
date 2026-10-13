@@ -111,13 +111,23 @@ def _ocr(image: np.ndarray, whitelist: str | None, psm: int) -> tuple[str, float
     return best, max(conf, 0.0) / 100.0
 
 
+CELL_HEIGHT = 40       # cells are brought to about this height before reading
+# (size relative to CELL_HEIGHT, dilation) tried. Measured on all ten digits at
+# 150-300 dpi: single-character mode at about the native size is exact, while
+# the line modes and larger or thickened glyphs misread 1 as 4 and 6 as 5.
+VARIANTS = ((1, 0), (0.8, 0), (1.25, 0))
+PSMS = (10, 7)         # engine modes tried per variant (10: a single character)
+
+
 def _variants(cell: np.ndarray):
     """The cell enlarged in a few ways: one engine setting rarely reads every
-    glyph right, so the readings are voted on."""
+    glyph right, so the readings are voted on. The size is relative to the
+    cell, so a 150 dpi and a 300 dpi scan of the same form read alike."""
     import cv2
-    for scale, grow in ((3, 2), (4, 0), (2, 0), (3, 0)):
-        big = cv2.resize(cell, None, fx=scale, fy=scale,
-                         interpolation=cv2.INTER_CUBIC)
+    base = CELL_HEIGHT / cell.shape[0]
+    for scale, grow in VARIANTS:
+        big = cv2.resize(cell, None, fx=base * scale, fy=base * scale,
+                         interpolation=cv2.INTER_AREA if base < 1 else cv2.INTER_CUBIC)
         if grow:
             big = cv2.dilate(big, np.ones((grow, grow), np.uint8))
         yield cv2.copyMakeBorder(255 - big, 24, 24, 24, 24,
@@ -132,7 +142,7 @@ def _read_char(cell: np.ndarray, whitelist: str) -> tuple[str, float]:
     votes: dict[str, list[float]] = {}
     images = list(_variants(cell))
     for image in images:
-        for psm in (10, 8):
+        for psm in PSMS:
             char, conf = _ocr(image, whitelist, psm)
             if char:
                 votes.setdefault(char, []).append(conf)
@@ -141,7 +151,7 @@ def _read_char(cell: np.ndarray, whitelist: str) -> tuple[str, float]:
             break                       # two readings agree: no need for more
     if not votes:                       # unrestricted readings, mapped back
         for image in images:
-            for psm in (10, 8):
+            for psm in PSMS:
                 char, conf = _ocr(image, None, psm)
                 char = LOOKALIKES.get(char, char)
                 if char and char in whitelist:

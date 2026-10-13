@@ -33,19 +33,35 @@ def document_types(ocr_cfg: dict) -> list[dict]:
             if isinstance(t, dict) and t.get("name")]
 
 
-def classify_page(text: str, ocr_cfg: dict) -> dict | None:
-    """The first document type whose pattern matches this page's text."""
+def _matches(pattern, text: str, name: str) -> bool:
+    if not pattern:
+        return False
+    try:
+        return bool(re.search(pattern, text or "", re.IGNORECASE))
+    except re.error:
+        log.warning("document type %r has an invalid pattern; skipped", name)
+        return False
+
+
+def match_page(text: str, ocr_cfg: dict) -> tuple[dict | None, bool]:
+    """(the page's document type, whether its fields are read from this page).
+    Types are tried in order; for each, its `regex` finds the page that carries
+    the fields, and an optional `continuation_regex` recognises the other pages
+    of the same document (a form's later pages), typed but not read. The first
+    type that claims the page wins, so a form's later pages are not taken for
+    some other type that merely mentions the same words."""
     for doc_type in document_types(ocr_cfg):
-        pattern = doc_type.get("regex")
-        if not pattern:
-            continue
-        try:
-            if re.search(pattern, text or "", re.IGNORECASE):
-                return doc_type
-        except re.error:
-            log.warning("document type %r has an invalid pattern; skipped",
-                        doc_type.get("name"))
-    return None
+        name = doc_type.get("name")
+        if _matches(doc_type.get("regex"), text, name):
+            return doc_type, True
+        if _matches(doc_type.get("continuation_regex"), text, name):
+            return doc_type, False
+    return None, False
+
+
+def classify_page(text: str, ocr_cfg: dict) -> dict | None:
+    """The first document type that claims this page's text."""
+    return match_page(text, ocr_cfg)[0]
 
 
 def page_zones(ocr_cfg: dict, text: str) -> tuple[list[dict], str | None]:
@@ -67,9 +83,11 @@ def page_zone_groups(ocr_cfg: dict, text: str
     project's mode, a type's zones use the type's own mode if it has one."""
     project_mode = (ocr_cfg or {}).get("mode") or "zone"
     common = list((ocr_cfg or {}).get("zones") or [])
-    doc_type = classify_page(text, ocr_cfg)
+    doc_type, reads_fields = match_page(text, ocr_cfg)
     if doc_type is None:
         return ([(common, project_mode)] if common else []), None
+    if not reads_fields:                 # a later page of a form: typed only
+        return [], doc_type["name"]
     own = list(doc_type.get("zones") or [])
     own_names = {z.get("name") for z in own}
     groups = []
