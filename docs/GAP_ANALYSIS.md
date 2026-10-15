@@ -18,7 +18,7 @@ Status column: OPEN, IN PROGRESS, DONE, DECIDED (decision taken, work not starte
 | A3 | No traceability from requirement to design to code to test. | FR-1..FR-23 never appear in `tests/`. UAT has 44 items, none ticked. | OPEN |
 | A4 | The SRS has no testable acceptance criteria. | e.g. "OCR 1,000-3,000 pages/hour". | DONE in SRS v2.0 |
 | A5 | Missing documents: SDD, DB design, API spec, test plan, operator manual, admin guide, install guide, release notes. | `central/` has a threat model but no OpenAPI or API document. | OPEN |
-| A6 | `CONTEXT.md` and `docs/adr/` do not exist although `CLAUDE.md` says they should. | Decisions (SQLCipher, central owns config but PCs keep delivery, per-project pipeline) live only in specs and memory. | OPEN |
+| A6 | `CONTEXT.md` and `docs/adr/` do not exist although `CLAUDE.md` says they should. | Decisions (SQLCipher, central owns config but PCs keep delivery, per-project pipeline) live only in specs and memory. | PARTLY DONE: `docs/adr/` started with ADR 0001. `CONTEXT.md` and ADRs for the earlier decisions still to write. |
 | A7 | `docs/SDLC.md` is wrong and overlaps `docs/security/SDLC_POLICY.md`. | Names HSQLDB, Credential Manager and `ui/auto_index`, none of which are in the code. The policy says "300 tests"; there are about 1,100. | OPEN |
 | A8 | Documents contradict each other. | README says the dashboard is not started, the roadmap says it is built, `central/README.md` says the admin API is missing. SAST report covers 7,101 lines; code is about 18,000. `SECURITY_TESTING_SCOPE.md` says no network component exists. | OPEN |
 
@@ -27,7 +27,7 @@ Status column: OPEN, IN PROGRESS, DONE, DECIDED (decision taken, work not starte
 | # | Requirement | Reality | Status |
 |---|---|---|---|
 | B1 | FR-12 PDF/A | `pdf_a` is only a flag; `export/batch_exporter.py` sends it through the plain reportlab writer. | DECIDED: searchable PDF is enough. SRS v2.0 says PDF/A is not supported. Still to do in code: remove `pdf_a` from `core/project_schema.json`, the Designer and `export/batch_exporter.py`. |
-| B2 | NFR-6: 5-10 stations per server, 20+ users | One local database per PC; central syncs configuration only. | DECIDED: documents and index data must also sync to the central server. Needs a design (see section D). |
+| B2 | NFR-6: 5-10 stations per server, 20+ users | One local database per PC; central syncs configuration only. | DESIGN WRITTEN 2026-10-15, awaiting approval: `docs/superpowers/specs/2026-10-15-central-document-sync-design.md` and `docs/adr/0001-central-document-and-index-sync.md`. Owner answers: central copy is the secure archive of record, PCs keep working offline (store and forward), 10+ PCs, volume unknown. Build is phased (spec section 10) and needs gap C6 (migrations) first. |
 | B3 | HLD: manual split/merge of documents in the viewer | Not built. | OPEN |
 | B4 | Per-document-type enhancement profile | Profile is per project only. | OPEN |
 | B5 | FR-17 Viewer role | Defined, but only 8 RBAC tests; the Viewer path is not shown to be covered. | OPEN |
@@ -47,7 +47,7 @@ Status column: OPEN, IN PROGRESS, DONE, DECIDED (decision taken, work not starte
 | C8 | Maintainability. | `ui/workflow_designer.py` 1,141 lines, `core/job_queue.py` 871; 50 broad `except Exception`; slow tests (10-13 s each in `test_loan_form.py`); a known flake. | OPEN |
 | C9 | Housekeeping. | Untracked files in the repo root; release DLLs and `tesseract.exe` sit in the project folder (gitignored); `.superpowers/` holds run data. | OPEN |
 
-## D. B2 design questions (documents and index sync)
+## D. B2 design questions (documents and index sync) - answered, see the design spec
 
 This changes the product from "one app per PC plus central config" to a shared system. Questions to settle
 before any build; the answers go into SRS v2.0 and an ADR:
