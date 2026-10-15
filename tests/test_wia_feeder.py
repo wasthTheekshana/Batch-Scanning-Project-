@@ -218,7 +218,7 @@ def test_scan_area_is_written_after_the_resolution_whatever_the_device_order():
         "6151", "6152", "6147", "6148", "4103", "4104")]
     pages = source(item).acquire(300, "grayscale", False)
     assert pages == [X]
-    assert item.value("6151") == 2481
+    assert item.value("6151") == 4200       # the full width of the scan window (was A4: 2481)
 
 
 class FakeInfo:
@@ -319,3 +319,53 @@ def test_an_unknown_device_is_still_reported_without_waiting(monkeypatch):
     with pytest.raises(ScannerUnavailable, match="not found"):
         WIASource().connect("Some Other Scanner")
     assert waits == []
+
+
+# -- a scan window wider than the paper (Kodak S3060: 12 in wide) ---------------------------
+def _page_on_dark(width=1200, height=900, left=420, paper=620):
+    import cv2
+    import numpy as np
+    img = np.zeros((height, width), np.uint8)               # dark feeder background
+    img[:, left:left + paper] = 240                          # the paper
+    cv2.putText(img, "TEXT", (left + 40, 200), cv2.FONT_HERSHEY_SIMPLEX, 2, 0, 4)
+    ok, buf = cv2.imencode(".png", img)
+    return buf.tobytes()
+
+
+def _shape(png):
+    import cv2
+    import numpy as np
+    return cv2.imdecode(np.frombuffer(png, np.uint8), 0).shape
+
+
+def test_the_dark_background_beside_the_paper_is_trimmed():
+    from scanning.wia_source import _trim_background
+    h, w = _shape(_trim_background(_page_on_dark()))
+    assert h == 900 and 615 <= w <= 625                      # just the paper
+
+
+def test_a_full_width_page_is_left_alone():
+    import cv2
+    import numpy as np
+
+    from scanning.wia_source import _trim_background
+    ok, buf = cv2.imencode(".png", np.full((300, 200), 240, np.uint8))
+    assert _trim_background(buf.tobytes()) == buf.tobytes()
+
+
+def test_an_all_dark_or_unreadable_page_is_never_lost():
+    import cv2
+    import numpy as np
+
+    from scanning.wia_source import _trim_background
+    ok, buf = cv2.imencode(".png", np.zeros((300, 200), np.uint8))
+    assert _trim_background(buf.tobytes()) == buf.tobytes()
+    assert _trim_background(b"not an image") == b"not an image"
+
+
+def test_the_scan_asks_for_the_devices_full_width():
+    from scanning.wia_source import _full_width
+    assert _full_width(RangeProp(200, 2416, 2), 200) == 2416
+    class NoRange:                      # a device that gives no range: A4 width
+        SubType = 0
+    assert _full_width(NoRange(), 200) in (1654, 1654.0)

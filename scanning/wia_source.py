@@ -24,6 +24,8 @@ WIA_DPS_PAGES = "3096"
 # WIA property IDs (scan item)
 WIA_DPI_X = "6147"
 WIA_DPI_Y = "6148"
+WIA_START_X = "6149"
+WIA_START_Y = "6150"
 WIA_EXTENT_X = "6151"
 WIA_EXTENT_Y = "6152"
 WIA_DATA_TYPE = "4103"
@@ -90,6 +92,38 @@ def _as_png(data: bytes) -> bytes:
     return buf.tobytes()
 
 
+def _trim_background(png: bytes) -> bytes:
+    """Cut the dark feeder background off the sides (and bottom) of a page.
+    Some scanners (the Kodak S3060: 12 in wide) scan a window much wider than
+    the paper, which sits in it off-centre; the page is the bright part. Never
+    loses a page: anything unusual (no clear paper, an error) returns the
+    scan unchanged."""
+    try:
+        import cv2
+        import numpy as np
+        img = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_UNCHANGED)
+        if img is None:
+            return png
+        gray = img if img.ndim == 2 else cv2.cvtColor(img[..., :3], cv2.COLOR_BGR2GRAY)
+        h, w = gray.shape
+        bright = gray > 128
+        cols = np.flatnonzero(bright.mean(axis=0) > 0.35)
+        rows = np.flatnonzero(bright.mean(axis=1) > 0.35)
+        if cols.size == 0 or rows.size == 0:
+            return png
+        x0, x1 = int(cols[0]), int(cols[-1]) + 1
+        y0, y1 = int(rows[0]), int(rows[-1]) + 1
+        if (x1 - x0) < 0.3 * w or (y1 - y0) < 0.3 * h:
+            return png                       # not a page on a dark background
+        if x0 <= 2 and y0 <= 2 and x1 >= w - 2 and y1 >= h - 2:
+            return png                       # nothing to trim
+        ok, buf = cv2.imencode(".png", img[y0:y1, x0:x1])
+        return buf.tobytes() if ok else png
+    except Exception:
+        log.exception("trimming the page background failed; page kept as scanned")
+        return png
+
+
 def _even(pixels: float) -> int:
     return round(pixels / 2) * 2
 
@@ -107,6 +141,16 @@ def _snap(prop, pixels: float) -> int:
     except AttributeError:
         pass
     return _even(pixels)
+
+
+def _full_width(prop, dpi: int) -> int:
+    """The widest scan the device allows; A4 when it does not say."""
+    try:
+        if prop.SubType == 1:
+            return int(prop.SubTypeMax)
+    except AttributeError:
+        pass
+    return _snap(prop, A4_INCHES[0] * dpi)
 
 
 def _set_props(collection, values: dict[str, object]) -> None:
@@ -189,10 +233,17 @@ class WIASource(BaseScannerSource):
             })
             # after the resolution: the valid scan-area range depends on it
             by_id = {str(prop.PropertyID): prop for prop in item.Properties}
-            for pid, inches in ((WIA_EXTENT_X, A4_INCHES[0]),
-                                (WIA_EXTENT_Y, A4_INCHES[1])):
+            # the full width of the scan window, from its left edge: the paper
+            # sits somewhere inside it, and the background is trimmed off each
+            # page afterwards (A4 from the left edge cut the page off)
+            for pid in (WIA_START_X, WIA_START_Y):
                 if pid in by_id:
-                    by_id[pid].Value = _snap(by_id[pid], inches * dpi)
+                    by_id[pid].Value = 0
+            if WIA_EXTENT_X in by_id:
+                by_id[WIA_EXTENT_X].Value = _full_width(by_id[WIA_EXTENT_X], dpi)
+            if WIA_EXTENT_Y in by_id:
+                by_id[WIA_EXTENT_Y].Value = _snap(
+                    by_id[WIA_EXTENT_Y], A4_INCHES[1] * dpi)
         except ScannerUnavailable:
             raise
         except Exception as e:
@@ -205,7 +256,7 @@ class WIASource(BaseScannerSource):
                 with tempfile.TemporaryDirectory() as td:
                     out = Path(td) / "scan.png"
                     image.SaveFile(str(out))
-                    data = _as_png(out.read_bytes())
+                    data = _trim_background(_as_png(out.read_bytes()))
             except Exception as e:
                 if _hresult(e) == _PAPER_EMPTY:
                     if pages:
