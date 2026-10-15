@@ -14,8 +14,9 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (QComboBox, QCompleter, QFormLayout, QHBoxLayout,
                              QLabel, QLineEdit, QListWidget, QListWidgetItem,
-                             QPushButton, QSplitter, QVBoxLayout, QWidget)
+                             QMessageBox, QPushButton, QSplitter, QVBoxLayout, QWidget)
 
+from core.validation import kind_for, validate
 from ui.image_viewer import ImageView
 from ui.theme import STATUS_COLORS, mark
 
@@ -108,6 +109,8 @@ class IndexEditor(QWidget):
             edit = QLineEdit()
             edit.setCompleter(self._completer_for(zone["name"]))
             self._inputs[zone["name"]] = edit
+            edit.textChanged.connect(
+                lambda _t, n=zone["name"]: self._check_field(n))
             self.form.addRow(zone["name"], edit)
         if not self.zones:
             self.hint.setText(
@@ -116,6 +119,31 @@ class IndexEditor(QWidget):
                 "auto-extract these fields.")
         else:
             self.hint.setText("")
+
+    # -- format checks ---------------------------------------------------------
+    def _kind(self, name: str) -> str | None:
+        zone = next((z for z in self.zones if z.get("name") == name), {})
+        return kind_for(zone)
+
+    def _check_field(self, name: str) -> str | None:
+        """Mark a field whose value looks wrong (red border and a tooltip)."""
+        edit = self._inputs[name]
+        message = validate(self._kind(name), edit.text())
+        edit.setStyleSheet("border: 1px solid #d33;" if message else "")
+        edit.setToolTip(message or "")
+        return message
+
+    def invalid_fields(self) -> dict[str, str]:
+        return {n: m for n in self._inputs if (m := self._check_field(n))}
+
+    def _confirm_invalid(self, problems: dict[str, str]) -> bool:
+        lines = "\n".join(f"{n}: {m}" for n, m in problems.items())
+        answer = QMessageBox.question(
+            self, "Check these values",
+            f"These values look wrong:\n\n{lines}\n\nSave them anyway?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        return answer == QMessageBox.StandardButton.Yes
 
     def _project_zones(self, project_id) -> tuple[list[dict], bool]:
         """The zones/mode for a document's own project; the editor's
@@ -318,6 +346,9 @@ class IndexEditor(QWidget):
 
     def save(self) -> None:
         if self.document_id is None:
+            return
+        problems = self.invalid_fields()
+        if problems and not self._confirm_invalid(problems):
             return
         doc = self.db.get_document(self.document_id)
         fields = json.loads(doc["extracted_fields"] or "{}")

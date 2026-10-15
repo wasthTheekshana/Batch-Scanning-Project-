@@ -40,6 +40,8 @@ class MainWindow(QMainWindow):
         self.db = db
         self.profile_manager = profile_manager
         self.bus = bus
+        self._unknown_label_batches: set[str] = set()
+        bus.job_progress.connect(self._on_pipeline_event)
         self.pipeline = pipeline
         self.audit = audit
         self.staging_dir = staging_dir
@@ -278,6 +280,37 @@ class MainWindow(QMainWindow):
         document gets its index file written and delivered again."""
         if self.pipeline is not None:
             self.pipeline.reissue_index(document_id)
+
+    def _on_pipeline_event(self, event: dict) -> None:
+        if event.get("stage") == "custody" and event.get("status") == "unknown_label":
+            self.warn_unknown_custody_label(event.get("batch_id", ""), event.get("page_no"))
+
+    def warn_unknown_custody_label(self, batch_id: str, page_no) -> None:
+        """One non-blocking warning per batch: a custody label QR that no
+        bundle in this database owns was scanned (the page was left out of
+        the documents)."""
+        if batch_id in self._unknown_label_batches:
+            return
+        self._unknown_label_batches.add(batch_id)
+        box = QMessageBox(
+            QMessageBox.Icon.Warning, "Unknown custody label",
+            f"Page {page_no} of the batch you are scanning carries a custody "
+            "label that this system does not know (another PC's bundle, a "
+            "mistyped or reissued sheet). It was left out of the documents "
+            "and no custody checkpoint was recorded. Check the bundle in the "
+            "Custody tab.", parent=self)
+        box.setTextFormat(Qt.TextFormat.PlainText)
+        box.setModal(False)
+        box.show()
+        self._unknown_label_box = box
+
+    def report_unreadable_projects(self) -> int:
+        """At startup: tell the operator now about projects that cannot be
+        read, not only when they open the scan wizard. Returns how many."""
+        _readable, unreadable = readable_projects(self.db.list_projects("active"))
+        if unreadable:
+            self._warn_unreadable_projects(unreadable)
+        return len(unreadable)
 
     def open_cover_sheets(self) -> None:
         from ui.cover_sheet_dialog import CoverSheetDialog

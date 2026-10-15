@@ -58,11 +58,17 @@ and open its PDF.
   (ID cards and many forms carry both).
 
 ### 5. Operator workflow
-- Correct a page's document type; clearer review queue with low-confidence
-  fields highlighted.
-- Field validation (NIC format, dates) and lookup against a customer list.
-- Warning for an unknown custody QR; startup notice for unreadable projects;
-  Designer repair path when a project file is also corrupt.
+- Correct a page's document type (NOT DONE: page types are stored per page
+  and drive the PDF bookmarks, so a correction after export needs the PDF
+  re-exported, not just the index file); clearer review queue with
+  low-confidence fields highlighted.
+- ~~Field validation~~ DONE 2026-10-15 for NIC, dates, phone and email
+  (`core/validation.py`; the Index editor marks a wrong value and asks before
+  saving it). Lookup against a customer list still needs the bank's list.
+- ~~Warning for an unknown custody QR~~ DONE (the page is left out of the
+  documents, audited `custody_label_unknown`, one warning per batch).
+  ~~Startup notice for unreadable projects~~ DONE. Designer repair path when a
+  project file is also corrupt: not done.
 
 ### 6. Release readiness
 - Code-signing certificate; install and silent-deploy test on a clean PC.

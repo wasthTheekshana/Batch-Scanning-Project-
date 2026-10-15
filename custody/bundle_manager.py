@@ -21,6 +21,8 @@ from reportlab.pdfgen import canvas
 
 from core.models import new_id
 
+QR_PREFIX = "DOK-BUNDLE-"          # every custody label QR value starts with this
+
 VALID_STAGES = {"receipt", "prep", "scanning", "qc", "storage", "return",
                 "damaged", "missing", "compromised"}
 
@@ -30,7 +32,7 @@ def create_bundle(db, project_id: str, label: str, audit=None) -> dict:
     The QR value is a fresh uuid, not the bundle_id itself, so a bundle
     can be re-issued a new label sheet without changing its identity."""
     bundle_id = new_id()
-    qr_value = f"DOK-BUNDLE-{uuid.uuid4().hex[:12].upper()}"
+    qr_value = f"{QR_PREFIX}{uuid.uuid4().hex[:12].upper()}"
     db.insert_bundle(bundle_id, project_id, label, qr_value)
     record_checkpoint(db, bundle_id, "receipt", operator=None, audit=audit)
     return dict(db.get_bundle(bundle_id))

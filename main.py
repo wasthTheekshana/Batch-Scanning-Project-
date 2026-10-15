@@ -233,6 +233,7 @@ def main() -> int:
                         sync_worker=sync_worker)
     window.show()
     window.report_refused_batches(pipeline.refused_batches)
+    window.report_unreadable_projects()
     code = app.exec()
 
     shutdown_central(sync_worker)

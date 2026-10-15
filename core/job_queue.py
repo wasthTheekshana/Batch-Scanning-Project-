@@ -296,6 +296,8 @@ class Pipeline:
                     with self._lock:
                         operator = self._batches.get(job.batch_id, {}).get(
                             "operator", "system")
+                    from custody.bundle_manager import QR_PREFIX
+                    unknown = []
                     for bc in decoded:
                         try:
                             matched = record_checkpoint_from_barcode(
@@ -303,10 +305,27 @@ class Pipeline:
                                 batch_id=job.batch_id, audit=self.audit)
                             if matched:
                                 record.is_custody_label = True
+                            elif str(bc["value"]).startswith(QR_PREFIX):
+                                unknown.append(bc["value"])
                         except Exception:
                             log.exception(
                                 "custody checkpoint failed for barcode %s on "
                                 "job %s", bc.get("value"), job.job_id)
+                    if unknown:
+                        # a custody label from a bundle this database does not
+                        # know (another PC, a mistyped or reissued sheet): it
+                        # is never document content and must not become a
+                        # document's barcode, and the operator must be told
+                        record.is_custody_label = True
+                        record.barcodes = [b for b in record.barcodes
+                                           if b["value"] not in unknown]
+                        if self.audit is not None:
+                            self.audit.log("custody_label_unknown", operator,
+                                           batch_id=job.batch_id,
+                                           page_no=job.page_no,
+                                           labels=len(unknown))
+                        self._emit("custody", "unknown_label",
+                                   batch_id=job.batch_id, page_no=job.page_no)
             self._emit("ingest", "done", job_id=job.job_id,
                        batch_id=job.batch_id, page_no=job.page_no)
             self.ocr_q.put(record)
