@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QF
                              QHBoxLayout, QLabel, QLineEdit, QListWidget,
                              QListWidgetItem, QPushButton, QVBoxLayout)
 
-from ui.theme import mark
+from ui.theme import fit_to_screen, mark
 from ui.zone_dialog import ZoneDialog
 
 
@@ -18,12 +18,13 @@ class DocumentTypeDialog(QDialog):
                  full_page: bool = True, taken_names: tuple = ()):
         super().__init__(parent)
         self.setWindowTitle("Document type")
-        self.resize(560, 560)
+        fit_to_screen(self, 560, 560)
         self.project_full_page = full_page
         self._taken = {n.lower() for n in taken_names}
         layout = QVBoxLayout(self)
 
         form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.name = QLineEdit(doc_type["name"] if doc_type else "")
         self.name.setPlaceholderText("e.g. NIC")
         form.addRow("Type name", self.name)
@@ -43,10 +44,13 @@ class DocumentTypeDialog(QDialog):
         self.mode.setCurrentIndex(max(0, self.mode.findData(
             doc_type.get("mode") if doc_type else None)))
         form.addRow("Fields are read by", self.mode)
-        self.starts_document = QCheckBox(
-            "A page like this starts a new document (cuts a stack with no barcodes)")
+        self.starts_document = QCheckBox("A page like this starts a new document")
         self.starts_document.setChecked(bool(doc_type and doc_type.get("starts_document")))
         form.addRow("", self.starts_document)
+        starts_hint = QLabel("Use it to cut a stack that has no barcodes.")
+        starts_hint.setWordWrap(True)
+        mark(starts_hint, "muted")
+        form.addRow("", starts_hint)
         layout.addLayout(form)
         hint = QLabel(
             "A page belongs to the first type whose pattern matches its text "

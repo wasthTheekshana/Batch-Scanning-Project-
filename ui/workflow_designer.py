@@ -214,7 +214,12 @@ class WorkflowDesigner(QWidget):
         self.project_combo = QComboBox()
         self.project_combo.currentIndexChanged.connect(self.load_selected)
         top.addWidget(QLabel("Project:"))
+        self.project_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.project_combo.setMinimumContentsLength(12)
         top.addWidget(self.project_combo, stretch=1)
+        actions = QHBoxLayout()      # second row: seven buttons in one row
+        actions.addStretch(1)        # made the tab 1276 px wide
         self.clone_btn = QPushButton("Clone…")
         self.clone_btn.clicked.connect(self.clone_project)
         self.new_from_template_btn = QPushButton("New from template…")
@@ -230,8 +235,9 @@ class WorkflowDesigner(QWidget):
         for b in (self.new_from_template_btn, self.clone_btn,
                   self.rollback_btn, self.save_btn, self.save_template_btn):
             b.setEnabled(self.can_edit)
-            top.addWidget(b)
+            actions.addWidget(b)
         outer.addLayout(top)
+        outer.addLayout(actions)
 
         self.version_label = QLabel("")
         outer.addWidget(self.version_label)
@@ -513,6 +519,15 @@ class WorkflowDesigner(QWidget):
         r_layout.addLayout(rule_btns)
         layout.addWidget(rule_box)
         layout.addStretch(1)
+        # A long help text that cannot wrap sets the minimum width of the whole
+        # form (it was 3243 px): let every long label wrap.
+        for lbl in body.findChildren(QLabel):
+            if len(lbl.text()) > 60:
+                lbl.setWordWrap(True)
+        for combo in body.findChildren(QComboBox):
+            combo.setSizeAdjustPolicy(
+                QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(14)
 
         self.refresh_projects()
         if bus is not None:

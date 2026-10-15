@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                              QLineEdit, QPushButton, QSpinBox, QVBoxLayout)
 
 from ui.page_editor import SelectableImageView
-from ui.theme import mark
+from ui.theme import fit_to_screen, mark
 
 
 def suggest_label_regex(raw_text: str) -> str | None:
@@ -40,13 +40,14 @@ class ZoneDialog(QDialog):
         super().__init__(parent)
         self.full_page = full_page
         self.setWindowTitle("Index zone" + (" (full-page)" if full_page else ""))
-        self.resize(900, 720)
+        fit_to_screen(self, 900, 720)
         self._sample: np.ndarray | None = None
         self._ref = ((zone.get("ref_w"), zone.get("ref_h"))
                      if zone else (None, None))
         layout = QVBoxLayout(self)
 
         form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.name = QLineEdit(zone["name"] if zone else "")
         self.name.setPlaceholderText("e.g. invoice_no")
         form.addRow("Field name", self.name)
@@ -55,10 +56,13 @@ class ZoneDialog(QDialog):
             r"required in full-page mode, e.g. Invoice No:\s*(\S+)" if full_page
             else r"optional, e.g. (INV-\d+)")
         form.addRow("Clean-up regex", self.regex)
-        self.comb = QCheckBox("Each character is written in its own box "
-                              "(account no., NIC, date of birth...)")
+        self.comb = QCheckBox("Each character is in its own box")
         self.comb.setChecked(bool(zone.get("comb")) if zone else False)
         form.addRow(self.comb)
+        comb_hint = QLabel("For account numbers, NICs, dates of birth...")
+        comb_hint.setWordWrap(True)
+        mark(comb_hint, "muted")
+        form.addRow(comb_hint)
         self.charset = QComboBox()
         for label, key in (("Digits only", "digits"),
                            ("Digits and letters", "alnum"),

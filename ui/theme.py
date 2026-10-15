@@ -258,6 +258,24 @@ def apply_theme(app) -> None:
     app.setStyleSheet(QSS)
 
 
+def fit_to_screen(widget, width: int, height: int, share: float = 0.92) -> None:
+    """Resize `widget` to width x height, but never larger than `share` of the
+    usable area of the screen it will appear on (so a 1280x840 window still
+    fits a 1366x768 laptop, and its buttons stay reachable), and centre it."""
+    from PyQt6.QtGui import QGuiApplication
+    screen = (widget.screen() if widget.screen() is not None
+              else QGuiApplication.primaryScreen())
+    if screen is None:
+        widget.resize(width, height)
+        return
+    area = screen.availableGeometry()
+    w = min(width, int(area.width() * share))
+    h = min(height, int(area.height() * share))
+    widget.resize(w, h)
+    widget.move(area.x() + (area.width() - w) // 2,
+                area.y() + (area.height() - h) // 2)
+
+
 def mark(widget, css_class: str) -> None:
     """Tag a widget for QSS class selectors, e.g. mark(btn, "primary")."""
     widget.setProperty("class", css_class)

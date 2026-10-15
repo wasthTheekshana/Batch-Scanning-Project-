@@ -18,7 +18,7 @@ from ui.index_editor import IndexEditor
 from ui.job_monitor import JobMonitor
 from ui.qc_review import QCReviewPanel
 from ui.scan_wizard import ScanWizard
-from ui.theme import ACCENT, icon, mark
+from ui.theme import ACCENT, fit_to_screen, icon, mark
 from ui.workflow_designer import WorkflowDesigner
 
 log = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("DOK Scanner — Batch Document Capture")
         self.setWindowIcon(icon("fa5s.file-import", color=ACCENT))
-        self.resize(1280, 840)
+        fit_to_screen(self, 1280, 840)
 
         central = QWidget()
         root = QVBoxLayout(central)
@@ -110,8 +110,8 @@ class MainWindow(QMainWindow):
         hint = QLabel("Import files, watch a hot folder, or acquire from "
                       "a TWAIN/WIA scanner.")
         mark(hint, "muted")
-        bar.addWidget(hint)
-        bar.addStretch(1)
+        hint.setWordWrap(True)          # a long one-liner made the tab 1138 px wide
+        bar.addWidget(hint, stretch=1)
         scan_layout.addLayout(bar)
         self.viewer = ImageViewer()
         scan_layout.addWidget(self.viewer, stretch=1)

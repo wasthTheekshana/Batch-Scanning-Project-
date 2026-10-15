@@ -9,14 +9,14 @@ from PyQt6.QtWidgets import (QComboBox, QDialog, QFileDialog, QFormLayout,
 
 from scanning.cover_sheets import (MAX_COPIES, CoverSheetError, parse_ids,
                                    sequence_ids, write_cover_sheets)
-from ui.theme import mark
+from ui.theme import fit_to_screen, mark
 
 
 class CoverSheetDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Print cover sheets / barcode labels")
-        self.resize(560, 560)
+        fit_to_screen(self, 560, 560)
         self.last_path = None
         layout = QVBoxLayout(self)
         intro = QLabel(
@@ -29,6 +29,7 @@ class CoverSheetDialog(QDialog):
         layout.addWidget(intro)
 
         seq = QFormLayout()
+        seq.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.prefix = QLineEdit()
         self.prefix.setPlaceholderText("e.g. CIF-")
         self.start = QSpinBox()
@@ -48,8 +49,10 @@ class CoverSheetDialog(QDialog):
         self.add_series_btn.clicked.connect(self.add_series)
         layout.addWidget(self.add_series_btn)
 
-        layout.addWidget(QLabel("IDs to print (one per line, or paste a "
-                                "column from Excel)"))
+        ids_label = QLabel("IDs to print (one per line, or paste a "
+                           "column from Excel)")
+        ids_label.setWordWrap(True)
+        layout.addWidget(ids_label)
         self.ids = QPlainTextEdit()
         self.ids.textChanged.connect(self._recount)
         layout.addWidget(self.ids, stretch=1)
@@ -59,6 +62,7 @@ class CoverSheetDialog(QDialog):
         layout.addWidget(self.summary)
 
         opts = QFormLayout()
+        opts.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.layout_combo = QComboBox()
         self.layout_combo.addItem("Cover sheets - one full page per ID", "cover")
         self.layout_combo.addItem("Small labels - 30 stickers per sheet", "labels")

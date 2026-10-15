@@ -19,7 +19,7 @@ from core.search import (SearchQuery, count_documents, known_field_names,
                          search_documents)
 from core.search_export import MAX_ROWS, export_csv
 from custody.timeline import document_timeline, export_timeline
-from ui.theme import mark
+from ui.theme import fit_to_screen, mark
 
 PAGE = 100
 VALIDATION = [("Any status", None), ("Approved", "auto_approved"),
@@ -44,7 +44,7 @@ class TimelineDialog(QDialog):
         super().__init__(parent)
         self.user = user
         self.setWindowTitle(title)
-        self.resize(760, 420)
+        fit_to_screen(self, 760, 420)
         self.entries = entries
         layout = QVBoxLayout(self)
         self.table = QTableWidget(len(entries), 4)

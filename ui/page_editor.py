@@ -25,6 +25,7 @@ from imaging.manual_edit import (adjust_brightness_contrast, crop_rect,
                                  remove_black_borders, rotate90, rotate_fine,
                                  whiteout_rect)
 from ui.image_viewer import ImageView
+from ui.theme import fit_to_screen
 
 UNDO_DEPTH = 10
 
@@ -93,7 +94,7 @@ class PageEditDialog(QDialog):
                  audit=None, username: str = "unknown", parent=None):
         super().__init__(parent)
         self.setWindowTitle("Edit page")
-        self.resize(1000, 760)
+        fit_to_screen(self, 1000, 760)
         self.document_id = document_id
         self.pages = pages           # page_no -> {original_path, working_path}
         self.audit = audit
