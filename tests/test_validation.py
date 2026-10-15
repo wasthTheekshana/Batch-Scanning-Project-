@@ -88,3 +88,57 @@ def test_a_correct_value_saves_without_asking(editor, monkeypatch):
     monkeypatch.setattr(editor, "_confirm_invalid", lambda p: pytest.fail("asked"))
     editor.save()
     assert "856789012V" in editor.db.get_document("d1")["extracted_fields"]
+
+
+def test_fields_the_reader_was_unsure_of_are_highlighted_until_saved(editor):
+    import json
+    editor.db.update_document("d1", extracted_fields={"nic_number": "856789012V",
+                                                      "applicant_name": "N Perera"},
+                              qc_detail={"low_conf_fields": ["applicant_name"]})
+    editor.load_document("d1")
+    name, nic = editor._inputs["applicant_name"], editor._inputs["nic_number"]
+    assert "background" in name.styleSheet() and "low confidence" in name.toolTip()
+    assert nic.styleSheet() == ""
+    editor.save()
+    assert name.styleSheet() == ""
+    assert "low_conf_fields" not in json.loads(editor.db.get_document("d1")["qc_detail"])
+
+
+def test_a_wrong_format_outranks_the_low_confidence_mark(editor):
+    editor.db.update_document("d1", extracted_fields={"nic_number": "123"},
+                              qc_detail={"low_conf_fields": ["nic_number"]})
+    editor.load_document("d1")
+    assert "border" in editor._inputs["nic_number"].styleSheet()
+
+
+def test_the_pipeline_records_which_fields_were_read_with_low_confidence(tmp_path):
+    import json
+
+    from core.job_queue import Pipeline
+    from data.db import Database
+    from delivery.local_folder import LocalFolderChannel
+    from export.batch_exporter import export_document
+    from ocr.tesseract_engine import OCRResult
+    from tests.test_pipeline import make_profile, wait_for, write_pages
+    db = Database(tmp_path / "lc.db")
+    db.insert_project("proj-1", "P", {})
+    profile = make_profile(tmp_path)
+    profile["separation"] = {"strategy": ["fixed_pages"], "fixed_pages": 1,
+                             "blank_threshold": 0.02}
+    profile["features"]["auto_index"] = True
+    profile["ocr"] = {"lang": "eng", "mode": "full_page", "confidence_threshold": 0.5,
+                      "zones": [{"name": "invoice_no", "regex": r"No:\s*(\S+)"},
+                                {"name": "ref", "regex": r"Ref:\s*(\S+)"}]}
+    pipeline = Pipeline(db, profile, [LocalFolderChannel(profile["delivery"]["local_folder"])],
+                        export_document, working_dir=tmp_path / "staging",
+                        ocr_fn=lambda image: OCRResult("Invoice No: INV-1", 0.95))
+    jobs = write_pages(tmp_path, ["text"])
+    pipeline.start()
+    try:
+        pipeline.submit_batch("batch-1", jobs, operator="admin")
+        assert wait_for(lambda: db.list_documents("batch-1"))
+        detail = json.loads(db.list_documents("batch-1")[0]["qc_detail"])
+        assert detail["low_conf_fields"] == ["ref"]            # not found on the page
+    finally:
+        pipeline.shutdown()
+        db.close()

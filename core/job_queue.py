@@ -562,6 +562,8 @@ class Pipeline:
                 {**r.qc_detail, "doc_type": r.doc_type} if r.doc_type
                 else r.qc_detail) for r in records},
                          "flags": document["flags"]}
+            if low_conf:        # the Index tab highlights these for the operator
+                qc_detail["low_conf_fields"] = sorted(low_conf)
             if fingerprint_detail:
                 qc_detail["fingerprint"] = fingerprint_detail
             self.db.insert_document(

@@ -41,6 +41,7 @@ class IndexEditor(QWidget):
         self.zones = list(zones or [])
         self.full_page = full_page
         self.document_id: str | None = None
+        self._low_conf: set[str] = set()      # fields the reader was unsure of
         self._inputs: dict[str, QLineEdit] = {}
 
         layout = QHBoxLayout(self)
@@ -129,8 +130,11 @@ class IndexEditor(QWidget):
         """Mark a field whose value looks wrong (red border and a tooltip)."""
         edit = self._inputs[name]
         message = validate(self._kind(name), edit.text())
-        edit.setStyleSheet("border: 1px solid #d33;" if message else "")
-        edit.setToolTip(message or "")
+        unsure = name in self._low_conf and not message
+        edit.setStyleSheet("border: 1px solid #d33;" if message
+                           else "background: #fff4cc; color: #222;" if unsure else "")
+        edit.setToolTip(message or ("Read with low confidence: please check "
+                                    "this against the page." if unsure else ""))
         return message
 
     def invalid_fields(self) -> dict[str, str]:
@@ -237,8 +241,14 @@ class IndexEditor(QWidget):
                            f"pages {doc['page_range']} · "
                            f"{doc['validation_status']}")
         fields = json.loads(doc["extracted_fields"] or "{}")
+        try:
+            self._low_conf = set(json.loads(doc["qc_detail"] or "{}")
+                                 .get("low_conf_fields") or [])
+        except (TypeError, ValueError):
+            self._low_conf = set()
         for name, edit in self._inputs.items():
             edit.setText(str(fields.get(name, "")))
+            self._check_field(name)
         image = self._first_page_image(doc)
         if image:
             self.page_view.set_image(image)
@@ -358,6 +368,8 @@ class IndexEditor(QWidget):
         flags = [f for f in detail.get("flags", [])
                  if f != "low_confidence_index"]
         detail["flags"] = flags
+        detail.pop("low_conf_fields", None)       # the operator has reviewed them
+        self._low_conf = set()
         self.db.update_document(self.document_id, extracted_fields=fields,
                                 qc_detail=detail)
         user = self.current_user.username if self.current_user else "unknown"
@@ -366,4 +378,6 @@ class IndexEditor(QWidget):
                            fields=list(self._inputs))
         self.fields_saved.emit(self.document_id, fields)
         self.hint.setText("Saved.")
+        for name in self._inputs:
+            self._check_field(name)
         self.refresh()
