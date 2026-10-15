@@ -54,6 +54,22 @@ class DocumentTypeDialog(QDialog):
         mark(hint, "muted")
         layout.addWidget(hint)
 
+        self._anchors = list(doc_type.get("anchors") or []) if doc_type else []
+        learn_row = QHBoxLayout()
+        self.learn_btn = QPushButton("Learn from a blank form…")
+        self.learn_btn.setToolTip(
+            "Pick a blank copy of this form. Its printed words are remembered "
+            "so scans printed smaller, shifted or crooked are still read in "
+            "the right boxes. Draw the field regions on the SAME blank form.")
+        self.learn_btn.clicked.connect(self.learn_from_blank)
+        self.anchor_label = QLabel("")
+        self.anchor_label.setWordWrap(True)
+        mark(self.anchor_label, "muted")
+        learn_row.addWidget(self.learn_btn)
+        learn_row.addWidget(self.anchor_label, stretch=1)
+        layout.addLayout(learn_row)
+        self._show_anchors()
+
         layout.addWidget(QLabel("Index fields of this type"))
         self.zone_list = QListWidget()
         layout.addWidget(self.zone_list)
@@ -86,6 +102,36 @@ class DocumentTypeDialog(QDialog):
         """How this type's fields are defined (text patterns or regions)."""
         chosen = self.mode.currentData()
         return self.project_full_page if chosen is None else chosen == "full_page"
+
+    # -- blank form --------------------------------------------------------------
+    def _show_anchors(self) -> None:
+        from ocr.sample import describe
+        self.anchor_label.setText(
+            describe(self._anchors) if self._anchors
+            else "No blank form learned yet (optional, for printed forms).")
+
+    def learn_from_blank(self, path: str | None = None, ocr_fn=None) -> None:
+        from PyQt6.QtWidgets import QFileDialog, QMessageBox
+
+        from ocr.sample import learn_anchors, load_sample_image
+        if not path:
+            path, _ = QFileDialog.getOpenFileName(
+                self, "Blank form", "",
+                "Documents (*.pdf *.png *.jpg *.jpeg *.tif *.tiff *.bmp)")
+        if not path:
+            return
+        try:
+            img = load_sample_image(path)
+            anchors = learn_anchors(img, ocr_fn) if img is not None else []
+        except Exception as exc:                 # unreadable file, OCR missing
+            QMessageBox.warning(self, "Blank form",
+                                f"Could not learn this form ({type(exc).__name__}).")
+            return
+        if img is None:
+            QMessageBox.warning(self, "Blank form", "That file could not be opened.")
+            return
+        self._anchors = anchors
+        self._show_anchors()
 
     # -- fields ----------------------------------------------------------------
     @staticmethod
@@ -151,6 +197,8 @@ class DocumentTypeDialog(QDialog):
     def build_type(self) -> dict:
         doc_type = {"name": self.name.text().strip(),
                     "regex": self.regex.text().strip(), "zones": self.zones()}
+        if self._anchors:
+            doc_type["anchors"] = self._anchors
         if self.continuation.text().strip():
             doc_type["continuation_regex"] = self.continuation.text().strip()
         if self.mode.currentData():

@@ -38,9 +38,9 @@ Nobody can find a stored document by customer ID, NIC, account number or date
 and open its PDF.
 
 ### 3. Forms and documents need real-world coverage
-- Self-service form setup: upload a blank form, draw boxes, learn the anchor
-  words automatically (today forms are set up by script; only the Education
-  loan form exists).
+- ~~Self-service form setup~~ DONE 2026-10-15: "Learn from a blank form" in the
+  document-type dialog learns the anchor words (`ocr/sample.py`). Still to do:
+  draw all zones in one step on that same sample (zones are drawn one by one).
 - The Personal Loan form (different layout), the NIC and the letter patterns:
   need real blank/filled samples from the bank.
 - Only page 1 of a multi-page form and only the applicant column are read.
