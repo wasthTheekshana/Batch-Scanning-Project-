@@ -39,10 +39,12 @@ def export_document(images: list[str], export_cfg: dict, ctx: dict,
     if fmt == "image_pdf":
         path = write_image_pdf(images, contained_file(out_dir, f"{name}.pdf"))
     else:
-        # searchable_pdf / pdf_a both go through reportlab
+        # searchable_pdf (a legacy "pdf_a" setting is treated the same way:
+        # PDF/A is not supported)
         path = write_searchable_pdf(images, ocr_texts or [""] * len(images),
                                     contained_file(out_dir, f"{name}.pdf"),
-                                    dpi=ctx.get("dpi", 300))
+                                    dpi=ctx.get("dpi", 300),
+                                    words=ctx.get("ocr_words"))
     add_type_bookmarks(path, ctx.get("page_types"))
     return path
 

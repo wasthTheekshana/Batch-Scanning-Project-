@@ -169,3 +169,82 @@ def test_export_document_still_writes_a_normal_name_inside_the_output_dir(
            "output_path": str(tmp_path / "out")}
     out = export_document(page_files, cfg, {})
     assert out.parent == tmp_path / "out" and out.exists()
+
+
+# ---- searchable PDF: the text layer must sit on the words ----------------------
+
+def _word_rects(pdf_path, page=0):
+    import fitz
+    with fitz.open(str(pdf_path)) as pdf:
+        return [(w[4], fitz.Rect(w[:4])) for w in pdf[page].get_text("words")]
+
+
+def test_text_layer_is_placed_on_each_word(tmp_path):
+    img = tmp_path / "p.png"
+    cv2.imwrite(str(img), make_text_page())              # 800 x 1000 px at 300 dpi
+    words = [{"text": "INVOICE", "left": 100, "top": 40, "width": 300, "height": 40},
+             {"text": "INV-1234", "left": 420, "top": 40, "width": 340, "height": 40},
+             {"text": "Total", "left": 100, "top": 500, "width": 150, "height": 36}]
+    out = write_searchable_pdf([img], ["INVOICE INV-1234 Total"], tmp_path / "d.pdf",
+                               dpi=300, words=[words])
+    found = dict(_word_rects(out))
+    assert set(found) == {"INVOICE", "INV-1234", "Total"}
+    scale = 72 / 300
+    for w in words:
+        r = found[w["text"]]
+        assert r.x0 == pytest.approx(w["left"] * scale, abs=3)
+        assert r.x1 == pytest.approx((w["left"] + w["width"]) * scale, abs=4)
+        assert r.y0 == pytest.approx(w["top"] * scale, abs=4)
+        assert r.y1 == pytest.approx((w["top"] + w["height"]) * scale, abs=5)
+
+
+def test_text_layer_without_boxes_keeps_all_text(tmp_path):
+    img = tmp_path / "p.png"
+    cv2.imwrite(str(img), make_text_page())
+    text = " ".join(f"word{i}" for i in range(1200))       # 8,000+ characters
+    out = write_searchable_pdf([img], [text], tmp_path / "d.pdf")
+    import fitz
+    with fitz.open(str(out)) as pdf:
+        got = pdf[0].get_text()
+    assert "word0" in got and "word1199" in got
+
+
+def test_text_the_pdf_font_cannot_hold_does_not_break_export(tmp_path):
+    img = tmp_path / "p.png"
+    cv2.imwrite(str(img), make_text_page())
+    words = [{"text": "සිංහල", "left": 100, "top": 40, "width": 200, "height": 40},
+             {"text": "Name", "left": 320, "top": 40, "width": 150, "height": 40}]
+    out = write_searchable_pdf([img], ["x"], tmp_path / "d.pdf", words=[words])
+    assert "Name" in dict(_word_rects(out))
+
+
+def test_a_page_with_no_words_still_gets_its_image(tmp_path):
+    img = tmp_path / "p.png"
+    cv2.imwrite(str(img), make_text_page())
+    out = write_searchable_pdf([img, img], ["", "second"], tmp_path / "d.pdf",
+                               words=[[], []])
+    import fitz
+    with fitz.open(str(out)) as pdf:
+        assert pdf.page_count == 2 and pdf[0].get_images()
+
+
+@pytest.mark.skipif(not __import__("ocr.tesseract_engine", fromlist=["x"]).is_available(),
+                    reason="Tesseract not installed")
+def test_real_ocr_words_are_found_where_they_are_printed(tmp_path):
+    from ocr.tesseract_engine import ocr_page
+    page = make_text_page()
+    cv2.putText(page, "Customer Account", (100, 900), cv2.FONT_HERSHEY_SIMPLEX,
+                1.6, 0, 3)
+    img = tmp_path / "p.png"
+    cv2.imwrite(str(img), page)
+    result = ocr_page(page)
+    out = write_searchable_pdf([img], [result.text], tmp_path / "d.pdf",
+                               dpi=300, words=[result.words])
+    import fitz
+    with fitz.open(str(out)) as pdf:
+        hits = pdf[0].search_for("Account")
+    assert hits, "the printed word cannot be found in the PDF text layer"
+    r = hits[0]
+    scale = 72 / 300
+    assert 850 * scale < r.y1 < 960 * scale          # the baseline area it was printed on
+    assert r.x0 > 100 * scale

@@ -47,7 +47,9 @@ UNREADABLE_BANNER = ("This project's file could not be read - it cannot be "
                      "edited here until it is repaired")
 SAVE_LABEL = "Save (new version)"
 SAVE_LOCAL_LABEL = "Save local settings"
-EXPORT_FORMATS = ["searchable_pdf", "image_pdf", "pdf_a", "tiff"]
+# PDF/A is not supported; a project saved with the old "pdf_a" value is
+# shown (and saved) as searchable_pdf, which is what it always produced.
+EXPORT_FORMATS = ["searchable_pdf", "image_pdf", "tiff"]
 INDEX_FORMATS = [("CSV (opens in Excel)", "csv"), ("XML", "xml"),
                  ("JSON", "json")]
 
@@ -716,7 +718,8 @@ class WorkflowDesigner(QWidget):
         self.hot_path.setText(str(hot.get("path") or ""))
         self.hot_path.setEnabled(self.can_edit and self.hot_enabled.isChecked())
         self.color.setCurrentText(cfg["scanner"]["color"])
-        self.export_format.setCurrentText(cfg["export"]["format"])
+        fmt = cfg["export"]["format"]
+        self.export_format.setCurrentText("searchable_pdf" if fmt == "pdf_a" else fmt)
         self.filename_template.setText(cfg["export"]["filename_template"])
         self.output_path.setText(cfg["export"]["output_path"])
         self.delivery_path.setText(

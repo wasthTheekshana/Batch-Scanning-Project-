@@ -246,3 +246,40 @@ def test_bundle_qr_sheet_is_dropped_from_the_exported_document(tmp_path, db):
     # documents should be produced
     docs = db.list_documents("batch-1")
     assert len(docs) == 0
+
+
+def test_searchable_pdf_text_layer_is_read_from_the_final_page_image(tmp_path, db):
+    """The OCR at ingest sees the page before deskew/crop/QC change it, so the
+    searchable PDF's word boxes must come from the exported image itself."""
+    import fitz
+    from ocr.tesseract_engine import OCRResult
+
+    def fake_ocr(image):
+        h, w = image.shape[:2]
+        word = {"text": f"{w}x{h}", "left": 10, "top": 10, "width": 200,
+                "height": 40, "conf": 90.0}
+        return OCRResult(text=f"{w}x{h}", confidence=0.9, words=[word])
+
+    profile = make_profile(tmp_path)
+    profile["export"]["format"] = "searchable_pdf"
+    profile["enhancement_profile"]["crop"] = True
+    channel = LocalFolderChannel(profile["delivery"]["local_folder"])
+    pipeline = Pipeline(db, profile, [channel], export_document,
+                        working_dir=tmp_path / "staging", ocr_fn=fake_ocr)
+    pipeline.start()
+    try:
+        pipeline.submit_batch("batch-1", write_pages(tmp_path, ["text"]),
+                              operator="op1")
+        assert wait_for(lambda: any(
+            d["delivery_status"] == "delivered_local"
+            for d in db.list_documents("batch-1")))
+    finally:
+        pipeline.shutdown()
+
+    pdf_path = Path(db.list_documents("batch-1")[0]["storage_path"])
+    with fitz.open(str(pdf_path)) as pdf:
+        page = pdf[0]
+        img_w, img_h = page.get_images(full=True)[0][2:4]
+        words = [w[4] for w in page.get_text("words")]
+    assert (img_w, img_h) != (800, 1000), "the page was not changed; test proves nothing"
+    assert words == [f"{img_w}x{img_h}"]

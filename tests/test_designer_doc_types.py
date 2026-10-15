@@ -231,3 +231,12 @@ def test_a_centrally_managed_project_keeps_the_index_setting_local(qtbot, env):
     d.index_enabled.setChecked(True)
     d.save()
     assert env.pm.load(d.config["project_id"])["export"]["index"]["enabled"] is True
+
+
+def test_legacy_pdf_a_setting_opens_as_searchable_pdf(qtbot, env):
+    """PDF/A is not supported; an old project that says pdf_a must still load
+    and is shown (and saved) as searchable_pdf."""
+    from ui.workflow_designer import EXPORT_FORMATS
+    assert "pdf_a" not in EXPORT_FORMATS
+    d = designer(qtbot, env, export={"format": "pdf_a"})
+    assert d.export_format.currentText() == "searchable_pdf"

@@ -638,6 +638,29 @@ class Pipeline:
             self.audit.log("index_reissued", "system", document_id=document_id,
                            channels=sent_to)
 
+    def _text_layer(self, images: list[str], texts: list[str]):
+        """Words and text for a searchable PDF, read from the exported page
+        images themselves. The OCR done at ingest saw the page before
+        deskew, crop and QC changed it, so its word boxes would not line up
+        with the final image. A page that cannot be read again keeps the text
+        found at ingest and goes out without word boxes."""
+        words: list[list] = []
+        out_texts: list[str] = []
+        for path, early in zip(images, texts):
+            page_words, text = [], early
+            if self.ocr_fn is not None:
+                try:
+                    result = self.ocr_fn(cv2.imread(path, cv2.IMREAD_UNCHANGED))
+                    if result is not None:
+                        page_words = list(getattr(result, "words", None) or [])
+                        text = result.text or early
+                except Exception:
+                    log.warning("could not read %s again for the PDF text "
+                                "layer", Path(path).name)
+            words.append(page_words)
+            out_texts.append(text)
+        return out_texts, words
+
     def _delivery_worker(self) -> None:
         def handle(item: dict):
             if "reissue_index" in item:
@@ -673,6 +696,9 @@ class Pipeline:
                    "page_types": [r.doc_type for r in records]}
             images = [r.working_path for r in records]
             texts = [r.ocr_text for r in records]
+            if export_cfg.get("format", "searchable_pdf") in (
+                    "searchable_pdf", "pdf_a"):
+                texts, ctx["ocr_words"] = self._text_layer(images, texts)
             out_path = self.export_fn(images, export_cfg, ctx, texts)
             self.db.update_document(doc_id, storage_path=str(out_path))
             if self.audit:
