@@ -40,7 +40,7 @@
       "properties": {
         "strategy": {
           "type": "array",
-          "items": {"enum": ["barcode", "blank_page", "zone", "fixed_pages"]}
+          "items": {"enum": ["barcode", "blank_page", "zone", "fixed_pages", "document_type"]}
         },
         "barcode_types": {"type": "array", "items": {"type": "string"}},
         "barcode_role": {"type": "string",
@@ -86,6 +86,7 @@
               "name": {"type": "string", "minLength": 1},
               "regex": {"type": "string"},
               "continuation_regex": {"type": "string"},
+              "starts_document": {"type": "boolean"},
               "anchors": {"type": "array"},
               "mode": {"type": "string", "enum": ["zone", "full_page"]},
               "zones": {"type": "array"}

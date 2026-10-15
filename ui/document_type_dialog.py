@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout,
+from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
                              QHBoxLayout, QLabel, QLineEdit, QListWidget,
                              QListWidgetItem, QPushButton, QVBoxLayout)
 
@@ -43,6 +43,10 @@ class DocumentTypeDialog(QDialog):
         self.mode.setCurrentIndex(max(0, self.mode.findData(
             doc_type.get("mode") if doc_type else None)))
         form.addRow("Fields are read by", self.mode)
+        self.starts_document = QCheckBox(
+            "A page like this starts a new document (cuts a stack with no barcodes)")
+        self.starts_document.setChecked(bool(doc_type and doc_type.get("starts_document")))
+        form.addRow("", self.starts_document)
         layout.addLayout(form)
         hint = QLabel(
             "A page belongs to the first type whose pattern matches its text "
@@ -197,6 +201,8 @@ class DocumentTypeDialog(QDialog):
     def build_type(self) -> dict:
         doc_type = {"name": self.name.text().strip(),
                     "regex": self.regex.text().strip(), "zones": self.zones()}
+        if self.starts_document.isChecked():
+            doc_type["starts_document"] = True
         if self._anchors:
             doc_type["anchors"] = self._anchors
         if self.continuation.text().strip():

@@ -9,6 +9,11 @@ prepared by the pipeline:
      "is_blank": bool, "barcodes": [{"type","value","rect"}, ...],
      "ocr_text": str}
 
+Strategy "document_type": a page whose document type is marked
+`starts_document` (the title page of a form, matched by its `regex`) begins
+a new document, so a stack with no barcodes is cut into one document per form.
+The pipeline sets page["starts_document"].
+
 separation.drop_blank_pages discards EMPTY pages (ink density under
 drop_blank_threshold, default 0.4%) without splitting; sparse pages are kept.
 Ignored when the blank_page strategy, which splits on blanks, is on.
@@ -58,6 +63,7 @@ def split_documents(pages: list[dict], separation_cfg: dict,
     use_barcode = "barcode" in strategies
     use_blank = "blank_page" in strategies
     use_zone = "zone" in strategies and ocr_fn is not None
+    use_type = "document_type" in strategies
     zones = separation_cfg.get("zones", [])
 
     docs: list[dict] = []
@@ -89,6 +95,9 @@ def split_documents(pages: list[dict], separation_cfg: dict,
         elif use_zone and page.get("image") is not None:
             starts_new = any(check_zone_trigger(page["image"], z, ocr_fn)
                              for z in zones)
+
+        if use_type and page.get("starts_document"):
+            starts_new = True        # the title page of a form begins a document
 
         if starts_new:
             close()

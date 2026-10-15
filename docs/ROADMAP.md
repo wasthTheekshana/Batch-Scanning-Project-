@@ -44,8 +44,9 @@ and open its PDF.
 - The Personal Loan form (different layout), the NIC and the letter patterns:
   need real blank/filled samples from the bank.
 - Only page 1 of a multi-page form and only the applicant column are read.
-- A stack without barcodes cannot be split by form type (a form's title page
-  should start a new document).
+- ~~A stack without barcodes cannot be split by form type~~ DONE 2026-10-15: tick
+  "A page like this starts a new document" on a document type and enable the
+  `document_type` separation strategy.
 
 ### 4. Handwriting and language
 - Free handwriting is unreliable; boxed handwritten digits are about 82%.

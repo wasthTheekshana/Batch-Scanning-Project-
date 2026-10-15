@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 WRITE_FAILED_TEXT = ("The project file could not be written. Close other "
                      "programs using it and try again.")
 QC_STAGES = ["punch_hole", "rotation", "margin", "color", "advanced"]
-STRATEGIES = ["barcode", "blank_page", "zone", "fixed_pages"]
+STRATEGIES = ["barcode", "blank_page", "zone", "fixed_pages", "document_type"]
 BARCODE_ROLES = [
     ("the first page of a document (barcode sticker on the page)",
      "first_page"),

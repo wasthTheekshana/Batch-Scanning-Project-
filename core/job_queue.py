@@ -33,13 +33,20 @@ from imaging.enhance import apply_profile
 from qc.pipeline import run_qc
 from export.index_export import (append_running_csv, build_record,
                                  write_index)
-from ocr.doc_types import inherit_types, page_zone_groups
+from ocr.doc_types import inherit_types, match_page, page_zone_groups
 from ocr.orientation import turn, upright
 from separation.barcode import decode_barcodes, filter_barcodes
 from separation.rule_engine import RuleEngine, RuleSetError
 from separation.splitter import split_documents
 
 log = logging.getLogger(__name__)
+
+
+def _starts_document(text: str, ocr_cfg: dict) -> bool:
+    """True when the page is the title page of a document type that begins a
+    new document (its `regex` matches and the type is marked starts_document)."""
+    doc_type, title_page = match_page(text, ocr_cfg)
+    return bool(doc_type and title_page and doc_type.get("starts_document"))
 
 _SENTINEL = object()
 
@@ -444,7 +451,9 @@ class Pipeline:
                 return
             pages = sorted(state["pages"], key=lambda r: r.job.page_no)
 
+        ocr_cfg = self._rt(batch_id, record.job.project_id).profile.get("ocr", {})
         page_dicts = [{"page_no": r.job.page_no, "image": None,
+                       "starts_document": _starts_document(r.ocr_text, ocr_cfg),
                        "is_blank": r.is_blank, "ink_density": r.ink_density,
                        "barcodes": r.barcodes,
                        "is_custody_label": r.is_custody_label,
