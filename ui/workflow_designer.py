@@ -48,6 +48,8 @@ UNREADABLE_BANNER = ("This project's file could not be read - it cannot be "
 SAVE_LABEL = "Save (new version)"
 SAVE_LOCAL_LABEL = "Save local settings"
 EXPORT_FORMATS = ["searchable_pdf", "image_pdf", "pdf_a", "tiff"]
+INDEX_FORMATS = [("CSV (opens in Excel)", "csv"), ("XML", "xml"),
+                 ("JSON", "json")]
 
 # QC strictness presets (Enhancement Plan §4.3) - one-click threshold sets
 # for document sensitivity (e.g. legal/financial vs routine correspondence).
@@ -359,6 +361,20 @@ class WorkflowDesigner(QWidget):
         e_layout.addRow("Filename template", self.filename_template)
         e_layout.addRow("Export path", self.output_path)
         e_layout.addRow("Delivery folder", self.delivery_path)
+        self.index_enabled = QCheckBox(
+            "Write an index file with each document (the index fields)")
+        self.index_format = QComboBox()
+        for label, key in INDEX_FORMATS:
+            self.index_format.addItem(label, key)
+        self.index_running = QCheckBox(
+            "Also keep one running index.csv of every document")
+        for w in (self.index_enabled, self.index_format, self.index_running):
+            w.setEnabled(self.can_edit)
+        self.index_enabled.toggled.connect(self._index_toggled)
+        e_layout.addRow(self.index_enabled)
+        e_layout.addRow("Index file format", self.index_format)
+        e_layout.addRow(self.index_running)
+        self._index_toggled(False)
         layout.addWidget(exp_box)
 
         # index zones (auto-index fields)
@@ -678,6 +694,11 @@ class WorkflowDesigner(QWidget):
         self.output_path.setText(cfg["export"]["output_path"])
         self.delivery_path.setText(
             cfg["delivery"]["local_folder"].get("path", ""))
+        index = cfg["export"].get("index") or {}
+        self.index_enabled.setChecked(bool(index.get("enabled")))
+        self.index_format.setCurrentIndex(max(
+            0, self.index_format.findData(index.get("format", "csv"))))
+        self.index_running.setChecked(bool(index.get("running_csv")))
         self.ocr_mode.blockSignals(True)
         self.ocr_mode.setCurrentText(
             "Full-page (label-anchored regex)"
@@ -743,6 +764,12 @@ class WorkflowDesigner(QWidget):
         cfg["export"]["format"] = self.export_format.currentText()
         cfg["export"]["filename_template"] = self.filename_template.text()
         cfg["export"]["output_path"] = self.output_path.text()
+        if self.index_enabled.isChecked():
+            cfg["export"]["index"] = {
+                "enabled": True, "format": self.index_format.currentData(),
+                "running_csv": self.index_running.isChecked()}
+        else:
+            cfg["export"].pop("index", None)
         cfg["delivery"]["local_folder"]["path"] = self.delivery_path.text()
         # delivery on/off comes from the Enabled checkboxes (local to this
         # PC); the feature toggles only pre-set them in the form
@@ -770,6 +797,12 @@ class WorkflowDesigner(QWidget):
             self.rule_list.item(i).data(Qt.ItemDataRole.UserRole)
             for i in range(self.rule_list.count())]
         return cfg
+
+    def _index_toggled(self, on: bool) -> None:
+        """The format and running-file choices only matter when an index
+        file is written."""
+        self.index_format.setEnabled(on and self.can_edit)
+        self.index_running.setEnabled(on and self.can_edit)
 
     # -- index zones ---------------------------------------------------------
     def _is_full_page_mode(self) -> bool:

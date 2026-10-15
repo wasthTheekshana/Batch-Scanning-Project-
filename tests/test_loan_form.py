@@ -126,3 +126,17 @@ def test_without_alignment_the_same_shrunk_copy_is_read_in_the_wrong_boxes(fille
 
 def test_the_templates_form_type_carries_the_anchors():
     assert loan_form.document_type().get("anchors")
+
+
+def test_a_straight_page_keeps_its_own_pixels_so_boxed_fields_read_exactly(filled):
+    """Regression: resampling a page that needs no turning blurred the thin
+    box lines and the date of birth was lost. A straight page is read in place."""
+    from ocr.align import STRAIGHT_ENOUGH, estimate_transform, rotation_degrees
+    page = distorted(filled, 0.97, 0.0, (40, 30), dpi=300)
+    words = ocr_page(page).words
+    matrix = estimate_transform(loan_form.anchors(), words)
+    assert abs(rotation_degrees(matrix)) < STRAIGHT_ENOUGH
+    zones = [{**z, "anchors": loan_form.anchors()} for z in loan_form.zones()]
+    got = extract_fields(page, zones, words=words)
+    assert got["date_of_birth"].value == loan_form.SAMPLE["date_of_birth"]
+    assert got["branch"].value == loan_form.SAMPLE["branch"]

@@ -188,3 +188,46 @@ def test_drop_blank_pages_round_trips_through_save(qtbot, env):
     d.drop_blanks.setChecked(False)
     d.save()
     assert "drop_blank_pages" not in env.pm.load(d.config["project_id"])["separation"]
+
+
+# -- the index file settings ---------------------------------------------------------------------
+def test_index_file_settings_round_trip_through_save(qtbot, env):
+    d = designer(qtbot, env, export={"index": {"enabled": True, "format": "xml",
+                                               "running_csv": True}})
+    assert d.index_enabled.isChecked()
+    assert d.index_format.currentData() == "xml" and d.index_running.isChecked()
+    d.index_format.setCurrentIndex(d.index_format.findData("json"))
+    d.index_running.setChecked(False)
+    d.save()
+    saved = env.pm.load(d.config["project_id"])["export"]["index"]
+    assert saved == {"enabled": True, "format": "json", "running_csv": False}
+
+
+def test_switching_the_index_file_off_removes_the_setting(qtbot, env):
+    d = designer(qtbot, env, export={"index": {"enabled": True, "format": "csv"}})
+    d.index_enabled.setChecked(False)
+    d.save()
+    assert "index" not in env.pm.load(d.config["project_id"])["export"]
+
+
+def test_a_project_without_the_setting_shows_it_off_and_saves_without_it(qtbot, env):
+    d = designer(qtbot, env)
+    assert not d.index_enabled.isChecked()
+    assert not d.index_format.isEnabled() and not d.index_running.isEnabled()
+    assert "index" not in d.collect_config()["export"]
+
+
+def test_the_format_choices_unlock_when_the_index_file_is_switched_on(qtbot, env):
+    d = designer(qtbot, env)
+    d.index_enabled.setChecked(True)
+    assert d.index_format.isEnabled() and d.index_running.isEnabled()
+    assert d.collect_config()["export"]["index"]["format"] == "csv"
+
+
+def test_a_centrally_managed_project_keeps_the_index_setting_local(qtbot, env):
+    d = designer(qtbot, env)
+    env.db.set_central_project(d.config["project_id"], 1)
+    d.load_selected()
+    d.index_enabled.setChecked(True)
+    d.save()
+    assert env.pm.load(d.config["project_id"])["export"]["index"]["enabled"] is True

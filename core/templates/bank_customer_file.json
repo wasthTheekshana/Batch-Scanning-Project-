@@ -665,7 +665,12 @@
       ]
     },
     "export": {
-      "filename_template": "{barcode}_{counter:04d}"
+      "filename_template": "{barcode}_{counter:04d}",
+      "index": {
+        "enabled": true,
+        "format": "csv",
+        "running_csv": true
+      }
     },
     "qc": {
       "enabled": true,

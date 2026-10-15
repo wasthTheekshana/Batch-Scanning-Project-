@@ -99,13 +99,19 @@ def extract_fields(img: np.ndarray, zones: list[dict], lang: str = "eng",
     fields: dict[str, FieldValue] = {}
     anchors = next((z["anchors"] for z in zones if z.get("anchors")), None)
     if anchors and words:
-        from ocr.align import dewarp, estimate_transform
+        from ocr.align import (STRAIGHT_ENOUGH, dewarp, estimate_transform,
+                               map_zone, rotation_degrees)
         matrix = estimate_transform(anchors, words, tolerance=max(8.0, 0.006 * w))
         ref = next(((z["ref_w"], z["ref_h"]) for z in zones
                     if z.get("ref_w") and z.get("ref_h")), None)
         if matrix is not None and ref is not None:
-            img = dewarp(img, matrix, *ref)         # the form, straight and on its template
-            h, w = img.shape[:2]
+            if abs(rotation_degrees(matrix)) < STRAIGHT_ENOUGH:
+                # straight: move the regions onto the scan, leave its pixels alone
+                zones = [map_zone(z, matrix) if all(k in z for k in "xywh") else z
+                         for z in zones]
+            else:
+                img = dewarp(img, matrix, *ref)     # turned: straighten onto the template
+                h, w = img.shape[:2]
     for zone in zones:
         if not all(k in zone for k in ("x", "y", "w", "h")):
             continue  # not yet positioned (e.g. a fresh template zone)

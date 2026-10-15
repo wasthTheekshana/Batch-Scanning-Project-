@@ -133,6 +133,7 @@ class MainWindow(QMainWindow):
             db, zones, audit, user, full_page=(ocr_mode == "full_page"),
             zones_for_project=self._zones_for_project,
             ocr_cfg_for_project=self._ocr_cfg_for_project)
+        self.index_editor.fields_saved.connect(self._on_fields_saved)
         self.tabs.addTab(self.index_editor, icon("fa5s.tags"), "Index")
 
         # Job monitor tab
@@ -253,6 +254,12 @@ class MainWindow(QMainWindow):
     def sign_out(self) -> None:
         Session.logout(self.db)
         self.close()
+
+    def _on_fields_saved(self, document_id: str, _fields: dict) -> None:
+        """A corrected index reaches the bank too: an already exported
+        document gets its index file written and delivered again."""
+        if self.pipeline is not None:
+            self.pipeline.reissue_index(document_id)
 
     def open_cover_sheets(self) -> None:
         from ui.cover_sheet_dialog import CoverSheetDialog

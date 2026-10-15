@@ -27,9 +27,11 @@ being built have specs and tickets under `.scratch/<feature>/` (see
 
 ## Missing, in priority order
 
-### 1. Index data never leaves the application  (BUILDING: `.scratch/index-export/`)
-Delivery sends only the PDF. A bank expects the index fields next to each PDF
-(CSV, XML or JSON), updated when an operator corrects a value.
+### 1. ~~Index data never leaves the application~~  DONE 2026-10-15 (`.scratch/index-export/`)
+Built: a CSV, XML or JSON index file is written next to each PDF and delivered
+with it (optional running index.csv); an operator's correction in the Index tab
+rewrites and redelivers it. Settings are in the Workflow Designer's export group
+and switched on in the Bank - Customer file template.
 
 ### 2. No search or retrieval screen  (BUILDING: `.scratch/document-search/`)
 Nobody can find a stored document by customer ID, NIC, account number or date

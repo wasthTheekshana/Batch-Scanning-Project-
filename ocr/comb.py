@@ -45,12 +45,12 @@ def _dark(gray: np.ndarray, level: int) -> np.ndarray:
     return cv2.threshold(gray, level, 255, cv2.THRESH_BINARY_INV)[1]
 
 
-def _vertical_lines(binary: np.ndarray) -> np.ndarray:
+def _vertical_lines(binary: np.ndarray, fraction: float = 0.8) -> np.ndarray:
     import cv2
     return cv2.morphologyEx(
         binary, cv2.MORPH_OPEN,
         cv2.getStructuringElement(cv2.MORPH_RECT,
-                                  (1, max(5, int(binary.shape[0] * 0.8)))))
+                                  (1, max(5, int(binary.shape[0] * fraction)))))
 
 
 def find_cells(binary: np.ndarray) -> list[tuple[int, int]]:
@@ -222,13 +222,16 @@ def split_cells(strip: np.ndarray) -> list[np.ndarray]:
     left out). Empty list when the strip is not a row of boxes."""
     gray = _gray(strip)
     loose = _dark(gray, FIND_CUT)
-    marks = np.nonzero(loose)
-    if len(marks[0]) == 0:
+    # trim the slack the zone leaves around the boxes, down to the box lines
+    # themselves: a zone a few pixels off also takes in a sliver of the
+    # neighbouring row's border, and every size test below is relative to
+    # the boxes' own height
+    lines = _vertical_lines(loose, 0.5)
+    rows, cols = np.nonzero(lines.any(axis=1))[0], np.nonzero(lines.any(axis=0))[0]
+    if len(rows) == 0:
         return []
-    # trim the slack the zone leaves around the boxes: all the size tests
-    # below are relative to the boxes themselves
-    top, bottom = marks[0].min(), marks[0].max() + 1
-    left, right = marks[1].min(), marks[1].max() + 1
+    top, bottom = rows.min(), rows.max() + 1
+    left, right = cols.min(), cols.max() + 1
     gray, loose = gray[top:bottom, left:right], loose[top:bottom, left:right]
     cells = find_cells(loose)
     if len(cells) < MIN_CELLS:

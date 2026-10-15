@@ -3,7 +3,8 @@ import cv2
 import numpy as np
 import pytest
 
-from ocr.align import build_anchors, dewarp, estimate_transform
+from ocr.align import (build_anchors, dewarp, estimate_transform, map_zone,
+                       rotation_degrees)
 
 ANCHORS = [{"t": "account", "x": 40, "y": 100}, {"t": "branch", "x": 40, "y": 130},
            {"t": "mobile", "x": 40, "y": 400}, {"t": "passport", "x": 40, "y": 430},
@@ -45,6 +46,20 @@ def test_dewarping_puts_template_positions_back_where_they_were_drawn():
     assert straight.shape == (480, 400)                  # 100 x 120 units at 4 px
     ys, xs = np.nonzero(straight < 128)
     assert abs(xs.mean() - 30 * 4.0) < 2 and abs(ys.mean() - 40 * 4.0) < 2
+
+
+def test_a_zone_is_carried_to_where_the_form_really_is():
+    truth = similarity(4.0, 0, 100, 50)
+    zone = {"name": "n", "x": 10, "y": 20, "w": 30, "h": 5, "ref_w": 595, "ref_h": 842,
+            "anchors": ANCHORS, "regex": "(x)"}
+    moved = map_zone(zone, truth)
+    assert (moved["x"], moved["y"], moved["w"], moved["h"]) == (140, 130, 120, 20)
+    assert "ref_w" not in moved and "anchors" not in moved and moved["regex"] == "(x)"
+
+
+def test_the_rotation_of_a_fit_is_reported_in_degrees():
+    assert abs(rotation_degrees(similarity(4.0, 1.5, 0, 0)) - 1.5) < 1e-6
+    assert abs(rotation_degrees(similarity(4.0, 0, 9, 9))) < 1e-9
 
 
 def test_repeated_labels_in_a_second_column_do_not_throw_the_fit_off():

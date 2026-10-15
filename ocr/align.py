@@ -90,3 +90,27 @@ def dewarp(img: np.ndarray, matrix: np.ndarray, ref_w: float,
     size = (int(round(ref_w * density)), int(round(ref_h * density)))
     return cv2.warpAffine(img, to_template[:2], size, flags=cv2.INTER_LINEAR,
                           borderValue=255)
+
+
+STRAIGHT_ENOUGH = 0.25      # degrees: a page turned less than this is not resampled
+
+
+def rotation_degrees(matrix: np.ndarray) -> float:
+    return float(np.degrees(np.arctan2(matrix[1, 0], matrix[0, 0])))
+
+
+def map_zone(zone: dict, matrix: np.ndarray) -> dict:
+    """The zone's region in scan pixels: the template rectangle's corners
+    carried through the transform. The zone loses its ref size, because it is
+    now in absolute pixels. Used for pages that are straight enough to read in
+    place: resampling a whole page blurs the thin box lines of a form, so it
+    is done only when the page is actually turned."""
+    x, y, w, h = (float(zone[k]) for k in ("x", "y", "w", "h"))
+    corners = np.array([[x, y, 1], [x + w, y, 1], [x, y + h, 1], [x + w, y + h, 1]])
+    mapped = corners @ matrix.T
+    x0, y0 = mapped.min(axis=0)
+    x1, y1 = mapped.max(axis=0)
+    out = {k: v for k, v in zone.items() if k not in ("ref_w", "ref_h", "anchors")}
+    out.update(x=int(round(x0)), y=int(round(y0)),
+               w=int(round(x1 - x0)), h=int(round(y1 - y0)))
+    return out

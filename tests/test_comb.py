@@ -99,3 +99,21 @@ def test_the_regex_cleans_the_comb_reading_like_any_other_zone():
     zones = [{"name": "n", "comb": True, "charset": "digits", "regex": r"(\d{4})",
               "x": 0, "y": 40, "w": 590, "h": 90}]
     assert extract_fields(page, zones)["n"].value == "1234"
+
+
+@pytest.mark.parametrize("sliver", [1, 2, 4, 6])
+def test_a_crop_that_takes_in_a_sliver_of_the_next_rows_border_still_reads(sliver):
+    """Regression: a zone 2 pixels off added a bit of the neighbouring row's top
+    border below the boxes, and the cell finder (which sized the boxes by every
+    mark in the crop) found no cells at all."""
+    strip = comb_strip("05031985")
+    extra = np.full((sliver + 3, strip.shape[1]), 255, np.uint8)
+    extra[sliver:sliver + 2, :] = BORDER                  # the next row's top border
+    extra[sliver:, 10:12] = BORDER                        # and the start of its dividers
+    crop = np.vstack([strip, extra])
+    assert read_comb(crop, "digits").text == "05031985"
+
+
+def test_a_crop_shifted_up_so_it_misses_the_top_border_still_reads():
+    strip = comb_strip("0012345678")
+    assert read_comb(strip[4:, :], "digits").text == "0012345678"

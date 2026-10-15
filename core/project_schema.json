@@ -102,7 +102,15 @@
         "format": {"enum": ["image_pdf", "searchable_pdf", "pdf_a", "tiff"]},
         "pdf_a": {"type": "boolean"},
         "filename_template": {"type": "string"},
-        "output_path": {"type": "string"}
+        "output_path": {"type": "string"},
+        "index": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "format": {"enum": ["csv", "xml", "json"]},
+            "running_csv": {"type": "boolean"}
+          }
+        }
       }
     },
     "delivery": {

@@ -1,6 +1,6 @@
 # Index export: send the index fields with every document
 
-Status: in progress
+Status: done (2026-10-15)
 
 ## Problem
 The pipeline fills index fields (customer id/barcode, NIC, account, dates...) but delivery

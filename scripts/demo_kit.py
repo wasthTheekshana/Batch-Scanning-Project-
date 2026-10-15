@@ -389,6 +389,26 @@ def run_bank() -> int:
                                  f"({pdf.page_count} pages, expected {pages})")
                     report.check(f"{cif}.pdf: bookmarks per document type",
                                  pdf.get_toc() == toc, str(pdf.get_toc()))
+        index_rows = {}
+        import csv as _csv
+        for cif in ("CIF-100234", "CIF-100235"):
+            matches = sorted(out_dir.glob(f"{cif}_*.csv"))
+            if not matches:
+                continue
+            sidecar = matches[0]
+            with open(sidecar, newline="", encoding="utf-8-sig") as f:
+                index_rows[cif] = next(_csv.DictReader(f))
+        report.check("an index file sits next to each PDF",
+                     set(index_rows) == {"CIF-100234", "CIF-100235"}, str(sorted(index_rows)))
+        running = out_dir / "index.csv"
+        report.check("the running index lists both customers",
+                     running.exists() and len(list(_csv.DictReader(
+                         open(running, newline="", encoding="utf-8-sig")))) == 2)
+        if "CIF-100234" in index_rows:
+            report.check("the index carries the customer's fields",
+                         index_rows["CIF-100234"]["nic_number"] == "199012345678"
+                         and index_rows["CIF-100234"]["barcode"] == "CIF-100234"
+                         and index_rows["CIF-100234"]["page_count"] == "5")
         fields = {cif: json.loads(win.db.get_document(d["document_id"])
                                   ["extracted_fields"]) for cif, d in docs.items()}
         for cif, f in fields.items():

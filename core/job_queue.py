@@ -31,6 +31,8 @@ from imaging.crop import auto_crop
 from imaging.deskew import deskew
 from imaging.enhance import apply_profile
 from qc.pipeline import run_qc
+from export.index_export import (append_running_csv, build_record,
+                                 write_index)
 from ocr.doc_types import inherit_types, page_zone_groups
 from ocr.orientation import turn, upright
 from separation.barcode import decode_barcodes, filter_barcodes
@@ -553,8 +555,64 @@ class Pipeline:
             self.delivery_q.put({"document": document, "records": records})
         self._pump(self.rule_q, "rule", handle)
 
+    def reissue_index(self, document_id: str) -> bool:
+        """Write and deliver the index file again after an operator changed
+        a document's fields. True when a re-issue was queued; False when
+        there is nothing to do (no index file configured, document not
+        exported, project unavailable). Runs on the delivery thread."""
+        row = self.db.get_document(document_id)
+        if row is None or not row["storage_path"] \
+                or not Path(row["storage_path"]).is_file():
+            return False
+        try:
+            rt = self._resolve(row["project_id"])
+        except ProjectUnavailable:
+            return False
+        if not ((rt.profile.get("export") or {}).get("index") or {}).get("enabled"):
+            return False
+        self.delivery_q.put({"reissue_index": document_id})
+        return True
+
+    def _do_reissue_index(self, document_id: str) -> None:
+        row = self.db.get_document(document_id)
+        if row is None:
+            return
+        try:
+            rt = self._resolve(row["project_id"])
+        except ProjectUnavailable:
+            return
+        pages = json.loads(row["qc_detail"] or "{}").get("pages", {})
+        index_path = self._write_index_file(
+            document_id, row["storage_path"], rt,
+            (rt.profile.get("export") or {}).get("index") or {},
+            page_count=len(pages),
+            fields=json.loads(row["extracted_fields"] or "{}"),
+            qc_score=row["qc_score"])
+        if index_path is None:
+            return
+        details = json.loads(row["delivery_detail"] or "{}")
+        sent_to = []
+        for channel in rt.channels:
+            # only where the document already went; a disc queue would stage a
+            # second copy, so it is left alone
+            if channel.name == "cd_dvd" or not details.get(channel.name, {}).get("success"):
+                continue
+            sent = self._deliver_with_retry(
+                channel, str(index_path),
+                {"document_id": document_id, "project_id": row["project_id"]})
+            details[channel.name]["index"] = {"success": sent.success,
+                                              "checksum": sent.checksum}
+            sent_to.append(channel.name)
+        self.db.update_document(document_id, delivery_detail=details)
+        if self.audit:
+            self.audit.log("index_reissued", "system", document_id=document_id,
+                           channels=sent_to)
+
     def _delivery_worker(self) -> None:
         def handle(item: dict):
+            if "reissue_index" in item:
+                self._do_reissue_index(item["reissue_index"])
+                return
             document, records = item["document"], item["records"]
             doc_id = document["document_id"]
 
@@ -590,6 +648,10 @@ class Pipeline:
             if self.audit:
                 self.audit.log("export", "system", document_id=doc_id,
                                path=str(out_path))
+            index_path = self._write_index_file(
+                doc_id, out_path, rt, export_cfg.get("index") or {},
+                page_count=len(records), fields=document["extracted_fields"],
+                qc_score=document.get("qc_score"))
 
             # multi-channel: project-enabled channels + rule-triggered ones
             targets = list(rt.channels)
@@ -608,6 +670,14 @@ class Pipeline:
                 details[channel.name] = {"success": result.success,
                                          "checksum": result.checksum,
                                          **result.detail}
+                if index_path is not None and result.success:
+                    sent = self._deliver_with_retry(channel, str(index_path),
+                                                    document)
+                    details[channel.name]["index"] = {
+                        "success": sent.success, "checksum": sent.checksum}
+                    if not sent.success and self.audit:
+                        self.audit.log("index_not_delivered", "system",
+                                       document_id=doc_id, channel=channel.name)
                 if result.success:
                     delivered_status = delivered_status or channel.status_value
                     if self.audit:
@@ -623,6 +693,36 @@ class Pipeline:
                        delivery_status=delivered_status or "pending")
             self._maybe_complete_batch(document["batch_id"])
         self._pump(self.delivery_q, "delivery", handle)
+
+    def _write_index_file(self, doc_id: str, pdf_path, rt: ProjectRuntime,
+                          index_cfg: dict, page_count: int, fields: dict,
+                          qc_score) -> Path | None:
+        """Write the document's index file next to its PDF when the project
+        asks for one. A failure never fails the document: it is audited (type
+        only, values can be personal data) and the PDF is still delivered."""
+        if not index_cfg.get("enabled"):
+            return None
+        try:
+            row = self.db.get_document(doc_id)
+            batch = self.db.get_batch(row["batch_id"]) if row is not None else None
+            record = build_record(
+                document_id=doc_id, project_name=rt.profile.get("name", ""),
+                batch_id=row["batch_id"] if row is not None else "",
+                operator=(batch["operator_user"] if batch is not None else "") or "",
+                scanned_at=(row["created_at"] if row is not None else "") or "",
+                qc_score=qc_score, page_count=page_count,
+                pdf_path=pdf_path, fields=fields)
+            path = write_index(pdf_path, record, index_cfg.get("format", "csv"))
+            if index_cfg.get("running_csv"):
+                append_running_csv(Path(pdf_path).parent, record)
+            return path
+        except Exception as e:
+            log.warning("index file not written for %s: %s", doc_id,
+                        type(e).__name__)
+            if self.audit:
+                self.audit.log("index_failed", "system", document_id=doc_id,
+                               error=type(e).__name__)
+            return None
 
     def _check_duplicate(self, document: dict, records: list,
                          rt: ProjectRuntime) -> dict | None:
