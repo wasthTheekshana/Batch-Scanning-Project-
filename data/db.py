@@ -345,6 +345,15 @@ class Database:
                 "SELECT * FROM documents WHERE document_id=?",
                 (document_id,)).fetchone()
 
+    def query(self, sql: str, args=()) -> list[sqlite3.Row]:
+        """Run a read-only SELECT (bound parameters only) and return its rows.
+        For reporting-style queries that do not belong to a single table's
+        accessors; anything but a SELECT is refused."""
+        if not sql.lstrip().upper().startswith("SELECT"):
+            raise ValueError("query() runs SELECT statements only")
+        with self._lock:
+            return self.conn.execute(sql, tuple(args)).fetchall()
+
     def list_documents(self, batch_id: str | None = None,
                        validation_status: str | None = None) -> list[sqlite3.Row]:
         clauses, args = [], []

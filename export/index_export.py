@@ -20,6 +20,7 @@ import os
 import re
 import tempfile
 import threading
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -33,6 +34,43 @@ RUNNING_NAME = "index.csv"
 _FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 _ELEMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
 _running_lock = threading.Lock()
+LOCK_WAIT = 15.0        # seconds to wait for another writer of the running index
+LOCK_STALE = 60.0       # a lock file older than this was left by a crashed writer
+
+
+class IndexLockTimeout(Exception):
+    """Another process held the running index for too long."""
+
+
+class _FolderLock:
+    """A lock between PROCESSES (two PCs delivering into one shared folder):
+    a lock file created exclusively beside index.csv. The threading lock only
+    covers one process, so without this a second writer could read the file
+    while the first rewrites it and one document's row would be lost."""
+
+    def __init__(self, path: Path):
+        self.path = path.with_name(path.name + ".lock")
+
+    def __enter__(self):
+        deadline = time.monotonic() + LOCK_WAIT
+        while True:
+            try:
+                handle = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.close(handle)
+                return self
+            except FileExistsError:
+                try:
+                    if time.time() - self.path.stat().st_mtime > LOCK_STALE:
+                        self.path.unlink(missing_ok=True)      # a crashed writer's
+                        continue
+                except OSError:
+                    pass
+                if time.monotonic() > deadline:
+                    raise IndexLockTimeout(self.path.name)
+                time.sleep(0.05)
+
+    def __exit__(self, *exc):
+        self.path.unlink(missing_ok=True)
 
 
 def _text(value) -> str:
@@ -143,7 +181,8 @@ def append_running_csv(folder: str | Path, record: dict) -> Path:
     (same document_id) has its row replaced, so a correction does not
     duplicate it; a field the file has not seen widens the header."""
     path = Path(folder) / RUNNING_NAME
-    with _running_lock:
+    Path(folder).mkdir(parents=True, exist_ok=True)
+    with _running_lock, _FolderLock(path):
         columns: list[str] = []
         rows: list[dict] = []
         if path.exists():

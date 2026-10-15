@@ -171,3 +171,67 @@ def test_concurrent_documents_all_reach_the_running_csv(tmp_path, pdf):
         t.join()
     rows = parse_csv((tmp_path / "index.csv").read_text(encoding="utf-8-sig"))
     assert sorted(r[0] for r in rows[1:]) == sorted(f"d-{n}" for n in range(20))
+
+
+# -- two processes sharing one output folder -------------------------------------------------------
+def test_the_lock_file_is_removed_after_every_write(tmp_path, pdf):
+    append_running_csv(tmp_path, record(pdf))
+    assert not list(tmp_path.glob("*.lock"))
+
+
+def test_a_writer_waits_for_another_process_and_then_goes_ahead(tmp_path, pdf, monkeypatch):
+    import time
+
+    from export import index_export
+    lock = tmp_path / "index.csv.lock"
+    lock.write_bytes(b"")                                  # another process is writing
+    monkeypatch.setattr(index_export, "LOCK_WAIT", 5.0)
+    threading.Timer(0.4, lock.unlink).start()              # ... and finishes shortly
+    started = time.monotonic()
+    append_running_csv(tmp_path, record(pdf))
+    assert time.monotonic() - started >= 0.3               # it did wait
+    assert len(parse_csv((tmp_path / "index.csv").read_text(encoding="utf-8-sig"))) == 2
+
+
+def test_a_lock_left_by_a_crashed_writer_does_not_block_forever(tmp_path, pdf, monkeypatch):
+    import os
+    import time
+
+    from export import index_export
+    lock = tmp_path / "index.csv.lock"
+    lock.write_bytes(b"")
+    old = time.time() - 600
+    os.utime(lock, (old, old))
+    monkeypatch.setattr(index_export, "LOCK_STALE", 60.0)
+    append_running_csv(tmp_path, record(pdf))              # takes the stale lock over
+    assert (tmp_path / "index.csv").exists() and not lock.exists()
+
+
+def test_a_lock_that_never_clears_times_out_with_a_clear_error(tmp_path, pdf, monkeypatch):
+    from export import index_export
+    (tmp_path / "index.csv.lock").write_bytes(b"")
+    monkeypatch.setattr(index_export, "LOCK_WAIT", 0.3)
+    with pytest.raises(index_export.IndexLockTimeout):
+        append_running_csv(tmp_path, record(pdf))
+    assert not (tmp_path / "index.csv").exists()
+
+
+def test_two_real_processes_writing_one_running_index_lose_no_rows(tmp_path):
+    import subprocess
+    import sys
+    from pathlib import Path as P
+    repo = P(__file__).parent.parent
+    code = (
+        "import sys\n"
+        f"sys.path.insert(0, {str(repo)!r})\n"
+        "from export.index_export import append_running_csv\n"
+        "tag = sys.argv[1]\n"
+        "for n in range(12):\n"
+        f"    append_running_csv({str(tmp_path)!r}, {{'document_id': f'{{tag}}-{{n}}', 'a': 'x'}})\n")
+    procs = [subprocess.Popen([sys.executable, "-c", code.replace("\\n", "\n"), tag])
+             for tag in ("p1", "p2", "p3")]
+    for proc in procs:
+        assert proc.wait(timeout=120) == 0
+    rows = parse_csv((tmp_path / "index.csv").read_text(encoding="utf-8-sig"))
+    assert sorted(r[0] for r in rows[1:]) == sorted(
+        f"{tag}-{n}" for tag in ("p1", "p2", "p3") for n in range(12))
