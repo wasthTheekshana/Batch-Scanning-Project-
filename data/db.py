@@ -1,7 +1,8 @@
 """SQLite data layer.
 
-Complete schema (HLD §9) created on first run — all Phase 1/2/3 columns
-present from day one so no migrations are ever needed. WAL journal mode,
+Complete schema (HLD §9) created on first run. Later changes go through the
+versioned migrations below (SCHEMA_VERSION, _MIGRATIONS), never by editing
+_SCHEMA in place for an existing table. WAL journal mode,
 foreign keys on, audit_log strictly append-only (no update/delete helpers).
 
 Phase 2: pass `key=` to encrypt with SQLCipher (AES-256). A plaintext
@@ -11,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -164,6 +166,25 @@ CREATE INDEX IF NOT EXISTS idx_audit_doc ON audit_log(document_id);
 CREATE INDEX IF NOT EXISTS idx_custody_bundle ON custody_events(bundle_id);
 """
 
+# -- schema versioning ----------------------------------------------------
+# Version 1 is everything in _SCHEMA above (databases made before versioning
+# existed are adopted as version 1: _SCHEMA only creates what is missing).
+# To change the schema: append (next_number, "SQL ...") to _MIGRATIONS and set
+# SCHEMA_VERSION to that number. Each migration runs in one transaction with its
+# version stamp; a failure rolls everything back, and a copy of the database
+# is kept first as <name>.before-v<N>.bak.
+SCHEMA_VERSION = 1
+_MIGRATIONS: list[tuple[int, str]] = []
+
+
+class MigrationError(Exception):
+    """A schema migration failed; the database was left as it was."""
+
+
+class DatabaseTooNew(Exception):
+    """The database was written by a newer release than this one."""
+
+
 _DOC_JSON_FIELDS = {"extracted_fields", "qc_detail", "delivery_detail", "audit_trail"}
 _DOC_COLUMNS = {
     "page_range", "enhancement_profile", "extracted_fields",
@@ -205,6 +226,49 @@ class Database:
     def init_schema(self) -> None:
         with self._lock, self.conn:
             self.conn.executescript(_SCHEMA)
+        self._migrate()
+
+    def _user_version(self) -> int:
+        return self.conn.execute("PRAGMA user_version").fetchone()[0]
+
+    def _migrate(self) -> None:
+        with self._lock:
+            current = self._user_version()
+            if current > SCHEMA_VERSION:
+                raise DatabaseTooNew(
+                    f"{self.path.name} is version {current}; this release "
+                    f"only understands up to {SCHEMA_VERSION}. Install the "
+                    "newer release.")
+            pending = sorted((v, sql) for v, sql in _MIGRATIONS if v > current)
+            if current < 1 and not pending:
+                self.conn.execute("PRAGMA user_version = 1")
+                return
+            if not pending:
+                return
+            self._backup_before(pending[0][0])
+            for number, sql in pending:
+                try:
+                    self.conn.executescript(
+                        "BEGIN;\n" + sql + f"\nPRAGMA user_version = {number};"
+                        "\nCOMMIT;")
+                except Exception as e:
+                    self.conn.rollback()
+                    raise MigrationError(
+                        f"schema migration to version {number} failed "
+                        f"({e}); the database was left at version "
+                        f"{self._user_version()}") from e
+                log.info("database migrated to version %d", number)
+
+    def _backup_before(self, number: int) -> None:
+        """Copy the database aside before its first pending migration."""
+        try:
+            self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            shutil.copy2(self.path, self.path.with_name(
+                f"{self.path.name}.before-v{number}.bak"))
+        except Exception as e:
+            raise MigrationError(
+                f"could not back up {self.path.name} before migrating: {e}"
+            ) from e
 
     def close(self) -> None:
         self.conn.close()
