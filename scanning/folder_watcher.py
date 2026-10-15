@@ -22,10 +22,12 @@ class FolderWatchSource:
     def __init__(self, watch_dir: str | Path,
                  callback: Callable[[Path], None],
                  poll_seconds: float = POLL_SECONDS,
-                 extensions: set[str] | None = None):
+                 extensions: set[str] | None = None,
+                 process_existing: bool = False):
         self.watch_dir = Path(watch_dir)
         self.callback = callback
         self.poll_seconds = poll_seconds
+        self.process_existing = process_existing
         self.extensions = extensions or {".pdf", ".tif", ".tiff", ".jpg",
                                          ".jpeg", ".png", ".bmp"}
         self._known: dict[Path, int] = {}
@@ -35,8 +37,10 @@ class FolderWatchSource:
 
     def start(self) -> None:
         self.watch_dir.mkdir(parents=True, exist_ok=True)
-        # existing files are treated as already processed
-        self._known = {p: p.stat().st_size for p in self._iter_files()}
+        # existing files are treated as already processed, unless the caller
+        # moves files away once handled (then anything still here is new)
+        self._known = ({} if self.process_existing else
+                       {p: p.stat().st_size for p in self._iter_files()})
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True,
                                         name="hot-folder")

@@ -351,11 +351,19 @@ class WorkflowDesigner(QWidget):
         self.filename_template = QLineEdit()
         self.output_path = QLineEdit()
         self.delivery_path = QLineEdit()
+        self.hot_enabled = QCheckBox(
+            "Watch a folder for files dropped by a network scanner")
+        self.hot_path = QLineEdit()
+        self.hot_path.setPlaceholderText(
+            "the folder the scanner saves into (handled files move to processed or failed)")
+        self.hot_enabled.toggled.connect(self.hot_path.setEnabled)
         for w in (self.dpi, self.color, self.export_format,
                   self.filename_template, self.output_path,
-                  self.delivery_path):
+                  self.delivery_path, self.hot_enabled, self.hot_path):
             w.setEnabled(self.can_edit)
         e_layout.addRow("Scan DPI", self.dpi)
+        e_layout.addRow("Hot folder", self.hot_enabled)
+        e_layout.addRow("Hot folder path", self.hot_path)
         e_layout.addRow("Colour mode", self.color)
         e_layout.addRow("Export format", self.export_format)
         e_layout.addRow("Filename template", self.filename_template)
@@ -688,6 +696,10 @@ class WorkflowDesigner(QWidget):
         self.qc_preset.setCurrentText(matched_preset)
         self.qc_preset.blockSignals(False)
         self.dpi.setValue(cfg["scanner"]["dpi"])
+        hot = cfg["scanner"].get("hot_folder") or {}
+        self.hot_enabled.setChecked(bool(hot.get("enabled")))
+        self.hot_path.setText(str(hot.get("path") or ""))
+        self.hot_path.setEnabled(self.can_edit and self.hot_enabled.isChecked())
         self.color.setCurrentText(cfg["scanner"]["color"])
         self.export_format.setCurrentText(cfg["export"]["format"])
         self.filename_template.setText(cfg["export"]["filename_template"])
@@ -760,6 +772,12 @@ class WorkflowDesigner(QWidget):
         cfg["qc"]["dpi_warn"] = self.dpi_warn.value()
         cfg["qc"]["dpi_fail"] = self.dpi_fail.value()
         cfg["scanner"]["dpi"] = self.dpi.value()
+        if self.hot_enabled.isChecked() or self.hot_path.text().strip():
+            cfg["scanner"]["hot_folder"] = {
+                "enabled": self.hot_enabled.isChecked(),
+                "path": self.hot_path.text().strip()}
+        else:
+            cfg["scanner"].pop("hot_folder", None)
         cfg["scanner"]["color"] = self.color.currentText()
         cfg["export"]["format"] = self.export_format.currentText()
         cfg["export"]["filename_template"] = self.filename_template.text()

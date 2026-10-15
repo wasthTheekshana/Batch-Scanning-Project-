@@ -60,8 +60,8 @@ and open its PDF.
 ### 5. Operator workflow
 - Correct a page's document type (NOT DONE: page types are stored per page
   and drive the PDF bookmarks, so a correction after export needs the PDF
-  re-exported, not just the index file); clearer review queue with
-  low-confidence fields highlighted.
+  re-exported, not just the index file); low-confidence fields are now
+  highlighted in the Index tab (DONE); a separate review queue is not built.
 - ~~Field validation~~ DONE 2026-10-15 for NIC, dates, phone and email
   (`core/validation.py`; the Index editor marks a wrong value and asks before
   saving it). Lookup against a customer list still needs the bank's list.
@@ -74,7 +74,10 @@ and open its PDF.
 - Code-signing certificate; install and silent-deploy test on a clean PC.
 - Operator manual, admin guide, installation guide.
 - Real-scanner rehearsal (`scripts/rehearsal.py scan`) and client UAT.
-- The hot-folder watcher exists as a module but is not connected.
+- ~~The hot-folder watcher is not connected~~ DONE 2026-10-15 (`core/hot_folder.py`;
+  per-project folder in the Designer's Scanner group; handled files move to
+  processed/ or failed/; batches run as operator "hot-folder", so only roles
+  that see all batches can search them). Untested with a real network scanner.
 
 ### 7. Central service
 Read-only auditor role; form editor instead of raw JSON; deployment package

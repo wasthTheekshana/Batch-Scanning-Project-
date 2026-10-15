@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import QApplication
 from core.central_sync import (build_central, choose_pipeline_profile,
                                shutdown_central, startup_sync)
 from core.event_bus import EventBus
+from core.hot_folder import HotFolderService
 from core.job_queue import Pipeline
 from core.profile_manager import ProfileManager
 from core.project_runtime import RuntimeResolver
@@ -234,10 +235,13 @@ def main() -> int:
     window.show()
     window.report_refused_batches(pipeline.refused_batches)
     window.report_unreadable_projects()
+    hot_folders = HotFolderService(db, pipeline, root / "staging", audit=audit)
+    hot_folders.start()
     code = app.exec()
 
     shutdown_central(sync_worker)
     backup_service.stop()
+    hot_folders.stop()
     pipeline.shutdown(wait=False)
     Session.logout(db)
     audit.close()

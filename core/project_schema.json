@@ -19,7 +19,14 @@
         "dpi": {"type": "integer", "minimum": 75, "maximum": 1200},
         "color": {"enum": ["bw", "grayscale", "color"]},
         "duplex": {"type": "boolean"},
-        "sdk": {"enum": ["twain", "wia", "folder", "file", "kodak", "alaris", "czur", "viisan"]}
+        "sdk": {"enum": ["twain", "wia", "folder", "file", "kodak", "alaris", "czur", "viisan"]},
+        "hot_folder": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "path": {"type": "string"}
+          }
+        }
       }
     },
     "enhancement_profile": {
