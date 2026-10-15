@@ -1,6 +1,6 @@
 # 0001: Central archive of record with store-and-forward PCs
 
-Status: Proposed (awaiting approval). Date: 2026-10-15.
+Status: Accepted in part: scope of the first release is index data and PDF details only (2026-10-15). PDF storage is paused.
 Design: `docs/superpowers/specs/2026-10-15-central-document-sync-design.md`.
 
 ## Context
@@ -12,6 +12,8 @@ said "no server" and "fully offline". NFR-6 (5-10 stations per server) could not
 
 ## Decision
 
+0. **First release:** PCs synchronise index data and each PDF's details (name, size, SHA-256, page count, where
+   delivered). PDF bytes are not uploaded yet; the protocol and store are designed and will be added later.
 1. The central server becomes the **archive of record and the search point**. PCs remain autonomous working
    copies: scanning, indexing and delivery never wait for the network.
 2. PCs send finished documents and index revisions through a **local outbox** (store and forward) over HTTPS with

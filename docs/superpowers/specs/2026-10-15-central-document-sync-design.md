@@ -1,6 +1,6 @@
 # Central document and index synchronisation: design
 
-Status: DRAFT for approval. Date: 2026-10-15. Implements SRS v2.0 FR-35 to FR-38, UC-10, NFR-6 and NFR-8
+Status: DRAFT for approval, scope narrowed 2026-10-15 (see section 1). Date: 2026-10-15. Implements SRS v2.0 FR-35 to FR-38, UC-10, NFR-6 and NFR-8
 (transport security). Decision record: `docs/adr/0001-central-document-and-index-sync.md`.
 Gap list entry: `docs/GAP_ANALYSIS.md` B2.
 
@@ -10,7 +10,21 @@ Gap list entry: `docs/GAP_ANALYSIS.md` B2.
 |---|---|
 | What is the central copy? | The most secure option. Decided: central is the **archive of record and the search point**; each PC stays a working copy that keeps scanning on its own. |
 | Does a PC keep working when the server is unreachable? | Yes (store and forward). |
+| Storage of PDF files | **Paused.** The first release synchronises the **index data and the PDF's details** (name, size, SHA-256, page count, where it was delivered, delivery status) but **not the PDF bytes**. The upload protocol for the bytes (section 5, steps 1-3) and the document store (7.2) are designed here and built later, without changing the index sync. |
 | Volume | Not known. 10 or more PCs. The design must scale by configuration; sizing figures in section 8 are assumptions to be replaced. |
+
+## 1a. What changes with "index data only first"
+
+- Central holds, for every document: the index fields (all revisions), the PDF's details and a `file_state`
+  of `metadata_only`. When storage is added the state moves to `stored` after the bytes arrive and the SHA-256
+  matches the value already on record, so nothing needs re-indexing.
+- Central search works on index data and shows where the PDF is (the delivered folder or share and file name,
+  or the PC that holds it). "Open PDF" is not available centrally until storage exists; the desktop Search tab
+  still opens PDFs on the PC.
+- PDF files must not be deleted from a PC's delivered folder by this system, and the SHA-256 on record is what
+  later proves a stored copy is the right file.
+- All index fields are personal data and are encrypted at rest on the server exactly as designed (7.3); the
+  blind-index search and the roles apply from the first release.
 
 ## 2. Goals and non-goals
 
@@ -47,10 +61,10 @@ which is built first):
 | Column | Meaning |
 |---|---|
 | `id` | autoincrement, gives the send order |
-| `kind` | `document`, `index`, later `audit`, `custody` |
+| `kind` | `document_meta` (the PDF's details), `index`, later `document_file`, `audit`, `custody` |
 | `document_id` | the document this item belongs to |
 | `revision` | for `index`: the index revision number (see 6) |
-| `sha256`, `size` | of the PDF for `document` items |
+| `sha256`, `size` | of the PDF, for `document_meta` and later `document_file` items |
 | `state` | `pending`, `sending`, `sent`, `failed_permanent` |
 | `attempts`, `next_try_at`, `last_error` | retry bookkeeping (error text never contains document data) |
 
@@ -60,7 +74,7 @@ a crash can never lose or duplicate an upload.
 ### 4.2 Sync worker
 
 Extends the existing `core/central_sync.py` worker. Runs in the background; sends items in `id` order, a
-`document` item always before the `index` items of that document. At most 2 uploads at a time per PC.
+`document_meta` item always before the `index` items of that document. At most 2 uploads at a time per PC.
 Failure handling: network error or 5xx retries with exponential backoff and jitter (1 min up to 1 h);
 401/403 stops the worker and shows "re-enrol this PC" (key revoked); a checksum mismatch re-uploads;
 a 4xx validation failure marks the item `failed_permanent`, raises an audit entry and a visible warning.
@@ -75,11 +89,18 @@ after that).
 
 ## 5. Upload protocol (PC to server)
 
+**First release (index data only):** step 0 below and step 4. **Deferred until storage is approved:** steps 1 to 3.
+
+0. `PUT /pcs/{pc_id}/documents/{document_id}/meta` with `{project_id, batch_id, page_count, created_at, file_name,
+   size, sha256, delivered_to, delivery_status}`. Idempotent: the same `document_id` and `sha256` is a no-op; a
+   changed `sha256` (the PDF was re-exported after a correction) creates a new file record and keeps the old one.
+
 All calls: HTTPS only, `Authorization: Bearer <per-PC key>` (existing `require_pc`), JSON or binary body, request
 and response size caps. Every call is idempotent.
 
 1. `POST /pcs/{pc_id}/documents` with `{document_id, project_id, batch_id, size, sha256, page_count, created_at}`.
-   Server validates (UUID format, size cap, project assigned to this PC) and replies with `upload_id` and the
+   Server validates (UUID format, size cap, project assigned to this PC, the `document_meta` already on record
+   with the same `sha256`) and replies with `upload_id` and the
    next expected offset. If the same `document_id` with the same `sha256` is already complete it replies
    `already_stored` (so a retry after a lost reply is harmless).
 2. `PUT /pcs/{pc_id}/documents/{document_id}/chunks?offset=N` with up to 4 MiB of bytes. The server accepts only
@@ -114,7 +135,7 @@ numbered **revision** of the document's index, append-only on the server.
 | Table | Key columns |
 |---|---|
 | `documents` | `id` (server UUID), `pc_id`, `source_document_id`, `project_id`, `batch_id`, `page_count`, `created_at`, `received_at`, `current_revision`, `conflict` (bool), `deleted_at`. Unique `(pc_id, source_document_id)`. |
-| `document_files` | `document_id`, `storage_key`, `size`, `sha256`, `wrapped_data_key`, `nonce`, `key_version` |
+| `document_files` | `document_id`, `file_name`, `size`, `sha256`, `delivered_to`, `file_state` (`metadata_only` / `stored`), and, once storage exists, `storage_key`, `wrapped_data_key`, `nonce`, `key_version` |
 | `index_revisions` | `document_id`, `revision`, `base_revision`, `fields_enc`, `edited_by`, `edited_at`, `received_at`, `source` (`pc`/`central`), `is_current` |
 | `index_lookup` | `document_id`, `field_name`, `blind_hash` (see 7.3), indexed |
 | `upload_sessions` | `document_id`, `pc_id`, `expected_offset`, `size`, `sha256`, `expires_at` |
@@ -123,7 +144,7 @@ numbered **revision** of the document's index, append-only on the server.
 
 The existing `audit_events` table also records every upload, completion, failure, conflict and deletion.
 
-### 7.2 Document store
+### 7.2 Document store (deferred; not part of the first release)
 
 An interface `DocumentStore` with `put`, `get_stream`, `delete`, `exists`. First implementation: a directory on
 a server disk or NAS share the customer provides (no new infrastructure). A second implementation for an
@@ -201,9 +222,11 @@ the design does not change; the storage and backup plan does.
 ## 10. Build phases
 
 0. Prerequisites: schema-migration mechanism on the PC (gap C6); Alembic baseline for central; CI (gap C2).
-1. **Upload path**: outbox, worker, upload protocol, document store, encryption, upload audit, status in the
-   Central tab. Done when a document scanned on a PC while the server is down arrives intact after it returns.
-2. **Search and access**: roles, blind-index search, document view and download, access log, dashboard pages.
+1. **Index and details upload**: outbox, worker, `meta` and `index` calls, encrypted index storage, upload audit,
+   status in the Central tab. Done when a document scanned on a PC while the server is down has its index record and PDF details on
+   the server, exactly once, after the server returns.
+2. **Search and access**: roles, blind-index search over index data, document page (details and index history), access log,
+   dashboard pages.
 3. **Corrections**: index revisions both ways, conflict handling, index updates back to PCs.
 4. **Audit and custody sync**, retention and holds, key rotation tool, operations pack (HTTPS proxy sample, backup
    and restore of the store plus database, monitoring checklist).
@@ -211,6 +234,10 @@ the design does not change; the storage and backup plan does.
 Each phase gets its own plan under `docs/superpowers/plans/` and keeps the test-first rule. Tests: real central app
 against a temp store (the `check_central.py` style end-to-end), failure injection for dropped chunks and lost
 replies, a tampered-bytes test, a wrong-key test, and role-scoping tests.
+
+5. **PDF storage** (paused): document store, envelope encryption of files, the chunked upload (steps 1 to 3 of
+   section 5), "Open PDF" and download centrally, move `file_state` to `stored`. Needs the storage location and
+   sizing answers in section 11.
 
 ## 11. Open points for the customer
 
