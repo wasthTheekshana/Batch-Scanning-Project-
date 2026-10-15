@@ -1,18 +1,24 @@
-PyQt6>=6.6
-opencv-python>=4.9
-Pillow>=10.0
-numpy>=1.26
-pytesseract>=0.3.10
-pyzbar>=0.1.9
-ImageHash>=4.3
-img2pdf>=0.5
-PyMuPDF>=1.24
-reportlab>=4.0
-jsonschema>=4.21
-bcrypt>=4.1
-pywin32>=306
-cryptography>=42
-sqlcipher3-wheels>=0.5
-pytest>=8.0
-pytest-qt>=4.4
-qrcode>=8.2
+# Runtime dependencies of DOKScanner.exe, pinned to the versions the test
+# suite and the packaged build were last verified against (2026-10-15).
+# Upgrade deliberately: change the pin, run the full suite, rebuild.
+PyQt6==6.11.0
+opencv-python==5.0.0.93
+Pillow==12.3.0
+numpy==2.4.6
+pytesseract==0.3.13
+pyzbar==0.1.9
+ImageHash==4.3.2
+img2pdf==0.6.3
+PyMuPDF==1.28.0
+reportlab==5.0.0
+jsonschema==4.26.0
+bcrypt==5.0.0
+pywin32==312
+cryptography==49.0.0
+sqlcipher3-wheels==0.5.7
+qrcode==8.2
+paramiko==5.0.0            # SFTP delivery (delivery/sftp_channel.py)
+
+# Optional: TWAIN scanner driver (scanning/twain_source.py). The app runs
+# without it and uses WIA instead; install on PCs that need TWAIN.
+# pytwain

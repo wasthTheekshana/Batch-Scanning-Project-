@@ -1,0 +1,6 @@
+# Everything needed to develop, test and package DOK Scanner.
+-r requirements.txt
+pytest==9.1.1
+pytest-qt==4.5.0
+bandit==1.9.4              # SAST, see scripts/security_scan.py
+pyinstaller==6.21.0        # packaging, see docscanner.spec
