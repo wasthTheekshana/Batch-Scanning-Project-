@@ -1,0 +1,86 @@
+# DOK Scanner roadmap: what is built, what is missing
+
+Last reviewed 2026-10-15. This replaces the "what is left" part of
+`docs/ENHANCEMENT_PLAN_STATUS.md` (which stops at 2026-10-09). Work items that are
+being built have specs and tickets under `.scratch/<feature>/` (see
+`docs/agents/issue-tracker.md`).
+
+## Built
+
+- Capture: file import, Kodak S2050 through WIA (document feeder, duplex),
+  barcode cover sheets and sticker labels (printed from the Scan tab), pages
+  fed sideways or upside down are turned upright.
+- Separation: barcode (cover sheet / first page / automatic), blank pages,
+  fixed pages, zone triggers; empty pages discarded without splitting (audited).
+- Indexing: per-project zones, document types per project (NIC, loan form,
+  application, letter), regions or text patterns per type, boxed-character and
+  handwritten-digit reading, forms lined up with their template automatically.
+- Quality and control: QC pipeline with review queue, chain of custody
+  (bundles, QR sheets, timeline, CSV/PDF export), audit log, RBAC, encrypted
+  database and backups.
+- Delivery: local folder, SFTP, CD/DVD burn queue; per-customer PDF with a
+  bookmark for each document type.
+- Multi-PC: central service (API, admin users, sessions, audit, PC enrolment),
+  admin dashboard, sync client with per-project settings.
+- Operations: installer (unsigned), crash guard with `crash.log`, `--selftest`,
+  separate demo data (`scripts/demo_setup.py`), demo script and sample files.
+
+## Missing, in priority order
+
+### 1. Index data never leaves the application  (BUILDING: `.scratch/index-export/`)
+Delivery sends only the PDF. A bank expects the index fields next to each PDF
+(CSV, XML or JSON), updated when an operator corrects a value.
+
+### 2. No search or retrieval screen  (BUILDING: `.scratch/document-search/`)
+Nobody can find a stored document by customer ID, NIC, account number or date
+and open its PDF.
+
+### 3. Forms and documents need real-world coverage
+- Self-service form setup: upload a blank form, draw boxes, learn the anchor
+  words automatically (today forms are set up by script; only the Education
+  loan form exists).
+- The Personal Loan form (different layout), the NIC and the letter patterns:
+  need real blank/filled samples from the bank.
+- Only page 1 of a multi-page form and only the applicant column are read.
+- A stack without barcodes cannot be split by form type (a form's title page
+  should start a new document).
+
+### 4. Handwriting and language
+- Free handwriting is unreliable; boxed handwritten digits are about 82%.
+  Run the OCR engine benchmark (enhancement plan section 4.1) on real samples.
+- OCR is English only; Sinhala and Tamil language data are not bundled
+  (ID cards and many forms carry both).
+
+### 5. Operator workflow
+- Correct a page's document type; clearer review queue with low-confidence
+  fields highlighted.
+- Field validation (NIC format, dates) and lookup against a customer list.
+- Warning for an unknown custody QR; startup notice for unreadable projects;
+  Designer repair path when a project file is also corrupt.
+
+### 6. Release readiness
+- Code-signing certificate; install and silent-deploy test on a clean PC.
+- Operator manual, admin guide, installation guide.
+- Real-scanner rehearsal (`scripts/rehearsal.py scan`) and client UAT.
+- The hot-folder watcher exists as a module but is not connected.
+
+### 7. Central service
+Read-only auditor role; form editor instead of raw JSON; deployment package
+(HTTPS, Docker or service files, backups); Postgres concurrency tests; decide
+whether the slim dashboard is enough or a fuller one is needed.
+
+### 8. Needs a business decision, not code
+Bank document-system field mapping (plan 3.5), incident and insurance workflow
+(3.6), multi-site consolidation (3.3, 3.4, 3.8, 3.9), API integration (3.7),
+security evidence (4.7, 7). Scale to 15M pages (4.2) is a real redesign.
+`docs/SDLC.md` has known factual errors and is parked.
+
+### 9. Housekeeping
+Full test run takes 2-4 minutes with an occasional timing flake; audit-log
+noise; CD/DVD burning only works for the startup project; the Index tab
+and admin screens need a usability pass after the above.
+
+## After the missing items: improvement pass
+Performance (large batches), usability of every tab, OCR accuracy tuning on the
+bank's own documents, and a security review of everything added since the last
+SAST run.
