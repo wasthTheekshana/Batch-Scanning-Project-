@@ -10,7 +10,7 @@ from data.db import Database
 from tests.conftest import make_text_page
 from ui.image_viewer import ImageViewer
 from ui.job_monitor import JobMonitor
-from ui.login_dialog import LoginDialog
+from ui.login_dialog import ChangePasswordDialog, LoginDialog, require_password_change
 from ui.main_window import MainWindow
 from ui.qc_review import QCReviewPanel
 
@@ -176,3 +176,41 @@ def test_custody_tab_gated_by_role(qtbot, db, tmp_path):
     assert "Custody" not in tab_names2
     assert not hasattr(win2, "custody_panel")
     Session.logout()
+
+
+def test_default_password_forces_a_change(qtbot, db, monkeypatch):
+    user = Session.login("admin", "admin", db)
+    assert user.must_change_password
+
+    def fill_and_accept(self):
+        self.new_password.setText("a-better-pass-1")
+        self.confirm.setText("a-better-pass-1")
+        self.try_change()
+        return self.DialogCode.Accepted if self.chosen else self.DialogCode.Rejected
+    monkeypatch.setattr(ChangePasswordDialog, "exec", fill_and_accept)
+    assert require_password_change(db) is True
+    assert Session.current_user().must_change_password is False
+    Session.logout()
+    assert Session.login("admin", "a-better-pass-1", db)
+
+
+def test_cancelling_the_forced_change_signs_out(qtbot, db, monkeypatch):
+    Session.login("admin", "admin", db)
+    monkeypatch.setattr(ChangePasswordDialog, "exec",
+                        lambda self: self.DialogCode.Rejected)
+    assert require_password_change(db) is False
+    assert Session.current_user() is None
+
+
+def test_change_dialog_refuses_mismatch_and_weak_passwords(qtbot, db):
+    user = Session.login("admin", "admin", db)
+    dlg = ChangePasswordDialog(db, user)
+    qtbot.addWidget(dlg)
+    dlg.new_password.setText("a-better-pass-1")
+    dlg.confirm.setText("different-pass-1")
+    dlg.try_change()
+    assert "match" in dlg.error_label.text() and dlg.chosen == ""
+    dlg.new_password.setText("short")
+    dlg.confirm.setText("short")
+    dlg.try_change()
+    assert "at least" in dlg.error_label.text() and dlg.chosen == ""

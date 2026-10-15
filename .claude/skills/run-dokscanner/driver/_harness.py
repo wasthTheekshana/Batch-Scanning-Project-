@@ -53,6 +53,9 @@ def run_main(scenario) -> int:
         return scenario(app, win)
 
     LoginDialog.exec = fake_login_exec
+    # The sandbox admin keeps the default password; skip the forced-change
+    # prompt (it is a modal dialog and would block the headless run).
+    dok_main.require_password_change = lambda *_a, **_k: True
     QApplication.exec = fake_app_exec
     return dok_main.main()
 

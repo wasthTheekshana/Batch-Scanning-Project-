@@ -30,7 +30,7 @@ from data.keystore import KeyStore
 from delivery.registry import active_channels
 from export.batch_exporter import export_document
 from ocr.tesseract_engine import is_available as tesseract_available, ocr_page
-from ui.login_dialog import LoginDialog
+from ui.login_dialog import LoginDialog, require_password_change
 from ui.main_window import MainWindow
 
 APP_NAME = "DOKScanner"
@@ -194,6 +194,8 @@ def main() -> int:
 
     login = LoginDialog(db)
     if login.exec() != login.DialogCode.Accepted:
+        return 0
+    if not require_password_change(db):
         return 0
 
     bus = EventBus()

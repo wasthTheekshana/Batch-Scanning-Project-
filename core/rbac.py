@@ -60,11 +60,27 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
+MIN_PASSWORD_LENGTH = 8
+DEFAULT_PASSWORD = "admin"   # the seeded admin's first-run password
+
+
+def validate_new_password(password: str, username: str = "") -> None:
+    """Raise ValueError if `password` is not acceptable for a stored account."""
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(
+            f"password must be at least {MIN_PASSWORD_LENGTH} characters")
+    if password.lower() in (DEFAULT_PASSWORD, username.lower()):
+        raise ValueError("password is too easy to guess")
+
+
 @dataclass(frozen=True)
 class User:
     user_id: str
     username: str
     role: str
+    # True when this sign-in used the default password; the app must make the
+    # user choose a new one before anything else (see ui.login_dialog).
+    must_change_password: bool = False
 
     def can(self, permission: str) -> bool:
         return permission in ROLE_PERMISSIONS.get(self.role, set())
@@ -88,7 +104,8 @@ class Session:
             db.set_password_hash(username, hash_password(password))
         db.touch_login(username)
         db.append_audit(None, username, "login", {"role": row["role"]})
-        cls._current = User(row["user_id"], row["username"], row["role"])
+        cls._current = User(row["user_id"], row["username"], row["role"],
+                            must_change_password=(password == DEFAULT_PASSWORD))
         return cls._current
 
     @classmethod
@@ -123,6 +140,7 @@ def create_user(db, actor: User | None, username: str, password: str,
         raise ValueError(f"unknown role: {role}")
     if db.get_user(username) is not None:
         raise ValueError(f"user already exists: {username}")
+    validate_new_password(password, username)
     user_id = str(uuid.uuid4())
     db.insert_user(user_id, username, hash_password(password), role)
     db.append_audit(None, actor.username, "user_create",
@@ -150,6 +168,7 @@ def set_user_role(db, actor: User | None, username: str, role: str) -> None:
 def reset_password(db, actor: User | None, username: str,
                    new_password: str) -> None:
     _require(actor, "user.manage")
+    validate_new_password(new_password, username)
     db.set_password_hash(username, hash_password(new_password))
     db.append_audit(None, actor.username, "password_reset",
                     {"username": username})
@@ -161,5 +180,6 @@ def change_password(db, username: str, old_password: str,
     row = db.get_user(username)
     if row is None or not verify_password(old_password, row["password_hash"]):
         raise AuthError("current password incorrect")
+    validate_new_password(new_password, username)
     db.set_password_hash(username, hash_password(new_password))
     db.append_audit(None, username, "password_change", {})

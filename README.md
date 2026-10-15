@@ -8,15 +8,15 @@ progress toward go-live).
 ## Stack
 
 Python 3.11 · PyQt6 · OpenCV · Pillow · numpy · pytesseract · pyzbar ·
-img2pdf · reportlab · SQLite (WAL)
+img2pdf · reportlab · SQLite (WAL, SQLCipher) · paramiko (SFTP)
 
 ## Development setup
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\pip install -r requirements.txt
+.\.venv\Scripts\pip install -r requirements-dev.txt   # runtime + test + build tools
 .\.venv\Scripts\python -m pytest        # run test suite
-.\.venv\Scripts\python main.py          # launch the app (default login: admin / admin)
+.\.venv\Scripts\python main.py          # launch the app (first login admin / admin; you must set a new password at once)
 ```
 
 Tesseract 5 must be on PATH for OCR features (bundled in the packaged EXE).

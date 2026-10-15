@@ -47,32 +47,32 @@ def test_legacy_hash_still_verifies_and_upgrades_on_login(db):
 
 def test_create_user_requires_permission(db):
     with pytest.raises(AuthError):
-        create_user(db, OPERATOR, "x", "pw", "viewer")
-    create_user(db, ADMIN, "alice", "pw", "qc_officer")
+        create_user(db, OPERATOR, "x", "password1", "viewer")
+    create_user(db, ADMIN, "alice", "password1", "qc_officer")
     assert db.get_user("alice")["role"] == "qc_officer"
 
 
 def test_role_and_active_management(db):
-    create_user(db, ADMIN, "bob", "pw", "viewer")
+    create_user(db, ADMIN, "bob", "password1", "viewer")
     set_user_role(db, ADMIN, "bob", "operator")
     assert db.get_user("bob")["role"] == "operator"
     set_user_active(db, ADMIN, "bob", False)
     with pytest.raises(AuthError):
-        Session.login("bob", "pw", db)
+        Session.login("bob", "password1", db)
     with pytest.raises(ValueError):
         set_user_role(db, ADMIN, "bob", "super_admin")
 
 
 def test_password_reset_and_change(db):
-    create_user(db, ADMIN, "carol", "old", "viewer")
-    reset_password(db, ADMIN, "carol", "new")
-    assert Session.login("carol", "new", db)
+    create_user(db, ADMIN, "carol", "oldpass12", "viewer")
+    reset_password(db, ADMIN, "carol", "newpass12")
+    assert Session.login("carol", "newpass12", db)
     Session.logout()
-    change_password(db, "carol", "new", "newer")
-    assert Session.login("carol", "newer", db)
+    change_password(db, "carol", "newpass12", "newerpass1")
+    assert Session.login("carol", "newerpass1", db)
     Session.logout()
     with pytest.raises(AuthError):
-        change_password(db, "carol", "wrong-old", "x")
+        change_password(db, "carol", "wrong-old", "whatever12")
 
 
 # ---- keystore --------------------------------------------------------------------
@@ -135,3 +135,25 @@ def test_migration_from_plaintext(tmp_path):
     assert d.get_project("p1")["name"] == "Legacy"
     assert d.get_user("admin")["role"] == "admin"
     d.close()
+
+
+# ---- password rules and forced change -----------------------------------------------
+
+def test_weak_passwords_are_refused(db):
+    for bad in ("short", "admin", "dave"):
+        with pytest.raises(ValueError):
+            create_user(db, ADMIN, "dave", bad, "viewer")
+    create_user(db, ADMIN, "dave", "long-enough-1", "viewer")
+    with pytest.raises(ValueError):
+        reset_password(db, ADMIN, "dave", "tiny")
+    with pytest.raises(ValueError):
+        change_password(db, "dave", "long-enough-1", "admin")
+    assert Session.login("dave", "long-enough-1", db)    # nothing was changed
+
+
+def test_default_admin_password_must_be_changed(db):
+    assert Session.login("admin", "admin", db).must_change_password is True
+    Session.logout()
+    change_password(db, "admin", "admin", "a-better-pass-1")
+    user = Session.login("admin", "a-better-pass-1", db)
+    assert user.must_change_password is False
