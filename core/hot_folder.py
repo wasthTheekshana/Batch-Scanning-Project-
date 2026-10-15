@@ -22,6 +22,7 @@ from scanning.folder_watcher import FolderWatchSource
 log = logging.getLogger(__name__)
 
 OPERATOR = "hot-folder"
+MAX_FILE_BYTES = 500 * 1024 * 1024      # a larger file goes to failed/ unread
 RELOAD_SECONDS = 30.0
 
 
@@ -86,6 +87,7 @@ class HotFolderService:
         when the file went to failed/."""
         batch_id = str(uuid.uuid4())
         try:
+            self._check_file(path)
             jobs = import_files([path], batch_id, project_id, self.staging_dir)
             if not jobs:
                 raise ValueError("no pages could be imported")
@@ -97,6 +99,7 @@ class HotFolderService:
             if self.audit is not None:
                 self.audit.log("hot_folder_failed", OPERATOR,
                                project_id=project_id, error=type(e).__name__)
+            self._discard_staged(batch_id)
             self._move(path, "failed", batch_id)
             return None
         if self.audit is not None:
@@ -104,6 +107,25 @@ class HotFolderService:
                            project_id=project_id, pages=len(jobs))
         self._move(path, "processed", batch_id)
         return batch_id
+
+    @staticmethod
+    def _check_file(path: Path) -> None:
+        """Only a plain file that really lives in the watched folder: a link
+        (symlink or junction) could point at a file elsewhere on the PC, and
+        an enormous file would fill the staging disk."""
+        if path.is_symlink() or path.resolve().parent != path.parent.resolve():
+            raise ValueError("not a plain file in the hot folder")
+        if path.stat().st_size > MAX_FILE_BYTES:
+            raise ValueError("file too large")
+
+    def _discard_staged(self, batch_id: str) -> None:
+        """Page images of a batch that was never submitted would stay in
+        staging for good."""
+        for page in self.staging_dir.glob(f"{batch_id}_*"):
+            try:
+                page.unlink()
+            except OSError:
+                pass
 
     @staticmethod
     def _move(path: Path, folder: str, batch_id: str) -> None:

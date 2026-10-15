@@ -74,7 +74,8 @@ class FolderWatchSource:
 
     def _iter_files(self):
         return (p for p in self.watch_dir.iterdir()
-                if p.is_file() and p.suffix.lower() in self.extensions)
+                if p.is_file() and not p.is_symlink()
+                and p.suffix.lower() in self.extensions)
 
     def _loop(self) -> None:
         while not self._stop.wait(self.poll_seconds):

@@ -174,3 +174,35 @@ def test_a_dropped_file_runs_through_the_real_pipeline(tmp_path):
     finally:
         pipeline.shutdown()
         db.close()
+
+
+# -- hostile or broken input ---------------------------------------------------------------
+def test_a_symlink_in_the_folder_is_never_read(env, tmp_path):
+    svc, pipe, _a, watch, _db = env
+    secret = drop(tmp_path, "secret.png")                # outside the hot folder
+    link = watch / "link.png"
+    try:
+        link.symlink_to(secret)
+    except OSError:
+        pytest.skip("symlinks need privileges on this PC")
+    svc.reload()
+    watcher = next(iter(svc._watchers.values()))
+    watcher.poll_once(); watcher.poll_once()
+    assert not pipe.batches and secret.exists()          # ignored, and the target untouched
+    assert svc.handle("p1", link) is None                # even when handed over directly
+    assert not pipe.batches and secret.exists()
+
+
+def test_an_oversize_file_is_refused_unread(env, monkeypatch):
+    import core.hot_folder as hf
+    svc, pipe, _a, watch, _db = env
+    monkeypatch.setattr(hf, "MAX_FILE_BYTES", 10)
+    assert svc.handle("p1", drop(watch)) is None
+    assert (watch / "failed" / "scan.png").exists() and not pipe.batches
+
+
+def test_pages_staged_for_a_refused_batch_are_removed(env):
+    svc, pipe, _a, watch, _db = env
+    pipe.fail = ValueError("no")
+    svc.handle("p1", drop(watch))
+    assert not list(svc.staging_dir.glob("*.png"))
