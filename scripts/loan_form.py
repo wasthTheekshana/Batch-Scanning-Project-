@@ -2,8 +2,8 @@
 where each applicant field sits, and a helper that types values into it.
 
 Zones are in PDF points (A4: 595 x 842) and scale to any scan resolution.
-Only the Applicant (left) column is read; the Joint Applicant column mirrors it
-at +279 pt and can be added the same way.
+The Applicant (left) column is read as the plain field names; the Joint
+Applicant column mirrors it 280 pt to the right and is read as joint_<name>.
 """
 from __future__ import annotations
 
@@ -34,6 +34,19 @@ FIELDS = [
     ("address", 28, 427, 264, 32, {"lines": 2, "regex": TEXT_CLEAN},
      "25 Temple Road, Colombo 07"),
 ]
+
+JOINT_OFFSET = 280
+JOINT_SAMPLE = {"name": "KAMALA DEVI PERERA", "date_of_birth": "03051992",
+                "mobile": "0712345678", "email": "kamala.perera@example.com",
+                "nic": "199212345678", "passport": "N7654321",
+                "address": "25 Temple Road, Colombo 07"}
+# the joint applicant has their own personal details (not the account or branch)
+JOINT_FIELDS = [
+    (f"joint_{name}", x + JOINT_OFFSET, y, w, h, extra,
+     JOINT_SAMPLE[{"applicant_name": "name", "nic_number": "nic",
+                   "passport_number": "passport"}.get(name, name)])
+    for name, x, y, w, h, extra, _ in FIELDS
+    if name not in ("account_number", "branch")]
 
 TITLE_PATTERN = r"education\s+loan\s+application"
 # headings that only the form's later pages carry (typed, not read)
@@ -70,7 +83,7 @@ def anchors() -> list[dict]:
 
 def zones() -> list[dict]:
     return [{"name": name, "x": x, "y": y, "w": w, "h": h, **REF, **extra}
-            for name, x, y, w, h, extra, _ in FIELDS]
+            for name, x, y, w, h, extra, _ in FIELDS + JOINT_FIELDS]
 
 
 def document_type() -> dict:
@@ -104,14 +117,16 @@ def fill_first_page(src: str | Path, out: str | Path,
     the first page (the other pages stay blank, and are kept only with
     all_pages=True). Used to test and demonstrate the zones."""
     import fitz
-    values = {**SAMPLE, **(values or {})}
+    values = {**SAMPLE, **(values or {})}       # joint_* only when given
     source = fitz.open(str(src))
     doc = fitz.open()
     doc.insert_pdf(source, from_page=0,
                    to_page=source.page_count - 1 if all_pages else 0)
     page = doc[0]
-    for name, x, y, w, h, extra, _ in FIELDS:
-        text = str(values.get(name, ""))
+    for name, x, y, w, h, extra, _ in FIELDS + JOINT_FIELDS:
+        if name not in values:
+            continue
+        text = str(values[name])
         if extra.get("comb"):
             for char, (x0, x1) in zip(text, _comb_cells(page, x, y, w, h)):
                 page.insert_text((x0 + (x1 - x0) / 2 - 3, y + h / 2 + 3.5), char,

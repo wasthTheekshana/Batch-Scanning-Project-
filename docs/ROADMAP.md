@@ -43,7 +43,10 @@ and open its PDF.
   draw all zones in one step on that same sample (zones are drawn one by one).
 - The Personal Loan form (different layout), the NIC and the letter patterns:
   need real blank/filled samples from the bank.
-- Only page 1 of a multi-page form and only the applicant column are read.
+- The Joint Applicant column of page 1 is now read (`joint_*` fields, DONE
+  2026-10-15, verified on synthetic fills only). Pages 2-4 (finances, credit
+  card application) are still not read: they need a decision on which fields
+  the bank wants indexed and a filled sample to check handwriting.
 - ~~A stack without barcodes cannot be split by form type~~ DONE 2026-10-15: tick
   "A page like this starts a new document" on a document type and enable the
   `document_type` separation strategy.

@@ -124,6 +124,85 @@
               "ref_h": 842,
               "lines": 2,
               "regex": "^[\\s|.,;:_-]*([^|]+?)[\\s|.,;:_-]*$"
+            },
+            {
+              "name": "joint_applicant_name",
+              "x": 367,
+              "y": 290,
+              "w": 204,
+              "h": 28,
+              "ref_w": 595,
+              "ref_h": 842,
+              "lines": 2,
+              "regex": "^[\\s|.,;:_-]*([^|]+?)[\\s|.,;:_-]*$"
+            },
+            {
+              "name": "joint_date_of_birth",
+              "x": 367,
+              "y": 320,
+              "w": 135,
+              "h": 16,
+              "ref_w": 595,
+              "ref_h": 842,
+              "comb": true,
+              "charset": "digits",
+              "regex": "(\\d{8})"
+            },
+            {
+              "name": "joint_mobile",
+              "x": 344,
+              "y": 505,
+              "w": 86,
+              "h": 15,
+              "ref_w": 595,
+              "ref_h": 842,
+              "lines": 1,
+              "regex": "(\\d[\\d ]{7,}\\d)"
+            },
+            {
+              "name": "joint_email",
+              "x": 344,
+              "y": 534,
+              "w": 226,
+              "h": 14,
+              "ref_w": 595,
+              "ref_h": 842,
+              "lines": 1,
+              "regex": "(\\S+@\\S+)"
+            },
+            {
+              "name": "joint_nic_number",
+              "x": 346,
+              "y": 553,
+              "w": 182,
+              "h": 19,
+              "ref_w": 595,
+              "ref_h": 842,
+              "comb": true,
+              "charset": "nic",
+              "regex": "(\\d{9}[VvXx]|\\d{12})"
+            },
+            {
+              "name": "joint_passport_number",
+              "x": 375,
+              "y": 572,
+              "w": 154,
+              "h": 19,
+              "ref_w": 595,
+              "ref_h": 842,
+              "comb": true,
+              "charset": "alnum"
+            },
+            {
+              "name": "joint_address",
+              "x": 308,
+              "y": 427,
+              "w": 264,
+              "h": 32,
+              "ref_w": 595,
+              "ref_h": 842,
+              "lines": 2,
+              "regex": "^[\\s|.,;:_-]*([^|]+?)[\\s|.,;:_-]*$"
             }
           ],
           "anchors": [

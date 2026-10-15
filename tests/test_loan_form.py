@@ -69,7 +69,7 @@ def test_the_page_is_recognised_as_this_form_from_its_title(filled):
     groups, name = page_zone_groups(ocr_cfg, ocr_page(render(filled)).text)
     assert name == "Education loan application"
     assert [mode for _zones, mode in groups] == ["zone"]
-    assert [z["name"] for z in groups[0][0]] == [f[0] for f in loan_form.FIELDS]
+    assert [z["name"] for z in groups[0][0]] == [f[0] for f in loan_form.FIELDS + loan_form.JOINT_FIELDS]
 
 
 def test_the_templates_form_zones_are_the_ones_tested_here():
@@ -140,3 +140,19 @@ def test_a_straight_page_keeps_its_own_pixels_so_boxed_fields_read_exactly(fille
     got = extract_fields(page, zones, words=words)
     assert got["date_of_birth"].value == loan_form.SAMPLE["date_of_birth"]
     assert got["branch"].value == loan_form.SAMPLE["branch"]
+
+
+def test_a_blank_joint_column_reads_as_empty(filled):
+    read = extract_fields(render(filled), loan_form.zones())
+    junk = {n: read[n].value for n in read if n.startswith("joint_") and read[n].value}
+    assert len([n for n in read if n.startswith("joint_")]) == 7
+    assert len(junk) <= 2, junk          # box edges may leave stray marks, never a real value
+
+
+def test_the_joint_applicants_column_is_read_too(tmp_path):
+    values = {n: v for n, *_r, v in loan_form.JOINT_FIELDS}
+    path = loan_form.fill_first_page(FORM, tmp_path / "joint.pdf", values)
+    read = extract_fields(render(path), loan_form.zones())
+    wrong = {n: read[n].value for n in values if read[n].value != values[n]}
+    assert len(wrong) <= 1, wrong
+    assert read["applicant_name"].value == loan_form.SAMPLE["applicant_name"]
