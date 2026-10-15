@@ -53,7 +53,12 @@ and open its PDF.
 
 ### 4. Handwriting and language
 - Free handwriting is unreliable; boxed handwritten digits are about 82%.
-  Run the OCR engine benchmark (enhancement plan section 4.1) on real samples.
+  `scripts/ocr_benchmark.py` now measures it (report: `docs/OCR_BENCHMARK.md`):
+  typed forms under five scan conditions read 94% exactly right (clean 300 dpi
+  100%). Weak spots left: date of birth on black-and-white scans (0%, the
+  boxes break), address on a noisy scan (38%). Typed text is an upper bound;
+  run `--real DIR` on real scans with their true values to get the honest
+  figure (needs a few filled forms with the answers written down).
 - OCR is English only; Sinhala and Tamil language data are not bundled
   (ID cards and many forms carry both).
 

@@ -60,17 +60,22 @@ def prepare_strip(strip: np.ndarray) -> np.ndarray:
     marks = (gray < 200).astype(np.uint8) * 255
     horizontal = cv2.morphologyEx(
         marks, cv2.MORPH_OPEN,
-        cv2.getStructuringElement(cv2.MORPH_RECT, (max(15, int(w * 0.35)), 1)))
+        cv2.getStructuringElement(cv2.MORPH_RECT, (max(15, int(w * 0.1)), 1)))
     vertical = cv2.morphologyEx(
         marks, cv2.MORPH_OPEN,
         cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(10, int(h * 0.9)))))
-    lines = cv2.dilate(cv2.bitwise_or(horizontal, vertical), np.ones((3, 3), np.uint8)) > 0
+    core = cv2.bitwise_or(horizontal, vertical) > 0
+    lines = cv2.dilate(core.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
     cleaned = gray.copy()
     if lines.any():
         # erase only what is as light as the printed lines: the entry itself
-        # (darker ink, e.g. the tail of a "y" crossing a box edge) is kept
-        border = int(np.median(gray[lines]))
-        cleaned[lines & (gray >= border - 25)] = 255
+        # (darker ink, e.g. the tail of a "y" crossing a box edge) is kept.
+        # The line's own darkness is measured on the line pixels, not on the
+        # thickened mask (a thin line is mostly white paper in that mask)
+        # (a turned or resampled line is dark in places and pale in others, so
+        # the darkest tenth of its pixels sets the level, not the median)
+        border = int(np.percentile(gray[core], 10))
+        cleaned[lines & (gray >= border - 15)] = 255
     if h < MIN_STRIP_HEIGHT:
         scale = MIN_STRIP_HEIGHT / h
         cleaned = cv2.resize(cleaned, None, fx=scale, fy=scale,
