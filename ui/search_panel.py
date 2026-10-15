@@ -39,8 +39,9 @@ def _summary(fields: dict, limit: int = 3) -> str:
 class TimelineDialog(QDialog):
     """One document's history (audit rows), exportable to CSV or PDF."""
 
-    def __init__(self, entries: list[dict], title: str, parent=None):
+    def __init__(self, entries: list[dict], title: str, parent=None, user=None):
         super().__init__(parent)
+        self.user = user
         self.setWindowTitle(title)
         self.resize(760, 420)
         self.entries = entries
@@ -57,6 +58,7 @@ class TimelineDialog(QDialog):
         row = QHBoxLayout()
         self.export_btn = QPushButton("Export (CSV/PDF)...")
         self.export_btn.clicked.connect(self.export)
+        self.export_btn.setVisible(self._may_export())
         close = QPushButton("Close")
         close.clicked.connect(self.accept)
         row.addStretch(1)
@@ -64,7 +66,12 @@ class TimelineDialog(QDialog):
         row.addWidget(close)
         layout.addLayout(row)
 
+    def _may_export(self) -> bool:
+        return self.user is not None and self.user.can("report.export")
+
     def export(self) -> None:
+        if not self._may_export():
+            return
         path, _ = QFileDialog.getSaveFileName(
             self, "Export timeline", "document_timeline.csv",
             "CSV (*.csv);;PDF (*.pdf)")
@@ -283,7 +290,7 @@ class SearchPanel(QWidget):
         if row is None:
             return
         TimelineDialog(document_timeline(self.db, row["document_id"]),
-                       f"History of {row['document_id'][:8]}", self).exec()
+                       f"History of {row['document_id'][:8]}", self, user=self.user).exec()
 
     def edit_fields(self) -> None:
         row = self.selected()

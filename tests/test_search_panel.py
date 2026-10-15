@@ -164,3 +164,12 @@ def test_main_window_has_a_search_tab_that_opens_the_index(qtbot, db, tmp_path):
     assert "Search" in names
     win.search_panel.edit_requested.emit("d1")
     assert win.tabs.currentWidget() is win.index_editor
+
+
+def test_only_roles_with_report_export_can_export_a_history(qtbot, db):
+    from ui.search_panel import TimelineDialog
+    for role, allowed in (("viewer", True), ("operator", False)):
+        dlg = TimelineDialog([], "t", user=login_as(db, role))
+        qtbot.addWidget(dlg)
+        assert dlg._may_export() is allowed and dlg.export_btn.isHidden() is (not allowed)
+        Session.logout()
