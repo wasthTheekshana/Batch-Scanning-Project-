@@ -24,6 +24,7 @@ CHARSETS = {
 MIN_CELLS = 3          # fewer dividers than this: not a comb, read as a line
 INK_MIN = 0.012        # a cell with less ink than this is empty
 FIND_CUT = 150         # loose level used only to locate the box borders
+FIND_CUTS = (FIND_CUT, 170, 190)    # pale or dotted box lines need a higher cut
 INK_BELOW_BORDER = 15  # entry ink must be this much darker than the borders
 INK_FLOOR, INK_CEIL = 40, 150
 DEFAULT_INK = 140      # when no border level can be measured
@@ -217,11 +218,10 @@ def _clean_cell(cell: np.ndarray) -> np.ndarray:
     return out
 
 
-def split_cells(strip: np.ndarray) -> list[np.ndarray]:
-    """The entry ink of each box of a strip, left to right (empty boxes are
-    left out). Empty list when the strip is not a row of boxes."""
-    gray = _gray(strip)
-    loose = _dark(gray, FIND_CUT)
+def _boxes_at(gray: np.ndarray, cut: int):
+    """(gray, loose, cells) of the strip trimmed to its box lines, with the
+    lines taken as everything darker than `cut`."""
+    loose = _dark(gray, cut)
     # trim the slack the zone leaves around the boxes, down to the box lines
     # themselves: a zone a few pixels off also takes in a sliver of the
     # neighbouring row's border, and every size test below is relative to
@@ -229,11 +229,27 @@ def split_cells(strip: np.ndarray) -> list[np.ndarray]:
     lines = _vertical_lines(loose, 0.5)
     rows, cols = np.nonzero(lines.any(axis=1))[0], np.nonzero(lines.any(axis=0))[0]
     if len(rows) == 0:
-        return []
+        return None
     top, bottom = rows.min(), rows.max() + 1
     left, right = cols.min(), cols.max() + 1
     gray, loose = gray[top:bottom, left:right], loose[top:bottom, left:right]
-    cells = find_cells(loose)
+    return gray, loose, find_cells(loose)
+
+
+def split_cells(strip: np.ndarray) -> list[np.ndarray]:
+    """The entry ink of each box of a strip, left to right (empty boxes are
+    left out). Empty list when the strip is not a row of boxes. The box lines
+    of some forms are printed pale or dotted, so the lines are looked for at
+    a few darkness levels and the one that finds the most boxes wins."""
+    gray = _gray(strip)
+    best = None
+    for cut in FIND_CUTS:
+        found = _boxes_at(gray, cut)
+        if found is not None and (best is None or len(found[2]) > len(best[2])):
+            best = found
+    if best is None:
+        return []
+    gray, loose, cells = best
     if len(cells) < MIN_CELLS:
         return []
     ink = _strip_lines(_dark(gray, ink_level(gray, loose)))
@@ -254,8 +270,16 @@ def read_comb(strip: np.ndarray, charset: str = "alnum") -> OCRResult:
     whitelist = CHARSETS.get(charset, charset or CHARSETS["alnum"])
     inked = split_cells(strip)
     # each reading runs the OCR engine as a separate process: do several at once
+    allowed = [whitelist] * len(inked)
+    if charset == "nic" and inked:
+        # a letter can only close an old 9-digit NIC (123456789V): every
+        # earlier box is a digit, and a 12-box number has no letter at all
+        digits = CHARSETS["digits"]
+        allowed = [digits] * len(inked)
+        if len(inked) < 12:
+            allowed[-1] = whitelist
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        readings = list(pool.map(lambda c: _read_char(c, whitelist), inked))
+        readings = list(pool.map(lambda pair: _read_char(*pair), zip(inked, allowed)))
     chars = [char for char, _ in readings if char]
     confs = [conf for char, conf in readings if char]
     confidence = sum(confs) / len(confs) if confs else 0.0

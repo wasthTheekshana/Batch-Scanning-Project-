@@ -15,7 +15,10 @@ import numpy as np
 # clockwise turns to try, most likely first (a sheet fed upside down)
 TURNS = {180: cv2.ROTATE_180, 90: cv2.ROTATE_90_CLOCKWISE,
          270: cv2.ROTATE_90_COUNTERCLOCKWISE}
-GOOD_ENOUGH = 6        # real words that mean the page already reads fine
+GOOD_ENOUGH = 6        # real words that mean the page already reads fine ...
+GOOD_SHARE = 0.15      # ... if they are also this share of everything read (an
+                       # upside-down full form still yields a few real words
+                       # among hundreds of gibberish ones)
 MIN_WORD = 4           # letters in a "real word"
 MIN_CONF = 60
 
@@ -41,7 +44,7 @@ def upright(image: np.ndarray, first, read) -> tuple[int, np.ndarray, object]:
     if not getattr(first, "words", None):
         return 0, image, first            # nothing to judge the page by
     current = real_words(first)
-    if current >= GOOD_ENOUGH:
+    if current >= GOOD_ENOUGH and current >= GOOD_SHARE * len(first.words):
         return 0, image, first
     best_turn, best_image, best_result, best = 0, image, first, current
     for degrees in TURNS:

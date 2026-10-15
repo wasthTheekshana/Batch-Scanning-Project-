@@ -1,6 +1,6 @@
 """Regenerate core/templates/bank_customer_file.json (the built-in
 "Bank - Customer file" template): customer-file separation plus the document
-types NIC, Education loan application (regions on the real form),
+types NIC, Education and Home loan applications (regions on the real forms),
 generic Application and Letter.
 
     python scripts/build_bank_template.py
@@ -13,6 +13,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import home_loan_form  # noqa: E402
 import loan_form  # noqa: E402
 
 DATE = r"(\d{1,2}[ ./-](?:[A-Za-z]{3,9}|\d{1,2})[ ./-]\d{2,4})"
@@ -21,6 +22,7 @@ NAME = r"([A-Za-z.]+(?: [A-Za-z.]+){0,4}?)"
 DOCUMENT_TYPES = [
     # a specific form first: types are tried in order and the first match wins
     loan_form.document_type(),
+    home_loan_form.document_type(),      # before the generic Application: its title matches that too
     {"name": "Application",
      "regex": r"application\s+form|loan\s+application|account\s+opening|application\s+no",
      "zones": [

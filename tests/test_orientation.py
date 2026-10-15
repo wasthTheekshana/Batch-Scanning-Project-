@@ -141,3 +141,35 @@ def test_a_page_fed_correctly_is_not_turned(tmp_path, db):
     doc = run_upside_down(tmp_path, db, fed=0)
     assert json.loads(doc["qc_detail"])["pages"]["1"]["rotation"] == 0
     assert json.loads(doc["extracted_fields"])["nic"] == "199012345678"
+
+
+def test_an_upside_down_full_page_is_turned_even_though_it_yields_a_few_real_words():
+    """Regression (real Kodak scan): an upside-down form read as 420 words of
+    which 13 looked real, which passed the old 'reads fine' test of 6 words."""
+    from ocr.orientation import upright
+
+    def result(real, junk):
+        words = ([{"text": "Account", "conf": 90}] * real
+                 + [{"text": "x1#", "conf": 20}] * junk)
+        return type("R", (), {"words": words})()
+
+    sideways = result(13, 407)
+    seen = []
+
+    def read(image):
+        seen.append(1)
+        return result(213, 233)                  # every other way up reads well
+
+    import numpy as np
+    degrees, _img, got = upright(np.zeros((20, 20), np.uint8), sideways, read)
+    assert degrees == 180 and seen and len(got.words) == 446
+
+
+def test_a_page_that_reads_well_is_not_re_read():
+    from ocr.orientation import upright
+    import numpy as np
+    words = [{"text": "Account", "conf": 90}] * 60 + [{"text": "x1#", "conf": 20}] * 40
+    first = type("R", (), {"words": words})()
+    degrees, _img, got = upright(np.zeros((20, 20), np.uint8), first,
+                                 lambda image: (_ for _ in ()).throw(AssertionError("re-read")))
+    assert degrees == 0 and got is first
