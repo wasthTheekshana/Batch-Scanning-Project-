@@ -1,3 +1,3 @@
 # 02 Search tab UI
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01

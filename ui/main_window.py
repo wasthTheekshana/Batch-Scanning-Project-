@@ -136,6 +136,14 @@ class MainWindow(QMainWindow):
         self.index_editor.fields_saved.connect(self._on_fields_saved)
         self.tabs.addTab(self.index_editor, icon("fa5s.tags"), "Index")
 
+        # Search tab: every role may find documents (an operator only those
+        # of batches they scanned)
+        if user is not None and user.can("document.search"):
+            from ui.search_panel import SearchPanel
+            self.search_panel = SearchPanel(db, user)
+            self.search_panel.edit_requested.connect(self.show_in_index)
+            self.tabs.addTab(self.search_panel, icon("fa5s.search"), "Search")
+
         # Job monitor tab
         self.job_monitor = JobMonitor(bus)
         self.tabs.addTab(self.job_monitor, icon("fa5s.tasks"), "Job Monitor")
@@ -250,10 +258,20 @@ class MainWindow(QMainWindow):
             self.index_editor.refresh()
         elif widget is getattr(self, "custody_panel", None):
             self.custody_panel.refresh()
+        elif widget is getattr(self, "search_panel", None):
+            self.search_panel.reload_choices()
 
     def sign_out(self) -> None:
         Session.logout(self.db)
         self.close()
+
+    def show_in_index(self, document_id: str) -> None:
+        """Open a document in the Index tab (from a search result)."""
+        self.tabs.setCurrentWidget(self.index_editor)
+        if not self.index_editor.select_document(document_id):
+            QMessageBox.information(
+                self, "Document not listed",
+                "That document could not be found in the Index list.")
 
     def _on_fields_saved(self, document_id: str, _fields: dict) -> None:
         """A corrected index reaches the bank too: an already exported

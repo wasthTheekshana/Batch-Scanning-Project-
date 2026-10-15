@@ -33,7 +33,7 @@ with it (optional running index.csv); an operator's correction in the Index tab
 rewrites and redelivers it. Settings are in the Workflow Designer's export group
 and switched on in the Bank - Customer file template.
 
-### 2. No search or retrieval screen  (BUILDING: `.scratch/document-search/`)
+### 2. Search and retrieval screen  (DONE: Search tab, `.scratch/document-search/`)
 Nobody can find a stored document by customer ID, NIC, account number or date
 and open its PDF.
 

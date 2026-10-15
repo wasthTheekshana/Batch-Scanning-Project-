@@ -1,3 +1,3 @@
 # 03 Open PDF, timeline and edit from a result
-Status: ready-for-agent
+Status: resolved
 Blocked by: 02

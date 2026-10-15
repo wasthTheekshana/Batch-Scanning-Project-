@@ -184,6 +184,17 @@ class IndexEditor(QWidget):
                         return path
         return None
 
+    def select_document(self, document_id: str) -> bool:
+        """Show this document in the list (whatever the filter) and open it.
+        False when it is not there."""
+        self.filter_combo.setCurrentIndex(self.filter_combo.findData("all"))
+        self.refresh()
+        for row in range(self.doc_list.count()):
+            if self.doc_list.item(row).data(Qt.ItemDataRole.UserRole) == document_id:
+                self.doc_list.setCurrentRow(row)
+                return True
+        return False
+
     def load_document(self, document_id: str) -> None:
         doc = self.db.get_document(document_id)
         if doc is None:
