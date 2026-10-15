@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDateEdit, QDialog,
 
 from core.search import (SearchQuery, count_documents, known_field_names,
                          search_documents)
+from core.search_export import MAX_ROWS, export_csv
 from custody.timeline import document_timeline, export_timeline
 from ui.theme import mark
 
@@ -82,10 +83,11 @@ class TimelineDialog(QDialog):
 class SearchPanel(QWidget):
     edit_requested = pyqtSignal(str)          # document_id: open it in the Index tab
 
-    def __init__(self, db, user, parent=None):
+    def __init__(self, db, user, parent=None, audit=None):
         super().__init__(parent)
         self.db = db
         self.user = user
+        self.audit = audit
         self._rows: list[dict] = []
         self._query = SearchQuery()
         self._total = 0
@@ -158,13 +160,19 @@ class SearchPanel(QWidget):
         self.folder_btn = QPushButton("Show in folder")
         self.timeline_btn = QPushButton("History...")
         self.edit_btn = QPushButton("Correct index fields...")
+        self.export_btn = QPushButton("Download results (CSV)...")
+        self.export_btn.setToolTip(
+            "Save every document this search found, with its index fields, as a "
+            "CSV file that opens in Excel.")
+        self.export_btn.clicked.connect(self.export_results)
         self.more_btn = QPushButton("Load more")
         self.open_btn.clicked.connect(self.open_pdf)
         self.folder_btn.clicked.connect(self.show_folder)
         self.timeline_btn.clicked.connect(self.show_history)
         self.edit_btn.clicked.connect(self.edit_fields)
         self.more_btn.clicked.connect(self.load_more)
-        for b in (self.open_btn, self.folder_btn, self.timeline_btn, self.edit_btn):
+        for b in (self.open_btn, self.folder_btn, self.timeline_btn, self.edit_btn,
+                  self.export_btn):
             actions.addWidget(b)
         actions.addStretch(1)
         actions.addWidget(self.more_btn)
@@ -249,7 +257,37 @@ class SearchPanel(QWidget):
             else f"{self._total} document(s) found" +
                  (f", showing the newest {shown}." if shown < self._total else "."))
         self.more_btn.setVisible(shown < self._total)
+        self.export_btn.setEnabled(self._total > 0 and self._may_export())
         self._selection_changed()
+
+    # -- download ---------------------------------------------------------------------
+    def _may_export(self) -> bool:
+        return self.user is not None and self.user.can("report.export")
+
+    def export_results(self, path: str | None = None) -> int:
+        """Save everything the last search found as CSV. Returns the number of
+        documents written (0 when cancelled, refused or empty)."""
+        if not self._may_export() or self._total == 0:
+            return 0
+        if not path:
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Download search results", "search_results.csv", "CSV (*.csv)")
+        if not path:
+            return 0
+        try:
+            count, truncated = export_csv(self.db, self._query, path)
+        except OSError:
+            QMessageBox.warning(self, "Download failed",
+                                "The file could not be written. Choose another folder.")
+            return 0
+        if self.audit is not None:
+            self.audit.log("search_export", self.user.username, documents=count,
+                           truncated=truncated)
+        note = f"{count} document(s) saved."
+        if truncated:
+            note += f" Only the first {MAX_ROWS} are included: narrow the search."
+        self.summary.setText(note)
+        return count
 
     # -- the selected result -------------------------------------------------------------
     def selected(self) -> dict | None:

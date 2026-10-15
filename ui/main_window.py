@@ -142,7 +142,7 @@ class MainWindow(QMainWindow):
         # of batches they scanned)
         if user is not None and user.can("document.search"):
             from ui.search_panel import SearchPanel
-            self.search_panel = SearchPanel(db, user)
+            self.search_panel = SearchPanel(db, user, audit=audit)
             self.search_panel.edit_requested.connect(self.show_in_index)
             self.tabs.addTab(self.search_panel, icon("fa5s.search"), "Search")
 
