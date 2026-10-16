@@ -1,16 +1,16 @@
 """Find out which setting stops the Kodak S3060 from handing over BOTH sides.
 
-Load 5 or more sheets printed on BOTH sides (something different on each side),
+Load 8 or more sheets printed on BOTH sides (something different on each side),
 switch the scanner on, then run:
 
     python scripts/duplex_experiment.py
 
-Each attempt uses ONE sheet and asks for two images. They add the application's
-own scan settings one step at a time, so the step after which the back side
-disappears is the culprit. For every attempt it reports how many images arrived
-and whether the second one is a different picture (the back) or nothing. The
-pictures are kept in a temp folder that is printed; nothing goes into the
-application's data.
+Each attempt uses ONE sheet and asks for two images, with a different mix of the
+application's scan settings (and in a different order), so the attempts that
+return only the front reveal which setting loses the back side. It reports for
+every attempt how many images arrived and whether the second is a different
+picture (the back). The pictures are kept in a temp folder that is printed;
+nothing goes into the application's data.
 """
 from __future__ import annotations
 
@@ -25,6 +25,20 @@ import numpy as np
 
 from scanning import wia_source as w
 
+DPI = 200
+
+# (label, two-sided first?, data type, bits, set the dpi?, set the scan area?)
+ATTEMPTS = [
+    ("A. nothing on the item (baseline)",                   True,  None, None, False, False),
+    ("B. grayscale only",                                   True,  2,    8,    False, False),
+    ("C. resolution only",                                  True,  None, None, True,  False),
+    ("D. colour only",                                      True,  3,    24,   False, False),
+    ("E. black and white set explicitly",                   True,  0,    1,    False, False),
+    ("F. grayscale + resolution, two-sided asked LAST",     False, 2,    8,    True,  False),
+    ("G. grayscale + resolution + area, two-sided LAST",    False, 2,    8,    True,  True),
+    ("H. black and white + area, two-sided first",          True,  0,    1,    False, True),
+]
+
 
 def decode(data: bytes):
     return cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_GRAYSCALE)
@@ -36,26 +50,6 @@ def differ(a, b) -> float:
     return float(np.mean(np.abs(sa.astype(int) - sb.astype(int))))
 
 
-def step_dpi_gray(item, dpi):
-    w._set_props(item.Properties, {w.WIA_DPI_X: dpi, w.WIA_DPI_Y: dpi,
-                                   w.WIA_DATA_TYPE: 2, w.WIA_BITS_PER_PIXEL: 8})
-
-
-def step_area(item, dpi):
-    props = {str(p.PropertyID): p for p in item.Properties}
-    for pid in (w.WIA_START_X, w.WIA_START_Y):
-        props[pid].Value = 0
-    props[w.WIA_EXTENT_X].Value = w._full_width(props[w.WIA_EXTENT_X], dpi)
-    props[w.WIA_EXTENT_Y].Value = w._snap(props[w.WIA_EXTENT_Y], w.A4_INCHES[1] * dpi)
-
-
-ATTEMPTS = [
-    ("1. nothing set on the scan item", []),
-    ("2. + resolution and grayscale", [step_dpi_gray]),
-    ("3. + scan area (full width, A4 height)", [step_dpi_gray, step_area]),
-]
-
-
 def connect():
     source = w.WIASource()
     devices = source.list_devices()
@@ -65,18 +59,39 @@ def connect():
     return source
 
 
-def attempt(label: str, steps, index: int, folder: Path, dpi: int = 200) -> int:
+def item_settings(item, dtype, bits, set_dpi, area):
+    values = {}
+    if set_dpi:
+        values.update({w.WIA_DPI_X: DPI, w.WIA_DPI_Y: DPI})
+    if dtype is not None:
+        values.update({w.WIA_DATA_TYPE: dtype, w.WIA_BITS_PER_PIXEL: bits})
+    if values:
+        w._set_props(item.Properties, values)
+    if area:
+        props = {str(p.PropertyID): p for p in item.Properties}
+        for pid in (w.WIA_START_X, w.WIA_START_Y):
+            props[pid].Value = 0
+        props[w.WIA_EXTENT_X].Value = w._full_width(props[w.WIA_EXTENT_X], DPI)
+        props[w.WIA_EXTENT_Y].Value = w._snap(props[w.WIA_EXTENT_Y], w.A4_INCHES[1] * DPI)
+
+
+def attempt(index, label, duplex_first, dtype, bits, set_dpi, area, folder):
     source = connect()
-    source._configure(dpi, "grayscale", True)
     item = source._device.Items(1)
-    for step in steps:
-        step(item, dpi)
+    if duplex_first:
+        source._configure(DPI, "grayscale", True)
+        item = source._device.Items(1)
+        item_settings(item, dtype, bits, set_dpi, area)
+    else:
+        item_settings(item, dtype, bits, set_dpi, area)
+        source._configure(DPI, "grayscale", True)
+        item = source._device.Items(1)
     print(f"\n== {label}  (two-sided accepted: {source.duplex_applied})")
     images = []
     for n in range(2):
         try:
             image = item.Transfer(w.WIA_FORMAT_PNG)
-            path = folder / f"a{index}_{n + 1}.png"
+            path = folder / f"{label[0]}_{n + 1}.png"
             image.SaveFile(str(path))
             img = decode(path.read_bytes())
             images.append(img)
@@ -87,43 +102,25 @@ def attempt(label: str, steps, index: int, folder: Path, dpi: int = 200) -> int:
             break
     source.disconnect()
     if len(images) == 2:
-        both = differ(*images) > 8
-        print("   ->", "BOTH SIDES (two different pictures)" if both else "the same picture twice")
-        return 2 if both else 1
+        return 2 if differ(*images) > 8 else 1
     return len(images)
-
-
-def attempt_app(index: int, folder: Path, dpi: int = 200) -> int:
-    """The application's own scan routine, stopped after two images."""
-    source = connect()
-    print(f"\n== {index}. the application's own acquire()")
-    pages = source.acquire(dpi, "grayscale", True, max_pages=2)
-    for n, data in enumerate(pages, 1):
-        (folder / f"a{index}_{n}.png").write_bytes(data)
-        img = decode(data)
-        print(f"   image {n}: {img.shape[1]}x{img.shape[0]}  dark {(img < 128).mean() * 100:5.2f}%")
-    source.disconnect()
-    if len(pages) == 2:
-        both = differ(decode(pages[0]), decode(pages[1])) > 8
-        print("   ->", "BOTH SIDES" if both else "the same picture twice")
-        return 2 if both else 1
-    return len(pages)
 
 
 def main() -> int:
     folder = Path(tempfile.mkdtemp(prefix="duplex_exp_"))
     outcome = {}
-    for i, (label, steps) in enumerate(ATTEMPTS, 1):
+    for i, spec in enumerate(ATTEMPTS, 1):
+        label = spec[0]
         try:
-            outcome[label] = attempt(label, steps, i, folder)
+            outcome[label] = attempt(i, *spec, folder)
+        except SystemExit:
+            raise
         except Exception as e:
             print(f"   stopped: {type(e).__name__}: {e}")
             outcome[label] = 0
-    try:
-        outcome["4. the application's own acquire()"] = attempt_app(4, folder)
-    except Exception as e:
-        print(f"   stopped: {type(e).__name__}: {e}")
-        outcome["4. the application's own acquire()"] = 0
+        if outcome[label] == 0:
+            print("   (no sheet came: the feeder is empty, stopping)")
+            break
     print("\nSummary (images obtained from ONE two-sided sheet)")
     for label, n in outcome.items():
         print(f"  {label}: {n}  {'<- both sides' if n == 2 else '<- FRONT ONLY' if n == 1 else '<- none'}")
