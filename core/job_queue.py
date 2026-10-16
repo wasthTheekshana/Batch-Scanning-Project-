@@ -672,6 +672,58 @@ class Pipeline:
         self.delivery_q.put({"reissue_index": document_id})
         return True
 
+    def reissue_page_types(self, document_id: str) -> bool:
+        """After an operator corrected a document's page types: rewrite the
+        exported PDF's bookmarks in place and deliver it (and its index file)
+        again. True when queued; False when the document has no exported PDF
+        or its project is unavailable. Runs on the delivery thread."""
+        row = self.db.get_document(document_id)
+        if row is None or not row["storage_path"]                 or not Path(row["storage_path"]).is_file():
+            return False
+        try:
+            self._resolve(row["project_id"])
+        except ProjectUnavailable:
+            return False
+        self.delivery_q.put({"reissue_types": document_id})
+        return True
+
+    def _do_reissue_types(self, document_id: str) -> None:
+        row = self.db.get_document(document_id)
+        if row is None:
+            return
+        path = Path(row["storage_path"] or "")
+        try:
+            rt = self._resolve(row["project_id"])
+        except ProjectUnavailable:
+            return
+        pages = json.loads(row["qc_detail"] or "{}").get("pages", {})
+        types = [(pages[n] or {}).get("doc_type") for n in sorted(pages, key=int)]
+        sent_to = []
+        if path.suffix.lower() == ".pdf" and path.is_file():
+            from export.batch_exporter import set_type_bookmarks
+            try:
+                set_type_bookmarks(path, types)
+            except Exception:
+                log.warning("could not rewrite the bookmarks of %s", path.name)
+                return
+            details = json.loads(row["delivery_detail"] or "{}")
+            for channel in rt.channels:
+                if channel.name == "cd_dvd" or not details.get(channel.name, {}).get("success"):
+                    continue         # a disc queue would stage a second copy
+                sent = self._deliver_with_retry(
+                    channel, str(path),
+                    {"document_id": document_id, "project_id": row["project_id"]})
+                details[channel.name]["success"] = sent.success
+                details[channel.name]["checksum"] = sent.checksum
+                sent_to.append(channel.name)
+            self.db.update_document(document_id, delivery_detail=details)
+        if self.audit:
+            self.audit.log("page_types_reissued", "system", document_id=document_id,
+                           channels=sent_to)
+        # the index file carries the document types too
+        if ((rt.profile.get("export") or {}).get("index") or {}).get("enabled"):
+            self._do_reissue_index(document_id)
+
     def _do_reissue_index(self, document_id: str) -> None:
         row = self.db.get_document(document_id)
         if row is None:
@@ -734,6 +786,9 @@ class Pipeline:
         def handle(item: dict):
             if "reissue_index" in item:
                 self._do_reissue_index(item["reissue_index"])
+                return
+            if "reissue_types" in item:
+                self._do_reissue_types(item["reissue_types"])
                 return
             document, records = item["document"], item["records"]
             doc_id = document["document_id"]

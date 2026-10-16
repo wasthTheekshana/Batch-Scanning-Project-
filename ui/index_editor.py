@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import (QComboBox, QCompleter, QFormLayout, QHBoxLayout,
+from PyQt6.QtWidgets import (QComboBox, QCompleter, QFormLayout, QGroupBox, QHBoxLayout,
                              QLabel, QLineEdit, QListWidget, QListWidgetItem,
                              QMessageBox, QPushButton, QSplitter, QVBoxLayout, QWidget)
 
@@ -23,6 +23,7 @@ from ui.theme import STATUS_COLORS, mark
 
 class IndexEditor(QWidget):
     fields_saved = pyqtSignal(str, dict)  # document_id, fields
+    page_types_saved = pyqtSignal(str)    # document_id
 
     def __init__(self, db, zones: list[dict], audit=None,
                  current_user=None, parent=None, full_page: bool = False,
@@ -55,6 +56,7 @@ class IndexEditor(QWidget):
         self.filter_combo = QComboBox()
         self.filter_combo.addItem("Needs indexing", "needs")
         self.filter_combo.addItem("All documents", "all")
+        self.filter_combo.addItem("Fields to check (low confidence)", "lowconf")
         self.filter_combo.currentIndexChanged.connect(lambda _: self.refresh())
         ll.addWidget(self.filter_combo)
         self.doc_list = QListWidget()
@@ -83,6 +85,18 @@ class IndexEditor(QWidget):
         mark(self.save_button, "primary")
         self.save_button.clicked.connect(self.save)
         form_col.addWidget(self.save_button)
+        # the type of each page (NIC, Application, ...): drives the PDF bookmarks
+        self.types_box = QGroupBox("Page types")
+        self.types_form = QFormLayout(self.types_box)
+        self.save_types_btn = QPushButton("Save page types")
+        self.save_types_btn.clicked.connect(self.save_page_types)
+        self._type_combos: dict[str, QComboBox] = {}
+        self._can_edit_types = current_user is not None and (
+            current_user.can("scan.run") or current_user.can("qc.review"))
+        form_col.addWidget(self.types_box)
+        form_col.addWidget(self.save_types_btn)
+        self.types_box.hide()
+        self.save_types_btn.hide()
         self.hint = QLabel("")
         mark(self.hint, "muted")
         self.hint.setWordWrap(True)
@@ -176,15 +190,27 @@ class IndexEditor(QWidget):
         return bool(zones) and not any(
             fields.get(z["name"]) for z in zones)
 
+    @staticmethod
+    def _to_check(doc) -> int:
+        """How many fields the reader was unsure of and nobody has reviewed."""
+        try:
+            return len(json.loads(doc["qc_detail"] or "{}").get("low_conf_fields") or [])
+        except (TypeError, ValueError):
+            return 0
+
     def refresh(self) -> None:
         self.doc_list.clear()
         mode = self.filter_combo.currentData()
         for doc in self.db.list_documents():
             if mode == "needs" and not self._needs_indexing(doc):
                 continue
+            if mode == "lowconf" and not self._to_check(doc):
+                continue
+            check = self._to_check(doc)
             item = QListWidgetItem(
                 f"{doc['document_id'][:8]} · pages {doc['page_range']} · "
-                f"{doc['validation_status']}")
+                f"{doc['validation_status']}"
+                + (f" · {check} field(s) to check" if check else ""))
             item.setData(Qt.ItemDataRole.UserRole, doc["document_id"])
             from PyQt6.QtGui import QBrush, QColor
             color = STATUS_COLORS.get(doc["validation_status"])
@@ -240,6 +266,7 @@ class IndexEditor(QWidget):
         self.title.setText(f"Document {document_id[:8]} · "
                            f"pages {doc['page_range']} · "
                            f"{doc['validation_status']}")
+        self._load_page_types(doc)
         fields = json.loads(doc["extracted_fields"] or "{}")
         try:
             self._low_conf = set(json.loads(doc["qc_detail"] or "{}")
@@ -252,6 +279,74 @@ class IndexEditor(QWidget):
         image = self._first_page_image(doc)
         if image:
             self.page_view.set_image(image)
+
+    # -- page types ------------------------------------------------------------
+    def _load_page_types(self, doc) -> None:
+        """One drop-down per page, with the project's document types."""
+        while self.types_form.rowCount():
+            self.types_form.removeRow(0)
+        self._type_combos.clear()
+        from ocr.doc_types import document_types
+        names = [t["name"] for t in document_types(self._ocr_cfg or {})]
+        try:
+            pages = json.loads(doc["qc_detail"] or "{}").get("pages", {})
+        except (TypeError, ValueError):
+            pages = {}
+        pages = {k: v for k, v in pages.items() if isinstance(v, dict)}
+        show = bool(names and pages)
+        self.types_box.setVisible(show)
+        self.save_types_btn.setVisible(show)
+        self.save_types_btn.setEnabled(show and self._can_edit_types)
+        if not show:
+            return
+        for page_no in sorted(pages, key=lambda k: int(k) if str(k).isdigit() else 0):
+            current = pages[page_no].get("doc_type") or ""
+            combo = QComboBox()
+            combo.addItem("(no type)", "")
+            for name in names + ([current] if current and current not in names else []):
+                combo.addItem(name, name)
+            combo.setCurrentIndex(max(0, combo.findData(current)))
+            combo.setEnabled(self._can_edit_types)
+            self._type_combos[page_no] = combo
+            self.types_form.addRow(f"Page {page_no}", combo)
+
+    def save_page_types(self) -> None:
+        """Store the corrected page types, then let the window rewrite the
+        exported PDF's bookmarks and redeliver (see Pipeline.reissue_page_types)."""
+        if self.document_id is None or not self._can_edit_types or not self._type_combos:
+            return
+        doc = self.db.get_document(self.document_id)
+        detail = json.loads(doc["qc_detail"] or "{}")
+        pages = detail.get("pages", {})
+        changed = []
+        for page_no, combo in self._type_combos.items():
+            chosen = combo.currentData() or None
+            info = pages.get(page_no)
+            if not isinstance(info, dict) or (info.get("doc_type") or None) == chosen:
+                continue
+            if chosen:
+                info["doc_type"] = chosen
+            else:
+                info.pop("doc_type", None)
+            changed.append(page_no)
+        if not changed:
+            self.hint.setText("No page type was changed.")
+            return
+        order = sorted(pages, key=lambda k: int(k) if str(k).isdigit() else 0)
+        found = list(dict.fromkeys(pages[n].get("doc_type") for n in order
+                                   if isinstance(pages[n], dict) and pages[n].get("doc_type")))
+        fields = json.loads(doc["extracted_fields"] or "{}")
+        if found:
+            fields["doc_types"] = ", ".join(found)
+        else:
+            fields.pop("doc_types", None)
+        self.db.update_document(self.document_id, qc_detail=detail, extracted_fields=fields)
+        user = self.current_user.username if self.current_user else "unknown"
+        if self.audit:
+            self.audit.log("page_types_edit", user, document_id=self.document_id,
+                           pages=sorted(changed, key=int))
+        self.page_types_saved.emit(self.document_id)
+        self.hint.setText(f"Page types saved ({len(changed)} page(s) changed).")
 
     def auto_extract(self) -> None:
         """Re-run zone extraction on this document's first page — useful

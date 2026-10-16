@@ -49,6 +49,18 @@ def export_document(images: list[str], export_cfg: dict, ctx: dict,
     return path
 
 
+def set_type_bookmarks(pdf_path: Path, page_types: list | None) -> None:
+    """Replace a finished PDF's type bookmarks (none when no page has a type),
+    for a correction made after export. Raises on failure: the caller decides
+    whether a copy that could not be changed matters."""
+    import fitz
+    runs = type_runs(page_types or [])
+    with fitz.open(str(pdf_path)) as pdf:
+        pdf.set_toc([[1, name, index + 1] for index, name in runs
+                     if index < pdf.page_count])
+        pdf.saveIncr()
+
+
 def add_type_bookmarks(pdf_path: Path, page_types: list | None) -> None:
     """One bookmark per stretch of pages of the same document type (NIC,
     Application, ...), so a customer's single PDF can be navigated by type.

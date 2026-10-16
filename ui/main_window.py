@@ -136,6 +136,7 @@ class MainWindow(QMainWindow):
             zones_for_project=self._zones_for_project,
             ocr_cfg_for_project=self._ocr_cfg_for_project)
         self.index_editor.fields_saved.connect(self._on_fields_saved)
+        self.index_editor.page_types_saved.connect(self._on_page_types_saved)
         self.tabs.addTab(self.index_editor, icon("fa5s.tags"), "Index")
 
         # Search tab: every role may find documents (an operator only those
@@ -275,6 +276,10 @@ class MainWindow(QMainWindow):
                 self, "Document not listed",
                 "That document could not be found in the Index list.")
 
+    def _on_page_types_saved(self, document_id: str) -> None:
+        if self.pipeline is not None:
+            self.pipeline.reissue_page_types(document_id)
+
     def _on_fields_saved(self, document_id: str, _fields: dict) -> None:
         """A corrected index reaches the bank too: an already exported
         document gets its index file written and delivered again."""
@@ -370,7 +375,22 @@ class MainWindow(QMainWindow):
             f"{len(names)} project(s) are unreadable and are not listed: "
             f"{shown}. Open the Workflow Designer to repair them.", parent=self)
         box.setTextFormat(Qt.TextFormat.PlainText)
+        repair_btn = None
+        if self._can_repair_projects():
+            repair_btn = box.addButton("Repair…", QMessageBox.ButtonRole.ActionRole)
         box.exec()
+        if repair_btn is not None and box.clickedButton() is repair_btn:
+            self.open_project_repair()
+
+    def _can_repair_projects(self) -> bool:
+        user = Session.current_user()
+        return user is not None and user.can("project.edit")             and self.profile_manager is not None
+
+    def open_project_repair(self) -> None:
+        from ui.project_repair_dialog import ProjectRepairDialog
+        dialog = ProjectRepairDialog(self.db, self.profile_manager, self.audit,
+                                     Session.current_user(), self)
+        dialog.exec()
 
     def report_refused_batches(self, refused: list) -> None:
         """Tell the operator which interrupted batches were not resumed at
