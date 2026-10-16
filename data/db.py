@@ -173,7 +173,7 @@ CREATE INDEX IF NOT EXISTS idx_custody_bundle ON custody_events(bundle_id);
 # SCHEMA_VERSION to that number. Each migration runs in one transaction with its
 # version stamp; a failure rolls everything back, and a copy of the database
 # is kept first as <name>.before-v<N>.bak.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 _MIGRATIONS: list[tuple[int, str]] = [
     # 2: which documents were scanned under which custody bundle's QR label
     (2, """
@@ -186,6 +186,8 @@ CREATE TABLE IF NOT EXISTS bundle_documents (
 );
 CREATE INDEX IF NOT EXISTS idx_bundle_documents_bundle ON bundle_documents(bundle_id);
 """),
+    # 3: how many documents a bundle is expected to hold (optional)
+    (3, "ALTER TABLE bundles ADD COLUMN expected_documents INTEGER;"),
 ]
 
 
@@ -271,6 +273,11 @@ class Database:
                         "\nCOMMIT;")
                 except Exception as e:
                     self.conn.rollback()
+                    if "duplicate column name" in str(e):
+                        # the column is already there (a copy that lost its version
+                        # stamp): the change is in place, only the stamp is missing
+                        self.conn.execute(f"PRAGMA user_version = {number}")
+                        continue
                     raise MigrationError(
                         f"schema migration to version {number} failed "
                         f"({e}); the database was left at version "
@@ -476,12 +483,28 @@ class Database:
 
     # -- custody (HLD enhancement §3.2) ------------------------------------
     def insert_bundle(self, bundle_id: str, project_id: str, label: str,
-                      qr_value: str) -> None:
+                      qr_value: str, expected_documents: int | None = None) -> None:
         with self._lock, self.conn:
             self.conn.execute(
                 "INSERT INTO bundles (bundle_id, project_id, label, "
-                "qr_value, status, created_at) VALUES (?,?,?,?,?,?)",
-                (bundle_id, project_id, label, qr_value, "received", _now()))
+                "qr_value, status, created_at, expected_documents) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (bundle_id, project_id, label, qr_value, "received", _now(),
+                 expected_documents))
+
+    def set_bundle_expected(self, bundle_id: str, expected: int | None) -> None:
+        with self._lock, self.conn:
+            self.conn.execute(
+                "UPDATE bundles SET expected_documents=? WHERE bundle_id=?",
+                (expected, bundle_id))
+
+    def documents_without_bundle(self) -> list[sqlite3.Row]:
+        """Documents not yet linked to any custody bundle."""
+        with self._lock:
+            return self.conn.execute(
+                "SELECT document_id, batch_id, qc_detail FROM documents WHERE "
+                "document_id NOT IN (SELECT document_id FROM bundle_documents) "
+                "ORDER BY created_at").fetchall()
 
     def get_bundle(self, bundle_id: str) -> sqlite3.Row | None:
         with self._lock:

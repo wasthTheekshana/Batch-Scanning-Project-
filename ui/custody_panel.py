@@ -4,7 +4,7 @@ checkpoints, flag incidents, and see the reconciliation view
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (QComboBox, QFileDialog, QFormLayout,
+from PyQt6.QtWidgets import (QComboBox, QFileDialog, QFormLayout, QSpinBox,
                              QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                              QListWidget, QListWidgetItem, QMessageBox,
                              QPushButton, QSplitter, QTableWidget,
@@ -48,6 +48,13 @@ class CustodyPanel(QWidget):
         form = QFormLayout()
         self.new_bundle_label = QLineEdit()
         form.addRow("New bundle label", self.new_bundle_label)
+        self.new_expected = QSpinBox()
+        self.new_expected.setRange(0, 100000)
+        self.new_expected.setSpecialValueText("(not set)")
+        self.new_expected.setToolTip(
+            "How many documents this bundle should hold. Once it has been scanned, "
+            "a different count is flagged in the reconciliation.")
+        form.addRow("Documents expected", self.new_expected)
         ll.addLayout(form)
         self.create_bundle_btn = QPushButton("Create bundle")
         mark(self.create_bundle_btn, "primary")
@@ -88,11 +95,29 @@ class CustodyPanel(QWidget):
         incident_row.addWidget(self.flag_incident_btn)
         rl.addLayout(incident_row)
 
+        expected_row = QHBoxLayout()
+        self.expected_spin = QSpinBox()
+        self.expected_spin.setRange(0, 100000)
+        self.expected_spin.setSpecialValueText("(not set)")
+        expected_row.addWidget(QLabel("Documents expected in this bundle"))
+        expected_row.addWidget(self.expected_spin)
+        self.set_expected_btn = QPushButton("Set")
+        self.set_expected_btn.clicked.connect(self.set_expected)
+        expected_row.addWidget(self.set_expected_btn)
+        expected_row.addStretch(1)
+        rl.addLayout(expected_row)
+        self.link_earlier_btn = QPushButton("Link earlier documents to their bundles")
+        self.link_earlier_btn.setToolTip(
+            "Read the saved page images of documents scanned before bundles tracked "
+            "their documents, and link each to the bundle whose QR label it carries.")
+        self.link_earlier_btn.clicked.connect(self.link_earlier)
+        rl.addWidget(self.link_earlier_btn)
+
         rl.addWidget(QLabel("Reconciliation"))
-        self.recon_table = QTableWidget(0, 8)
+        self.recon_table = QTableWidget(0, 10)
         self.recon_table.setHorizontalHeaderLabels(
             ["Bundle", "Status", "Received", "Scanned", "QC", "Storage",
-             "Returned", "Mismatch"])
+             "Returned", "Documents", "Expected", "Mismatch"])
         self.recon_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch)
         rl.addWidget(self.recon_table, stretch=1)
@@ -155,7 +180,8 @@ class CustodyPanel(QWidget):
         for r, row in enumerate(rows):
             values = [row["label"], row["status"], str(row["received"]),
                      str(row["scanned"]), str(row["qc"]), str(row["storage"]),
-                     str(row["returned"]),
+                     str(row["returned"]), str(row["documents"]),
+                     str(row["expected"] or ""),
                      "Yes" if row["mismatch"] else "No"]
             for c, value in enumerate(values):
                 self.recon_table.setItem(r, c, QTableWidgetItem(value))
@@ -171,6 +197,7 @@ class CustodyPanel(QWidget):
         bundle = self.db.get_bundle(bundle_id)
         self.selected_label.setText(
             f"{bundle['label']} · status: {bundle['status']}")
+        self.expected_spin.setValue(bundle["expected_documents"] or 0)
         self._refresh_documents(bundle_id)
         self._refresh_timeline(bundle_id)
 
@@ -187,12 +214,22 @@ class CustodyPanel(QWidget):
                 self.docs_table.setItem(r, c, QTableWidgetItem(str(value)))
         s = bundle_summary(self.db, bundle_id)
         if not s["documents"]:
-            self.summary_label.setText("No documents have been scanned with this bundle's label yet.")
+            expected = s.get("expected")
+            self.summary_label.setText(
+                "No documents have been scanned with this bundle's label yet."
+                + (f" {expected} expected." if expected else ""))
             return
-        self.summary_label.setText(
-            f"{s['documents']} document(s) under this bundle: {s['approved']} approved, "
-            f"{s['corrected']} corrected, {s['rejected']} rejected, "
-            f"{s['waiting_qc']} waiting for QC review. {s['delivered']} delivered.")
+        text = (f"{s['documents']} document(s) under this bundle: {s['approved']} approved, "
+                f"{s['corrected']} corrected, {s['rejected']} rejected, "
+                f"{s['waiting_qc']} waiting for QC review. {s['delivered']} delivered.")
+        if s.get("expected"):
+            if s["missing"]:
+                text += f" EXPECTED {s['expected']}: {s['missing']} not scanned yet."
+            elif s["extra"]:
+                text += f" EXPECTED {s['expected']}: {s['extra']} more than expected."
+            else:
+                text += f" All {s['expected']} expected documents are accounted for."
+        self.summary_label.setText(text)
 
     def _refresh_timeline(self, bundle_id: str) -> None:
         entries = bundle_timeline(self.db, bundle_id)
@@ -226,9 +263,40 @@ class CustodyPanel(QWidget):
         if self.project_id is None:
             self.hint.setText("No active project — create one first.")
             return
-        create_bundle(self.db, self.project_id, label, audit=self.audit)
+        create_bundle(self.db, self.project_id, label, audit=self.audit,
+                      expected_documents=self.new_expected.value() or None)
         self.new_bundle_label.clear()
+        self.new_expected.setValue(0)
         self.refresh()
+
+    def set_expected(self) -> None:
+        bundle_id = self._selected_bundle_id()
+        if bundle_id is None:
+            return
+        self.db.set_bundle_expected(bundle_id, self.expected_spin.value() or None)
+        if self.audit:
+            self.audit.log("custody_expected_set", self.current_user.username,
+                           bundle_id=bundle_id, expected=self.expected_spin.value())
+        self.refresh()
+        self._reselect(bundle_id)
+
+    def link_earlier(self) -> dict:
+        """Link documents scanned before bundles tracked their documents."""
+        from custody.backfill import link_earlier_documents
+        user = self.current_user.username if self.current_user else "system"
+        result = link_earlier_documents(self.db, user, audit=self.audit)
+        if self.audit:
+            self.audit.log("custody_backfill", user, **result)
+        QMessageBox.information(
+            self, "Earlier documents",
+            f"{result['documents']} document(s) checked: {result['linked']} linked to a "
+            f"bundle, {result['no_label']} carried no custody label, "
+            f"{result['no_images']} had no saved page images.")
+        keep = self._selected_bundle_id()
+        self.refresh()
+        if keep:
+            self._reselect(keep)
+        return result
 
     def print_label_sheet(self) -> None:
         bundle_id = self._selected_bundle_id()

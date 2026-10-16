@@ -27,13 +27,15 @@ VALID_STAGES = {"receipt", "prep", "scanning", "qc", "storage", "return",
                 "damaged", "missing", "compromised"}
 
 
-def create_bundle(db, project_id: str, label: str, audit=None) -> dict:
+def create_bundle(db, project_id: str, label: str, audit=None,
+                  expected_documents: int | None = None) -> dict:
     """Register a new physical bundle and log its receipt checkpoint.
     The QR value is a fresh uuid, not the bundle_id itself, so a bundle
     can be re-issued a new label sheet without changing its identity."""
     bundle_id = new_id()
     qr_value = f"{QR_PREFIX}{uuid.uuid4().hex[:12].upper()}"
-    db.insert_bundle(bundle_id, project_id, label, qr_value)
+    db.insert_bundle(bundle_id, project_id, label, qr_value,
+                     expected_documents=expected_documents or None)
     record_checkpoint(db, bundle_id, "receipt", operator=None, audit=audit)
     return dict(db.get_bundle(bundle_id))
 
@@ -145,6 +147,8 @@ def bundle_summary(db, bundle_id: str) -> dict:
     """What a bundle holds right now: counts of its documents by QC decision
     and delivery."""
     docs = db.list_bundle_documents(bundle_id)
+    bundle = db.get_bundle(bundle_id)
+    expected = bundle["expected_documents"] if bundle is not None else None
     counts = {"documents": len(docs), "approved": 0, "corrected": 0,
               "rejected": 0, "waiting_qc": 0, "delivered": 0}
     for d in docs:
@@ -159,6 +163,10 @@ def bundle_summary(db, bundle_id: str) -> dict:
             counts["waiting_qc"] += 1
         if str(d["delivery_status"] or "").startswith("delivered"):
             counts["delivered"] += 1
+    if expected:                      # the box should hold this many documents
+        counts["expected"] = expected
+        counts["missing"] = max(0, expected - len(docs))
+        counts["extra"] = max(0, len(docs) - expected)
     return counts
 
 
@@ -190,11 +198,17 @@ def reconciliation_summary(db, project_id: str | None = None) -> list[dict]:
                 counts[key] += 1
             if e["stage"] in _ESCALATION_STAGES:
                 escalated = True
-        mismatch = (counts["received"] > 0 and counts["scanned"] == 0) or \
-                   (escalated and counts["returned"] == 0)
+        found = len(db.list_bundle_documents(bundle["bundle_id"]))
+        expected = bundle["expected_documents"]
+        # fewer or more documents than the box is expected to hold (once it has
+        # been scanned at all: before that the "never scanned" test speaks)
+        count_off = bool(expected) and counts["scanned"] > 0 and found != expected
+        mismatch = ((counts["received"] > 0 and counts["scanned"] == 0)
+                    or (escalated and counts["returned"] == 0) or count_off)
         rows.append({"bundle_id": bundle["bundle_id"],
                      "label": bundle["label"],
                      "status": bundle["status"],
+                     "documents": found, "expected": expected,
                      "mismatch": mismatch, **counts})
     return rows
 
