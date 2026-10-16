@@ -334,6 +334,25 @@ class Pipeline:
                 log.exception("custody checkpoint failed for barcode %s on job %s",
                               value, job.job_id)
 
+    def _link_custody(self, document_id: str, batch_id: str, records: list) -> None:
+        """Tie the document to every custody bundle whose QR label is on one of
+        its pages, then move those bundles on if all their documents have had
+        their QC decision. Never lets a custody problem fail the document."""
+        try:
+            from custody.bundle_manager import link_document, refresh_stage
+            with self._lock:
+                operator = self._batches.get(batch_id, {}).get("operator", "system")
+            codes = {c for r in records for c in r.custody_codes}
+            for code in sorted(codes):
+                bundle = self.db.get_bundle_by_qr(code)
+                if bundle is None:
+                    continue
+                link_document(self.db, bundle["bundle_id"], document_id, batch_id)
+                refresh_stage(self.db, bundle["bundle_id"], operator,
+                              audit=self.audit)
+        except Exception:
+            log.exception("custody link failed for document %s", document_id)
+
     def _decide_custody_sheet(self, record: PageRecord, has_text: bool) -> None:
         """A page with a custody QR is a label SHEET (never document content)
         only when hardly anything else is written on it. A document that
@@ -625,6 +644,7 @@ class Pipeline:
                 qc_score=worst,
                 qc_detail=qc_detail,
                 duplicate_of=document.get("duplicate_of"))
+            self._link_custody(document["document_id"], item["batch_id"], records)
             if self.audit:
                 self.audit.log("rule_engine", "system",
                                document_id=document["document_id"],

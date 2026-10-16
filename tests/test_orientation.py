@@ -173,3 +173,107 @@ def test_a_page_that_reads_well_is_not_re_read():
     degrees, _img, got = upright(np.zeros((20, 20), np.uint8), first,
                                  lambda image: (_ for _ in ()).throw(AssertionError("re-read")))
     assert degrees == 0 and got is first
+
+
+# -- the orientation test decides when it is sure -------------------------------------------
+def counted(words_by_turn, base):
+    """A stand-in OCR whose real-word count depends on how the page is turned
+    (the engine reads 180 and 270 about equally well on a real scan)."""
+    def read(image):
+        for degrees, n in words_by_turn.items():
+            if image.shape == turn(base, degrees).shape and np.array_equal(image, turn(base, degrees)):
+                return OCRResult("", 0.9, [word("Invoice") for _ in range(n)])
+        return GIBBERISH
+    return read
+
+
+def test_a_confident_orientation_test_beats_a_near_tie_in_word_counts():
+    """Real case: 180 reads 74 words, 270 reads 79: the page needs 180."""
+    base = page(turned=0)
+    read = counted({180: 74, 270: 79}, base)
+    turned, out, _ = upright(base, GIBBERISH, read,
+                             osd=lambda i: {"rotate": 180, "orientation_conf": 3.9})
+    assert turned == 180 and np.array_equal(out, turn(base, 180))
+
+
+def test_without_a_confident_verdict_a_near_tie_prefers_the_upside_down_sheet():
+    base = page(turned=0)
+    read = counted({180: 74, 270: 79}, base)
+    for verdict in (None, {"rotate": 270, "orientation_conf": 0.4}):
+        turned, _out, _ = upright(base, GIBBERISH, read, osd=lambda i, v=verdict: v)
+        assert turned == 180                    # 74 is within 85% of 79; 180 is likelier
+
+
+def test_a_clearly_better_turn_still_wins_without_a_verdict():
+    base = page(turned=0)
+    turned, _o, _r = upright(base, GIBBERISH, counted({90: 80, 180: 10}, base),
+                             osd=lambda i: None)
+    assert turned == 90
+
+
+def test_a_sideways_page_that_still_reads_is_turned_when_the_test_is_sure():
+    base = page(turned=0)
+    first = OCRResult("", 0.9, [word("Invoice") for _ in range(79)])      # reads fine as it is
+    read = counted({90: 85}, base)
+    turned, _o, _r = upright(base, first, read,
+                             osd=lambda i: {"rotate": 90, "orientation_conf": 4.1})
+    assert turned == 90
+
+
+def test_a_sure_upright_verdict_leaves_a_page_that_reads_alone():
+    base = page(turned=0)
+    first = OCRResult("", 0.9, [word("Invoice") for _ in range(60)])
+    turned, out, result = upright(base, first, lambda i: pytest.fail("read again"),
+                                  osd=lambda i: {"rotate": 0, "orientation_conf": 5.0})
+    assert turned == 0 and out is base and result is first
+
+
+def test_the_verdict_is_ignored_when_the_turned_page_reads_worse():
+    base = page(turned=0)
+    first = OCRResult("", 0.9, [word("Invoice") for _ in range(60)])
+    turned, out, _r = upright(base, first, counted({90: 5}, base),
+                              osd=lambda i: {"rotate": 90, "orientation_conf": 2.0})
+    assert turned == 0 and out is base
+
+
+def test_the_qc_stage_turns_a_sideways_page_the_way_tesseract_says():
+    from qc.rotation import RotationStage
+    img = np.zeros((40, 60), np.uint8)
+    img[2:10, 2:10] = 255                          # a marker in the top-left corner
+    for rotate, expected in ((90, cv2.ROTATE_90_CLOCKWISE), (270, cv2.ROTATE_90_COUNTERCLOCKWISE),
+                             (180, cv2.ROTATE_180)):
+        stage = RotationStage()
+        out = stage.run(img, {"osd_fn": lambda i, r=rotate: {"rotate": r, "orientation_conf": 9.0}})
+        want = cv2.rotate(img, expected)
+        assert out.image is not None and out.image.shape[:2] == want.shape[:2]
+        # deskew may nudge pixels; the marker must have gone to the same corner
+        ys, xs = np.nonzero(out.image > 128)
+        wy, wx = np.nonzero(want > 128)
+        assert abs(ys.mean() - wy.mean()) < 3 and abs(xs.mean() - wx.mean()) < 3
+
+
+# -- real OCR, real pages -------------------------------------------------------------------------
+def rendered_text_page():
+    import fitz
+    doc = fitz.open()
+    pg = doc.new_page()
+    words = ("invoice customer shipment container vessel voyage amount total "
+             "payment account branch address telephone reference").split()
+    y = 70
+    for i in range(34):
+        line = " ".join(words[(i + k) % len(words)] for k in range(7))
+        pg.insert_text((50, y), line, fontsize=11)
+        y += 20
+    pix = pg.get_pixmap(dpi=150, colorspace=fitz.csGRAY)
+    doc.close()
+    return np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width).copy()
+
+
+@pytest.mark.parametrize("fed", [0, 90, 180, 270])
+def test_a_real_page_fed_any_way_is_read_upright(fed):
+    from ocr.tesseract_engine import ocr_page
+    upright_page = rendered_text_page()
+    fed_page = turn(upright_page, fed)
+    turned, out, result = upright(fed_page, ocr_page(fed_page), ocr_page)
+    assert turned == (360 - fed) % 360
+    assert out.shape == upright_page.shape and real_words(result) > 60

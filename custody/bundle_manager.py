@@ -100,6 +100,68 @@ def generate_label_sheet(bundle: dict, out_path: str | Path) -> Path:
     return out_path
 
 
+# the stages scanning moves a bundle through by itself; later stages (storage,
+# return) and incidents are physical events an operator records, and a scan
+# must never move a bundle backwards out of them
+_AUTOMATIC_FROM = {"receipt", "received", "prep", "scanning", "qc"}
+_DECIDED = {"auto_approved", "corrected", "rejected"}
+
+
+def link_document(db, bundle_id: str, document_id: str, batch_id: str) -> None:
+    """The document was scanned under this bundle's QR label."""
+    db.link_bundle_document(bundle_id, document_id, batch_id)
+
+
+def refresh_stage(db, bundle_id: str, operator: str | None, audit=None) -> list[str]:
+    """Move a bundle on from "scanning" to "qc" for each scan (batch) in which
+    every one of its documents has had its QC decision (approved, corrected or
+    rejected). Logged once per bundle and batch. Returns the batches advanced."""
+    bundle = db.get_bundle(bundle_id)
+    if bundle is None or bundle["status"] not in _AUTOMATIC_FROM:
+        return []
+    by_batch: dict[str, list[str]] = {}
+    for doc in db.list_bundle_documents(bundle_id):
+        by_batch.setdefault(doc["batch_id"], []).append(doc["validation_status"])
+    done = {e["batch_id"] for e in db.list_custody_events(bundle_id)
+            if e["stage"] == "qc"}
+    advanced = []
+    for batch_id, statuses in by_batch.items():
+        if batch_id in done or not all(s in _DECIDED for s in statuses):
+            continue
+        record_checkpoint(db, bundle_id, "qc", operator, batch_id=batch_id,
+                          detail={"documents": len(statuses)}, audit=audit)
+        advanced.append(batch_id)
+    return advanced
+
+
+def refresh_for_document(db, document_id: str, operator: str | None,
+                         audit=None) -> None:
+    """After a document's QC decision, move on every bundle it belongs to."""
+    for bundle_id in db.bundles_of_document(document_id):
+        refresh_stage(db, bundle_id, operator, audit=audit)
+
+
+def bundle_summary(db, bundle_id: str) -> dict:
+    """What a bundle holds right now: counts of its documents by QC decision
+    and delivery."""
+    docs = db.list_bundle_documents(bundle_id)
+    counts = {"documents": len(docs), "approved": 0, "corrected": 0,
+              "rejected": 0, "waiting_qc": 0, "delivered": 0}
+    for d in docs:
+        status = d["validation_status"]
+        if status == "auto_approved":
+            counts["approved"] += 1
+        elif status == "corrected":
+            counts["corrected"] += 1
+        elif status == "rejected":
+            counts["rejected"] += 1
+        else:
+            counts["waiting_qc"] += 1
+        if str(d["delivery_status"] or "").startswith("delivered"):
+            counts["delivered"] += 1
+    return counts
+
+
 _ESCALATION_STAGES = {"damaged", "missing", "compromised"}
 
 

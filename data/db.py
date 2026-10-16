@@ -173,8 +173,20 @@ CREATE INDEX IF NOT EXISTS idx_custody_bundle ON custody_events(bundle_id);
 # SCHEMA_VERSION to that number. Each migration runs in one transaction with its
 # version stamp; a failure rolls everything back, and a copy of the database
 # is kept first as <name>.before-v<N>.bak.
-SCHEMA_VERSION = 1
-_MIGRATIONS: list[tuple[int, str]] = []
+SCHEMA_VERSION = 2
+_MIGRATIONS: list[tuple[int, str]] = [
+    # 2: which documents were scanned under which custody bundle's QR label
+    (2, """
+CREATE TABLE IF NOT EXISTS bundle_documents (
+    bundle_id    TEXT NOT NULL REFERENCES bundles(bundle_id),
+    document_id  TEXT NOT NULL REFERENCES documents(document_id),
+    batch_id     TEXT NOT NULL,
+    linked_at    TEXT NOT NULL,
+    PRIMARY KEY (bundle_id, document_id)
+);
+CREATE INDEX IF NOT EXISTS idx_bundle_documents_bundle ON bundle_documents(bundle_id);
+"""),
+]
 
 
 class MigrationError(Exception):
@@ -224,14 +236,19 @@ class Database:
         self.init_schema()
 
     def init_schema(self) -> None:
+        with self._lock:
+            # a brand-new file has nothing to protect: it is brought to the
+            # current version without a backup copy
+            fresh = self.conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table'").fetchone()[0] == 0
         with self._lock, self.conn:
             self.conn.executescript(_SCHEMA)
-        self._migrate()
+        self._migrate(backup=not fresh)
 
     def _user_version(self) -> int:
         return self.conn.execute("PRAGMA user_version").fetchone()[0]
 
-    def _migrate(self) -> None:
+    def _migrate(self, backup: bool = True) -> None:
         with self._lock:
             current = self._user_version()
             if current > SCHEMA_VERSION:
@@ -245,7 +262,8 @@ class Database:
                 return
             if not pending:
                 return
-            self._backup_before(pending[0][0])
+            if backup:
+                self._backup_before(pending[0][0])
             for number, sql in pending:
                 try:
                     self.conn.executescript(
@@ -507,6 +525,30 @@ class Database:
             return self.conn.execute(
                 "SELECT * FROM custody_events WHERE bundle_id=? "
                 "ORDER BY timestamp", (bundle_id,)).fetchall()
+
+    def link_bundle_document(self, bundle_id: str, document_id: str,
+                             batch_id: str) -> None:
+        """Record that a document was scanned under this bundle's QR label."""
+        with self._lock, self.conn:
+            self.conn.execute(
+                "INSERT OR IGNORE INTO bundle_documents (bundle_id, document_id, "
+                "batch_id, linked_at) VALUES (?,?,?,?)",
+                (bundle_id, document_id, batch_id, _now()))
+
+    def list_bundle_documents(self, bundle_id: str) -> list[sqlite3.Row]:
+        with self._lock:
+            return self.conn.execute(
+                "SELECT d.document_id, d.batch_id, d.page_range, d.validation_status, "
+                "d.delivery_status, d.extracted_fields, d.created_at "
+                "FROM bundle_documents bd JOIN documents d "
+                "ON d.document_id = bd.document_id WHERE bd.bundle_id=? "
+                "ORDER BY d.created_at, d.rowid", (bundle_id,)).fetchall()
+
+    def bundles_of_document(self, document_id: str) -> list[str]:
+        with self._lock:
+            return [r[0] for r in self.conn.execute(
+                "SELECT bundle_id FROM bundle_documents WHERE document_id=?",
+                (document_id,))]
 
     # -- project templates (Enhancement Plan §4.4) -------------------------
     def insert_template(self, template_id: str, name: str, category: str,

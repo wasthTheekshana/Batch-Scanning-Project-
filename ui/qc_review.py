@@ -3,6 +3,7 @@ accept / reject / rescan actions (HLD §16, §5 score routing)."""
 from __future__ import annotations
 
 import json
+import logging
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QListWidget,
@@ -210,6 +211,11 @@ class QCReviewPanel(QWidget):
                   "rescan": "rejected"}[action]
         self.db.update_document(doc_id, validation_status=status)
         user = self.current_user.username if self.current_user else "unknown"
+        try:    # a decided document may complete its custody bundle's QC
+            from custody.bundle_manager import refresh_for_document
+            refresh_for_document(self.db, doc_id, user, audit=self.audit)
+        except Exception:
+            logging.getLogger(__name__).exception("custody stage update failed")
         if self.audit:
             self.audit.log("qc_review", user, document_id=doc_id,
                            decision=action)

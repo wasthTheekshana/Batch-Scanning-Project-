@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (QComboBox, QFileDialog, QFormLayout,
                              QPushButton, QSplitter, QTableWidget,
                              QTableWidgetItem, QVBoxLayout, QWidget)
 
-from custody.bundle_manager import (VALID_STAGES, create_bundle,
+from custody.bundle_manager import (VALID_STAGES, bundle_summary, create_bundle,
                                     flag_incident, generate_label_sheet,
                                     reconciliation_summary, record_checkpoint)
 from custody.timeline import bundle_timeline, export_timeline
@@ -97,6 +97,18 @@ class CustodyPanel(QWidget):
             QHeaderView.ResizeMode.Stretch)
         rl.addWidget(self.recon_table, stretch=1)
 
+        self.summary_label = QLabel("")
+        self.summary_label.setWordWrap(True)
+        rl.addWidget(self.summary_label)
+        rl.addWidget(QLabel("Documents in this bundle (scanned with its QR label)"))
+        self.docs_table = QTableWidget(0, 6)
+        self.docs_table.setHorizontalHeaderLabels(
+            ["Document", "Batch", "Pages", "QC", "Delivery", "Scanned (UTC)"])
+        self.docs_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch)
+        self.docs_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        rl.addWidget(self.docs_table, stretch=1)
+
         rl.addWidget(QLabel("Timeline (custody + processing)"))
         self.timeline_table = QTableWidget(0, 6)
         self.timeline_table.setHorizontalHeaderLabels(
@@ -120,6 +132,7 @@ class CustodyPanel(QWidget):
 
     # -- data -----------------------------------------------------------------
     def refresh(self) -> None:
+        keep = self._selected_bundle_id()       # the list is rebuilt: keep the selection
         self.bundle_list.clear()
         if self.project_id is None:
             self.recon_table.setRowCount(0)
@@ -127,14 +140,17 @@ class CustodyPanel(QWidget):
                 "No active project — create one first.")
             return
         self.hint.setText("")
-        for row in self.db.list_bundles(self.project_id):
+        # every bundle, whichever project created it: a label is read from any batch
+        for row in self.db.list_bundles():
             item = QListWidgetItem(f"{row['label']} · {row['status']}")
             item.setData(Qt.ItemDataRole.UserRole, row["bundle_id"])
             self.bundle_list.addItem(item)
         self._refresh_reconciliation()
+        if keep:
+            self._reselect(keep)
 
     def _refresh_reconciliation(self) -> None:
-        rows = reconciliation_summary(self.db, self.project_id)
+        rows = reconciliation_summary(self.db)
         self.recon_table.setRowCount(len(rows))
         for r, row in enumerate(rows):
             values = [row["label"], row["status"], str(row["received"]),
@@ -148,12 +164,35 @@ class CustodyPanel(QWidget):
         if current is None:
             self.selected_label.setText("Select a bundle from the list.")
             self.timeline_table.setRowCount(0)
+            self.docs_table.setRowCount(0)
+            self.summary_label.setText("")
             return
         bundle_id = current.data(Qt.ItemDataRole.UserRole)
         bundle = self.db.get_bundle(bundle_id)
         self.selected_label.setText(
             f"{bundle['label']} · status: {bundle['status']}")
+        self._refresh_documents(bundle_id)
         self._refresh_timeline(bundle_id)
+
+    def _refresh_documents(self, bundle_id: str) -> None:
+        """The documents scanned under this bundle's QR label, with where each
+        one stands, and a one-line summary of the whole bundle."""
+        docs = self.db.list_bundle_documents(bundle_id)
+        self.docs_table.setRowCount(len(docs))
+        for r, d in enumerate(docs):
+            values = [d["document_id"][:8], d["batch_id"][:8], d["page_range"] or "",
+                      d["validation_status"], d["delivery_status"] or "",
+                      d["created_at"][:19].replace("T", " ")]
+            for c, value in enumerate(values):
+                self.docs_table.setItem(r, c, QTableWidgetItem(str(value)))
+        s = bundle_summary(self.db, bundle_id)
+        if not s["documents"]:
+            self.summary_label.setText("No documents have been scanned with this bundle's label yet.")
+            return
+        self.summary_label.setText(
+            f"{s['documents']} document(s) under this bundle: {s['approved']} approved, "
+            f"{s['corrected']} corrected, {s['rejected']} rejected, "
+            f"{s['waiting_qc']} waiting for QC review. {s['delivered']} delivered.")
 
     def _refresh_timeline(self, bundle_id: str) -> None:
         entries = bundle_timeline(self.db, bundle_id)

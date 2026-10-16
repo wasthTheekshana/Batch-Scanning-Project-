@@ -16,9 +16,10 @@ OSD_CONFIDENCE_GATE = 2.0
 
 
 def _rotate_90s(img: np.ndarray, angle: int) -> np.ndarray:
-    rotations = {90: cv2.ROTATE_90_COUNTERCLOCKWISE,
+    # Tesseract's "rotate" is the CLOCKWISE turn that makes the page upright
+    rotations = {90: cv2.ROTATE_90_CLOCKWISE,
                  180: cv2.ROTATE_180,
-                 270: cv2.ROTATE_90_CLOCKWISE}
+                 270: cv2.ROTATE_90_COUNTERCLOCKWISE}
     return cv2.rotate(img, rotations[angle]) if angle in rotations else img
 
 

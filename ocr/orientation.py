@@ -38,23 +38,56 @@ def turn(image: np.ndarray, degrees: int) -> np.ndarray:
     return image if degrees == 0 else cv2.rotate(image, TURNS[degrees])
 
 
-def upright(image: np.ndarray, first, read) -> tuple[int, np.ndarray, object]:
+OSD_TRUST = 1.5        # Tesseract's own orientation test counts when it is this sure
+NEAR_BEST = 0.85       # turns reading within this share of the best are "about as good"
+
+
+def _tesseract_osd(image: np.ndarray):
+    """Tesseract's orientation test ({"rotate": clockwise degrees that make the
+    page upright, "orientation_conf"}), or None when it cannot judge."""
+    try:
+        from ocr.tesseract_engine import ocr_osd
+        return ocr_osd(image)
+    except Exception:
+        return None
+
+
+def upright(image: np.ndarray, first, read, osd=None) -> tuple[int, np.ndarray, object]:
     """(degrees turned, the upright image, its reading). `first` is the
-    reading of `image` as it came; `read(image)` reads another version."""
+    reading of `image` as it came; `read(image)` reads another version.
+
+    Counting real words cannot tell a page that is upright from one turned 90
+    degrees (the engine reads sideways text almost as well), so Tesseract's
+    orientation test decides whenever it is confident, and the turn it names is
+    kept when the page reads at least as well that way. Without a confident
+    verdict the words decide, preferring a sheet fed upside down (by far the
+    commonest) when two turns read about equally well."""
     if not getattr(first, "words", None):
         return 0, image, first            # nothing to judge the page by
     current = real_words(first)
-    if current >= GOOD_ENOUGH and current >= GOOD_SHARE * len(first.words):
+    reads_fine = current >= GOOD_ENOUGH and current >= GOOD_SHARE * len(first.words)
+    verdict = (osd or _tesseract_osd)(image)
+    if verdict and verdict.get("orientation_conf", 0) >= OSD_TRUST:
+        degrees = int(verdict.get("rotate", 0)) % 360
+        if degrees == 0 and reads_fine:
+            return 0, image, first        # sure it is upright, and it reads
+        if degrees in TURNS:
+            candidate = turn(image, degrees)
+            result = read(candidate)
+            if real_words(result) >= max(MIN_WORD, current):
+                return degrees, candidate, result
+    elif reads_fine:
         return 0, image, first
-    best_turn, best_image, best_result, best = 0, image, first, current
-    for degrees in TURNS:
+    scored = []
+    for degrees in TURNS:                 # 180, 90, 270: most likely first
         candidate = turn(image, degrees)
         result = read(candidate)
-        score = real_words(result)
-        if score > best:
-            best_turn, best_image, best_result, best = degrees, candidate, result, score
+        scored.append((real_words(result), degrees, candidate, result))
+    top = max(score for score, *_ in scored)
     # only turn the page on clear evidence: a faint page that reads about as
     # badly every way up must be left as it is
-    if best_turn and best >= MIN_WORD and best >= 2 * current + 2:
-        return best_turn, best_image, best_result
+    if top >= MIN_WORD and top >= 2 * current + 2:
+        for score, degrees, candidate, result in scored:
+            if score >= NEAR_BEST * top:
+                return degrees, candidate, result
     return 0, image, first
