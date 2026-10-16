@@ -139,6 +139,9 @@ def test_the_backup_script_is_valid_shell_and_checks_its_dump():
     assert out.returncode == 0, out.stderr
     text = read("backup.sh")
     assert "gzip -t" in text and "set -eu" in text and "KEEP" in text and "pg_dump" in text
+    # confidential: created readable by the owner only
+    assert "umask 077" in text and 'chmod 700 "$DEST"' in text and 'chmod 600 "$TMP"' in text
+    assert text.index("umask 077") < text.index("mkdir -p")
 
 
 def test_the_backup_script_keeps_the_newest_and_refuses_an_empty_dump(tmp_path):
@@ -169,6 +172,10 @@ def test_the_backup_script_keeps_the_newest_and_refuses_an_empty_dump(tmp_path):
     files = sorted(p.name for p in dest.glob("dokcentral-*.sql.gz"))
     assert len(files) == 2 and "dokcentral-2020-01-01_000000.sql.gz" not in files   # oldest pruned
     assert not list(dest.glob("*.part"))
+    if os.name != "nt":                      # Windows has no Unix permission bits to read back
+        assert oct(dest.stat().st_mode & 0o777) == "0o700"
+        newest = max(dest.glob("dokcentral-*.sql.gz"), key=lambda p: p.stat().st_mtime)
+        assert oct(newest.stat().st_mode & 0o777) == "0o600"
     bad = subprocess.run([sh, "backup.sh"], cwd=work, env={**env, "FAKE_EMPTY": "1"},
                          capture_output=True, text=True)
     assert bad.returncode == 1 and "FAILED" in bad.stderr

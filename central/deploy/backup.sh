@@ -7,9 +7,13 @@
 # somewhere other than this server, and treat them as confidential.
 set -eu
 
+# the dumps are confidential: only the owner may read what this script creates
+umask 077
+
 KEEP="${KEEP:-14}"
 DEST="${BACKUP_DIR:-./backups}"
 mkdir -p "$DEST"
+chmod 700 "$DEST"
 
 # shellcheck disable=SC1091
 [ -f .env ] && . ./.env
@@ -28,6 +32,7 @@ if ! gzip -t "$TMP" || [ "$(wc -c < "$TMP")" -lt 200 ]; then
     echo "backup FAILED: the dump is empty or damaged" >&2
     exit 1
 fi
+chmod 600 "$TMP"
 mv "$TMP" "$FILE"
 echo "backup written: $FILE"
 
