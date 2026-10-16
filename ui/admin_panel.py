@@ -250,13 +250,20 @@ class BackupTab(QWidget):
 
 
 class BurnTab(QWidget):
-    """CD/DVD burn queue status + operator burn trigger (Phase 3)."""
+    """CD/DVD burn queue status + operator burn trigger. Each project with
+    CD/DVD switched on has its own burn queue, so the tab lists them all and
+    burns the one chosen (not only the project that was active at start-up)."""
 
-    def __init__(self, cddvd_channel, current_user, parent=None):
+    def __init__(self, cddvd_channel, current_user, db=None, parent=None):
         super().__init__(parent)
-        self.channel = cddvd_channel
+        self.db = db
+        self._startup_channel = cddvd_channel
+        self._channels: dict[str, object] = {}      # project_id -> its channel (one queue each)
         layout = QVBoxLayout(self)
         form = QFormLayout()
+        self.project_combo = QComboBox()
+        self.project_combo.currentIndexChanged.connect(lambda _i: self.refresh())
+        form.addRow("Project", self.project_combo)
         self.queue_label = QLabel("")
         form.addRow("Burn queue", self.queue_label)
         self.label_edit = QLineEdit()
@@ -268,35 +275,72 @@ class BurnTab(QWidget):
         self.burn_btn = QPushButton("Burn disc now")
         from ui.theme import mark
         mark(self.burn_btn, "primary")
-        can_burn = current_user is not None and \
+        self._can_burn = current_user is not None and \
             current_user.can("config.backup")
-        self.burn_btn.setEnabled(can_burn and cddvd_channel is not None)
         self.burn_btn.clicked.connect(self.burn_now)
         layout.addWidget(self.burn_btn)
 
-        self.result = QLabel("" if cddvd_channel is not None else
-                             "CD/DVD channel is not enabled in the active "
-                             "project (features → cd_burn).")
+        self.result = QLabel("")
         self.result.setWordWrap(True)
         layout.addWidget(self.result)
         layout.addStretch(1)
+        self.reload_projects()
+
+    # -- which projects burn discs -------------------------------------------------
+    def reload_projects(self) -> None:
+        """Projects whose settings turn CD/DVD on and are complete enough to burn."""
+        from core.project_store import readable_projects
+        from delivery.cddvd_channel import CDDVDChannel
+        keep = self.project_combo.currentData()
+        self.project_combo.blockSignals(True)
+        self.project_combo.clear()
+        if self.db is not None:
+            readable, _bad = readable_projects(self.db.list_projects("active"))
+            for row, cfg in readable:
+                block = (cfg.get("delivery") or {}).get("cd_dvd") or {}
+                if not block.get("enabled"):
+                    continue
+                pid = row["project_id"]
+                known = self._channels.get(pid)
+                if known is None or known.config != block:     # new, or its settings changed
+                    known = CDDVDChannel(block)
+                    self._channels[pid] = known
+                if known.is_available():
+                    self.project_combo.addItem(str(row["name"]), pid)
+        if self.project_combo.count() == 0 and self._startup_channel is not None:
+            self._channels["startup"] = self._startup_channel
+            self.project_combo.addItem("(project open at start-up)", "startup")
+        index = self.project_combo.findData(keep)
+        self.project_combo.setCurrentIndex(max(0, index))
+        self.project_combo.blockSignals(False)
         self.refresh()
 
+    @property
+    def channel(self):
+        """The channel of the chosen project (None when no project burns discs)."""
+        pid = self.project_combo.currentData()
+        return self._channels.get(pid) if pid is not None else None
+
     def refresh(self) -> None:
-        if self.channel is None:
+        channel = self.channel
+        self.burn_btn.setEnabled(self._can_burn and channel is not None)
+        if channel is None:
             self.queue_label.setText("channel disabled")
+            self.result.setText("CD/DVD is not enabled in any project (turn it on in the "
+                                "Workflow Designer's delivery settings).")
             return
         self.queue_label.setText(
-            f"{self.channel.queue.file_count()} file(s) · "
-            f"{self.channel.queue.total_size_mb():.1f} MB staged")
+            f"{channel.queue.file_count()} file(s) · "
+            f"{channel.queue.total_size_mb():.1f} MB staged")
 
     def burn_now(self) -> None:
-        if self.channel is None:
+        channel = self.channel
+        if channel is None:
             return
-        result = self.channel.burn(self.label_edit.text().strip() or None)
+        result = channel.burn(self.label_edit.text().strip() or None)
         if result.success:
             self.result.setText(
-                f"Burn OK — label {result.destination}, "
+                f"Burn OK - label {result.destination}, "
                 f"{result.detail['files']} file(s), verified="
                 f"{result.detail['verified']}")
         else:
@@ -313,10 +357,13 @@ class AdminPanel(QWidget):
         tabs = QTabWidget()
         self.users_tab = UsersTab(db, current_user)
         self.backup_tab = BackupTab(backup_service, current_user)
-        self.burn_tab = BurnTab(cddvd_channel, current_user)
+        self.burn_tab = BurnTab(cddvd_channel, current_user, db=db)
         tabs.addTab(self.users_tab, "Users")
         tabs.addTab(self.backup_tab, "Backup")
         tabs.addTab(self.burn_tab, "CD/DVD")
+        # projects may have been changed in the Designer since the tab was built
+        tabs.currentChanged.connect(
+            lambda i: self.burn_tab.reload_projects() if tabs.widget(i) is self.burn_tab else None)
         if central_state is not None:
             from ui.central_tab import CentralTab
             self.central_tab = CentralTab(central_state, central_service,
