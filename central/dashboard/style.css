@@ -81,3 +81,11 @@ dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; }
 .secret { font-size: 22px; letter-spacing: .06em; padding: 10px; text-align: center;
   background: var(--bg); border-radius: 8px; word-break: break-all; }
 @media (max-width: 700px) { td.actions { white-space: normal; } }
+dialog:has(.settings-form) { width: min(720px, 96vw); max-height: 92vh; overflow: auto; }
+.settings-form { display: grid; gap: 12px; }
+.settings-form fieldset { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  display: grid; gap: 8px; }
+.settings-form legend { font-weight: 600; padding: 0 6px; }
+label.inline { display: flex; flex-direction: row; align-items: center; gap: 8px; }
+label.inline input[type=checkbox] { width: auto; flex: none; margin: 0; }
+.field-row { display: grid; grid-template-columns: 1fr 1.6fr auto; gap: 6px; margin-bottom: 6px; }

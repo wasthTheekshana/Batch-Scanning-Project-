@@ -6,6 +6,7 @@
 
   const view = document.getElementById("view");
   let csrf = "";
+  let role = "admin";
 
   // ---------------------------------------------------------------- helpers
   function h(tag, attrs, ...kids) {
@@ -171,6 +172,12 @@
     return h("button", { type: "button", class: kind || "", onclick }, label);
   }
 
+  // A button that changes something: an auditor's account is read-only, so
+  // they are not shown it (the server refuses the change anyway).
+  function wbutton(label, onclick, kind) {
+    return role === "auditor" ? null : button(label, onclick, kind);
+  }
+
   const badge = (text, kind) => h("span", { class: "badge " + (kind || "") }, text);
   const short = (id) => String(id).slice(0, 8);
 
@@ -220,7 +227,7 @@
       h("h1", {}, "PCs"),
       h("div", { class: "row" },
         h("label", {}, "Register a new PC", h("input", { id: "new-pc", placeholder: "e.g. Scan-Desk-1", maxlength: 200 })),
-        button("Add PC", () => {
+        wbutton("Add PC", () => {
           const name = document.getElementById("new-pc").value.trim();
           if (!name) { toast("Give the PC a name.", true); return; }
           act(() => api("POST", "/admin/pcs", { display_name: name }),
@@ -232,18 +239,18 @@
         p.last_seen_at ? when(p.last_seen_at) + " (" + ago(p.last_seen_at) + ")" : "never",
         p.assigned_project_ids.map((id) => names[id] || short(id)).join(", ") || "none",
         actions(
-          button("Rename", async () => {
+          wbutton("Rename", async () => {
             const v = await ask("Rename PC", [{ name: "name", label: "New name", value: p.display_name }], "Rename");
             if (v) act(() => api("PATCH", "/admin/pcs/" + p.id, { display_name: v.name.trim() }), reload, "Renamed.");
           }),
-          button("New enrollment code", () => act(
+          wbutton("New enrollment code", () => act(
             () => api("POST", "/admin/pcs/" + p.id + "/enrollment-code"),
             async (r) => { await secret(r, "New code for " + p.display_name); reload(); })),
-          button("Revoke key", () => {
+          wbutton("Revoke key", () => {
             if (confirm("Revoke the access key of " + p.display_name + "? It stops receiving configuration until it is enrolled again."))
               act(() => api("DELETE", "/admin/pcs/" + p.id + "/key"), reload, "Key revoked.");
           }, "danger"),
-          button("Delete", () => {
+          wbutton("Delete", () => {
             if (confirm("Delete " + p.display_name + " and its assignments? This cannot be undone."))
               act(() => api("DELETE", "/admin/pcs/" + p.id), reload, "PC deleted.");
           }, "danger"))]),
@@ -259,13 +266,185 @@
       const rows = await api("GET", base);
       return h("div", {},
         h("h1", {}, kind === "project" ? "Projects" : "Templates"),
-        h("div", { class: "row" }, button("New " + kind + "...", () => editor(null), "primary")),
+        h("div", { class: "row" }, wbutton("New " + kind + "...", () => editor(null), "primary")),
         table(["Name", kind === "template" ? "Category" : "ID", "Version", ""].filter(Boolean),
           rows.map((r) => [r.name, kind === "template" ? (r.category || "") + (r.built_in ? " (built in)" : "") : short(r.id),
             "v" + r.version, actions(button("Open", () => { location.hash = "#/" + plural + "/" + r.id; }))])));
     }
 
+    // A project is edited as a form (processing settings only), with the raw
+    // JSON one tab away for anything the form does not cover.
+    function projectDialog(name, config) {
+      return new Promise((resolve) => {
+        const F = window.DokForm;
+        let current = config;
+        let tab = "form";
+        const nameInput = h("input", { type: "text", value: name, maxlength: 200, autocomplete: "off" });
+        const error = h("p", { class: "error", role: "alert" });
+        const formBox = h("div", { class: "settings-form" });
+        const jsonBox = h("textarea", { rows: 16, maxlength: 300000 });
+        jsonBox.hidden = true;
+        const tabForm = h("button", { type: "button", class: "primary" }, "Form");
+        const tabJson = h("button", { type: "button" }, "JSON (advanced)");
+        let read = () => ({});
+
+        const group = (title, ...items) => h("fieldset", {}, h("legend", {}, title), items);
+        const labelled = (text, input, hint) =>
+          h("label", {}, text, input, hint ? h("span", { class: "muted" }, hint) : null);
+        const check = (text, on) => {
+          const box = h("input", { type: "checkbox" });
+          box.checked = !!on;
+          return { box, el: h("label", { class: "inline" }, box, " ", text) };
+        };
+        const select = (options, value) => {
+          const el = h("select", {}, options.map(([k, t]) => h("option", { value: k }, t)));
+          el.value = value;
+          return el;
+        };
+
+        function buildForm() {
+          clear(formBox);
+          const f = F.toForm(current);
+          const lang = h("input", { type: "text", value: f.ocr_lang, maxlength: 40 });
+          const mode = select(F.OCR_MODES, f.ocr_mode);
+          const conf = h("input", { type: "number", value: f.ocr_confidence, step: "0.05", min: "0", max: "1" });
+          const qcOn = check("Quality checks on", f.qc_enabled);
+          const num = (v, step) => h("input", { type: "number", value: v, step: step || "1", min: "0" });
+          const pass = num(f.qc_pass_score), bw = num(f.qc_blur_warn), bf = num(f.qc_blur_fail);
+          const dw = num(f.qc_dpi_warn), df = num(f.qc_dpi_fail);
+          const strat = F.STRATEGIES.map(([k, t]) => [k, check(t, f.strategies.includes(k))]);
+          const pages = num(f.fixed_pages);
+          const brole = select(F.BARCODE_ROLES, f.barcode_role);
+          const bpat = h("input", { type: "text", value: f.barcode_pattern, maxlength: 200 });
+          const dropBlank = check("Discard empty pages (the blank back of a one-sided sheet)", f.drop_blank_pages);
+          const autoIdx = check("Read the index fields automatically", f.auto_index);
+          const dup = check("Check for duplicate documents", f.duplicate_check);
+          const rows = [];
+          const fieldsBox = h("div", {});
+          function addRow(row) {
+            const r = { i: row.i, name: h("input", { type: "text", value: row.name, maxlength: 100, placeholder: "field name" }),
+                        regex: h("input", { type: "text", value: row.regex, maxlength: 500, placeholder: "pattern (optional)" }) };
+            const line = h("div", { class: "field-row" }, r.name, r.regex,
+              button("Remove", () => { rows.splice(rows.indexOf(r), 1); line.remove(); }, "danger"));
+            rows.push(r);
+            fieldsBox.append(line);
+          }
+          f.fields.forEach(addRow);
+          formBox.append(
+            group("Reading the page",
+              labelled("OCR language", lang, "e.g. eng"), labelled("Index fields are read by", mode),
+              labelled("Accept a read value from this confidence (0 to 1)", conf)),
+            group("Quality checks", qcOn.el,
+              labelled("Pass score (0 to 100)", pass), labelled("Blur warning below", bw),
+              labelled("Blur failure below", bf), labelled("DPI warning below", dw), labelled("DPI failure below", df)),
+            group("Splitting a stack into documents",
+              strat.map(([, c]) => c.el), labelled("Pages per document (for a fixed number)", pages),
+              labelled("What a barcode means", brole),
+              labelled("Only barcodes matching this pattern", bpat, "optional regular expression"),
+              dropBlank.el),
+            group("Features", autoIdx.el, dup.el),
+            group("Index fields",
+              h("p", { class: "muted" }, f.document_types
+                ? f.document_types + " document type(s) are kept as they are (edit them in the JSON tab)."
+                : "No document types."),
+              fieldsBox, button("Add a field", () => addRow({ i: -1, name: "", regex: "" }))));
+          read = () => ({
+            ocr_lang: lang.value, ocr_mode: mode.value, ocr_confidence: conf.value,
+            qc_enabled: qcOn.box.checked, qc_pass_score: pass.value, qc_blur_warn: bw.value,
+            qc_blur_fail: bf.value, qc_dpi_warn: dw.value, qc_dpi_fail: df.value,
+            strategies: strat.filter(([, c]) => c.box.checked).map(([k]) => k),
+            fixed_pages: pages.value, barcode_role: brole.value, barcode_pattern: bpat.value,
+            drop_blank_pages: dropBlank.box.checked, auto_index: autoIdx.box.checked,
+            duplicate_check: dup.box.checked,
+            fields: rows.map((r) => ({ i: r.i, name: r.name.value, regex: r.regex.value }))});
+        }
+
+        // the config the form currently describes, or null (with the reason shown)
+        function fromForm() {
+          const values = read();
+          const problems = F.validate(values);
+          if (problems.length) { error.textContent = problems.join(" "); return null; }
+          return F.applyForm(current, values);
+        }
+        function fromJson() {
+          try {
+            const parsed = JSON.parse(jsonBox.value);
+            if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+            return parsed;
+          } catch (e) { error.textContent = "The configuration is not valid JSON."; return null; }
+        }
+        function show(next) {
+          error.textContent = "";
+          if (next === tab) return;
+          const config = tab === "form" ? fromForm() : fromJson();
+          if (config === null) return;
+          current = config;
+          tab = next;
+          formBox.hidden = tab !== "form";
+          jsonBox.hidden = tab !== "json";
+          tabForm.className = tab === "form" ? "primary" : "";
+          tabJson.className = tab === "json" ? "primary" : "";
+          if (tab === "form") buildForm(); else jsonBox.value = JSON.stringify(current, null, 2);
+        }
+        tabForm.addEventListener("click", () => show("form"));
+        tabJson.addEventListener("click", () => show("json"));
+
+        const importer = h("input", { type: "file", accept: ".json,application/json" });
+        importer.addEventListener("change", () => {
+          const file = importer.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            jsonBox.value = String(reader.result);
+            tab = "form"; show("json");      // look at what was imported before saving
+          };
+          reader.readAsText(file);
+        });
+
+        buildForm();
+        let result = null;
+        const form = h("form", { method: "dialog" },
+          h("h1", {}, name ? "Edit project" : "New project"),
+          labelled("Name", nameInput),
+          h("div", { class: "row" }, tabForm, tabJson),
+          formBox, jsonBox,
+          h("label", {}, "Import from a .json file", importer),
+          error,
+          h("div", { class: "buttons" },
+            h("button", { type: "button", onclick: () => dialogEl.close() }, "Cancel"),
+            h("button", { type: "submit", class: "primary" }, "Save")));
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          error.textContent = "";
+          const config = tab === "form" ? fromForm() : fromJson();
+          if (config === null) return;
+          result = { name: nameInput.value, config };
+          dialogEl.close();
+        });
+        dialogEl.addEventListener("close", () => { clear(dialogEl); resolve(result); }, { once: true });
+        clear(dialogEl);
+        dialogEl.append(form);
+        dialogEl.showModal();
+        nameInput.focus();
+      });
+    }
+
+    async function projectEditor(existing) {
+      let config = existing ? existing.config : null;
+      if (!existing) {
+        try { config = await api("GET", "/admin/project-defaults"); }
+        catch (e) { if (e.status === 401) return; config = {}; }
+      }
+      const v = await projectDialog(existing ? existing.name : "", config);
+      if (!v) return;
+      const id = existing ? existing.id : crypto.randomUUID();
+      act(() => api("PUT", base + "/" + id, { name: v.name.trim(), config: v.config }),
+        () => { location.hash = "#/" + plural + "/" + id; if (existing) render(); },
+        existing ? "Saved." : "Created.");
+    }
+
     async function editor(existing) {
+      if (kind === "project") return projectEditor(existing);
       let starter = existing ? JSON.stringify(existing.config, null, 2) : "";
       if (!existing && kind === "project") {
         try { starter = JSON.stringify(await api("GET", "/admin/project-defaults"), null, 2); }
@@ -307,18 +486,18 @@
         h("p", {}, h("a", { href: "#/" + plural }, "< All " + plural)),
         h("h1", {}, item.name, " ", badge("v" + item.version)),
         h("div", { class: "row" },
-          button("Edit / new version", () => editor(item), "primary"))];
+          wbutton("Edit / new version", () => editor(item), "primary"))];
       if (kind === "project") {
         const have = new Set(pcList.filter((p) => p.assigned_project_ids.includes(id)).map((p) => p.id));
         parts.push(h("h2", {}, "Assigned PCs"),
           h("div", { class: "row" },
-            button("Assign to all PCs", () => act(() => api("POST", base + "/" + id + "/push", { all_pcs: true }), render, "Assigned to all PCs.")),
+            wbutton("Assign to all PCs", () => act(() => api("POST", base + "/" + id + "/push", { all_pcs: true }), render, "Assigned to all PCs.")),
             h("span", { class: "muted" }, "PCs pick up a new version at their next poll.")),
           table(["PC", "Assigned", ""], pcList.map((p) => [p.display_name,
             have.has(p.id) ? badge("assigned", "ok") : badge("not assigned"),
             actions(have.has(p.id)
-              ? button("Unassign", () => act(() => api("DELETE", base + "/" + id + "/assignments/" + p.id), render, "Unassigned."), "danger")
-              : button("Assign", () => act(() => api("POST", base + "/" + id + "/push", { pc_ids: [p.id] }), render, "Assigned.")))]),
+              ? wbutton("Unassign", () => act(() => api("DELETE", base + "/" + id + "/assignments/" + p.id), render, "Unassigned."), "danger")
+              : wbutton("Assign", () => act(() => api("POST", base + "/" + id + "/push", { pc_ids: [p.id] }), render, "Assigned.")))]),
             "Register a PC first."));
       }
       parts.push(h("h2", {}, "Versions"),
@@ -341,30 +520,37 @@
     return h("div", {},
       h("h1", {}, "Admins"),
       h("div", { class: "row" },
-        button("Add admin...", async () => {
+        wbutton("Add admin...", async () => {
           const v = await ask("Add admin", [
             { name: "username", label: "Username", hint: "3-100 letters, digits . _ @ -" },
-            { name: "password", label: "Password", type: "password", hint: "At least 12 characters." }], "Create");
-          if (v) act(() => api("POST", "/admin/users", { username: v.username.trim(), password: v.password }), reload, "Admin created.");
+            { name: "password", label: "Password", type: "password", hint: "At least 12 characters." },
+            { name: "role", label: "Role", value: "admin", hint: "admin (can change settings) or auditor (read-only)." }], "Create");
+          if (v) act(() => api("POST", "/admin/users", { username: v.username.trim(), password: v.password,
+            role: (v.role || "admin").trim().toLowerCase() }), reload, "Account created.");
         }, "primary"),
-        button("Sign everyone out", () => {
+        wbutton("Sign everyone out", () => {
           if (confirm("Sign out every admin, including you?"))
             act(() => api("POST", "/admin/users/revoke-all-sessions"), () => showLogin(), "All sessions revoked.");
         }, "danger")),
-      table(["Username", "Status", "Failed logins", ""], list.map((u) => [
-        u.username, badge(u.status + (u.locked_until ? " until " + when(u.locked_until) : ""), tone[u.status]), u.failed_count,
+      table(["Username", "Role", "Status", "Failed logins", ""], list.map((u) => [
+        u.username, badge(u.role === "auditor" ? "auditor (read-only)" : "admin"), badge(u.status + (u.locked_until ? " until " + when(u.locked_until) : ""), tone[u.status]), u.failed_count,
         actions(
           u.status === "disabled"
-            ? button("Enable", () => act(() => api("POST", "/admin/users/" + u.id + "/enable"), reload, "Enabled."))
-            : button("Disable", () => { if (confirm("Disable " + u.username + "? They are signed out and cannot sign in."))
+            ? wbutton("Enable", () => act(() => api("POST", "/admin/users/" + u.id + "/enable"), reload, "Enabled."))
+            : wbutton("Disable", () => { if (confirm("Disable " + u.username + "? They are signed out and cannot sign in."))
                 act(() => api("POST", "/admin/users/" + u.id + "/disable"), reload, "Disabled."); }, "danger"),
-          u.status === "locked" ? button("Unlock", () => act(() => api("POST", "/admin/users/" + u.id + "/unlock"), reload, "Unlocked.")) : null,
-          button("Reset password", async () => {
+          u.status === "locked" ? wbutton("Unlock", () => act(() => api("POST", "/admin/users/" + u.id + "/unlock"), reload, "Unlocked.")) : null,
+          wbutton("Change role", async () => {
+            const v = await ask("Role of " + u.username, [
+              { name: "role", label: "Role", value: u.role, hint: "admin or auditor (read-only). They are signed out." }], "Change");
+            if (v) act(() => api("POST", "/admin/users/" + u.id + "/role", { role: v.role.trim().toLowerCase() }), reload, "Role changed.");
+          }),
+          wbutton("Reset password", async () => {
             const v = await ask("Reset password for " + u.username, [
               { name: "password", label: "New password", type: "password", hint: "At least 12 characters. They are signed out." }], "Reset");
             if (v) act(() => api("POST", "/admin/users/" + u.id + "/password", { password: v.password }), reload, "Password reset.");
           }),
-          button("Sign out", () => act(() => api("POST", "/admin/users/" + u.id + "/revoke-sessions"), reload, "Signed out.")))])));
+          wbutton("Sign out", () => act(() => api("POST", "/admin/users/" + u.id + "/revoke-sessions"), reload, "Signed out.")))])));
   }
 
   async function audit() {
@@ -406,7 +592,7 @@
       h("h1", {}, "Settings"),
       h("div", { class: "card" },
         h("label", {}, "How often PCs check for new configuration (seconds, 30 to 86400)", input),
-        h("div", { class: "row" }, button("Save", () => {
+        h("div", { class: "row" }, wbutton("Save", () => {
           const n = Number(input.value);
           if (!Number.isInteger(n)) { toast("Enter a whole number of seconds.", true); return; }
           act(() => api("PUT", "/admin/settings", { poll_interval_seconds: n }), null, "Saved.");
@@ -449,7 +635,9 @@
 
   function showApp(me) {
     csrf = me.csrf_token || "";
-    document.getElementById("who-name").textContent = me.username;
+    role = me.role || "admin";
+    document.getElementById("who-name").textContent =
+      me.username + (role === "auditor" ? " (read-only)" : "");
     document.getElementById("login").hidden = true;
     document.getElementById("top").hidden = false;
     view.hidden = false;

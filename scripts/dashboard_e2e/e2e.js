@@ -23,7 +23,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await check("redirect to /dashboard + login form shown", page.url().endsWith("/dashboard") && (await page.$("#login-form")) !== null && await page.$eval("#login", (e) => !e.hidden));
   await shot("01-login");
   await page.type("#login-user", "root"); await page.type("#login-pass", "wrong password!!");
-  await click("Sign in");
+  await click("Sign in"); await sleep(1200);          // the server takes its time over a wrong password
   await check("wrong password message", (await text()).includes("Wrong username or password."));
   await page.$eval("#login-pass", (e) => (e.value = ""));
   await page.type("#login-pass", "correct horse battery"); await click("Sign in"); await sleep(600);
@@ -49,11 +49,24 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await check("assigned to the PC", (await text()).includes("assigned"));
   await shot("05-project");
 
+  // the settings form: change a value, save, and see it in the saved version
+  await click("Edit / new version"); await sleep(500);
+  await check("the project opens as a form with a JSON tab", (await text()).includes("Quality checks") && (await text()).includes("JSON (advanced)"));
+  await shot("05b-project-form");
+  await page.evaluate(() => { const d = document.querySelector("dialog[open]"); const lab = [...d.querySelectorAll("label")].find((l) => l.textContent.startsWith("Pass score")); const i = lab.querySelector("input"); i.value = "77"; });
+  await click("JSON (advanced)"); await sleep(300);
+  await check("the form's change shows in the JSON tab", await page.evaluate(() => /"pass_score": 77/.test(document.querySelector("dialog[open] textarea").value)));
+  await shot("05c-project-json");
+  await click("Form"); await sleep(300);
+  await click("Save"); await sleep(900);
+  await check("new version saved from the form", (await text()).includes("v2") && (await text()).includes('"pass_score": 77'));
+
   await click("Templates"); await sleep(500); await shot("06-templates");
   await click("Admins"); await click("Add admin...");
   const inputs = await page.$$("dialog input"); await inputs[0].type("auditor"); await inputs[1].type("a very long passphrase");
+  await page.evaluate(() => { const i = document.querySelectorAll("dialog input")[2]; i.value = "auditor"; });
   await click("Create"); await sleep(700);
-  await check("second admin created", (await text()).includes("auditor"));
+  await check("auditor account created", (await text()).includes("auditor (read-only)"));
   await shot("07-admins");
   await click("Audit log"); await sleep(700);
   await check("audit shows the actions", (await text()).includes("pc_created") && (await text()).includes("admin_user_created"));
@@ -66,6 +79,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await check("a reload keeps the session (csrf from /admin/me)", (await text()).includes("Overview"));
   await click("Sign out"); await sleep(600);
   await check("sign out returns to the login form", await page.$eval("#login", (e) => !e.hidden));
+
+  // the read-only account: sees the data, is offered nothing to change
+  await page.type("#login-user", "auditor"); await page.type("#login-pass", "a very long passphrase");
+  await click("Sign in"); await sleep(700);
+  await check("auditor signed in and marked read-only", (await text()).includes("auditor (read-only)") && (await text()).includes("Overview"));
+  await click("Projects"); await sleep(500);
+  await check("auditor sees projects but no New project button", (await text()).includes("Bank customer file") && !(await text()).includes("New project..."));
+  await click("PCs"); await sleep(500);
+  await check("auditor sees PCs but no Add PC / Delete", !(await text()).includes("Add PC") && !(await text()).includes("Delete"));
+  await click("Admins"); await sleep(500);
+  await check("auditor sees admins but no Disable / Reset password", (await text()).includes("root") && !(await text()).includes("Reset password") && !(await text()).includes("Add admin..."));
+  await shot("10-auditor");
+  await click("Sign out"); await sleep(600);
   await browser.close();
   console.log(problems.length ? "PROBLEMS:\n" + problems.join("\n") : "no browser errors");
   process.exit(problems.length ? 1 : 0);

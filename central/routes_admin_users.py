@@ -1,5 +1,6 @@
 """Admin: manage the admin accounts of the central service."""
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -36,6 +37,7 @@ class UserIn(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=False)
     username: str = Field(pattern=r"^[A-Za-z0-9._@-]{3,100}$")
     password: str = Field(max_length=200)
+    role: Literal["admin", "auditor"] = "admin"
 
     @field_validator("password")
     @classmethod
@@ -48,6 +50,10 @@ class UserIn(BaseModel):
         if value.lower() == str(info.data.get("username", "")).lower():
             raise ValueError("password must differ from the username")
         return value
+
+
+class RoleIn(BaseModel):
+    role: Literal["admin", "auditor"]
 
 
 class PasswordIn(BaseModel):
@@ -87,9 +93,10 @@ def _view(user: AdminUser) -> dict:
 
 
 def active_admin_count(db: Session, excluding_id: int | None = None) -> int:
-    """Admins who could still sign in (not disabled); locked ones count, a
-    lockout expires by itself."""
+    """Admins (not auditors) who could still sign in (not disabled); locked
+    ones count, a lockout expires by itself."""
     query = select(func.count()).select_from(AdminUser).where(
+        AdminUser.role == "admin").where(
         (AdminUser.locked_until.is_(None))
         | (AdminUser.locked_until < DISABLED_UNTIL))
     if excluding_id is not None:
@@ -125,7 +132,7 @@ def create_user(body: UserIn, admin: AdminUser = Depends(require_admin),
     if db.scalar(select(AdminUser).where(AdminUser.username == body.username)):
         raise HTTPException(409, "an admin with that username already exists")
     user = AdminUser(username=body.username,
-                     password_hash=hash_password(body.password), role="admin")
+                     password_hash=hash_password(body.password), role=body.role)
     db.add(user)
     try:
         db.flush()
@@ -133,7 +140,7 @@ def create_user(body: UserIn, admin: AdminUser = Depends(require_admin),
         db.rollback()
         raise HTTPException(409, "an admin with that username already exists")
     record(db, _actor(admin), "admin_user_created",
-           {"username": user.username, "id": user.id})
+           {"username": user.username, "id": user.id, "role": user.role})
     db.commit()
     return _view(user)
 
@@ -167,6 +174,25 @@ def disable_user(user_id: int, admin: AdminUser = Depends(require_admin),
     _bump(user)
     record(db, _actor(admin), "admin_user_disabled",
            {"username": user.username, "id": user.id})
+    db.commit()
+    return _view(user)
+
+
+@router.post("/users/{user_id}/role")
+def change_role(user_id: int, body: RoleIn, admin: AdminUser = Depends(require_admin),
+                db: Session = Depends(get_db)):
+    # same lock as disabling: two admins demoting each other must not both succeed
+    db.execute(select(AdminUser.id).with_for_update()).all()
+    user = _get(db, user_id)
+    if user.id == admin.id:
+        raise HTTPException(409, "you cannot change your own role")
+    if user.role == "admin" and body.role != "admin"             and active_admin_count(db, excluding_id=user.id) < 1:
+        raise HTTPException(409, "at least one admin must stay enabled")
+    if user.role != body.role:
+        user.role = body.role
+        _bump(user)                       # their open sessions pick up the new rights
+        record(db, _actor(admin), "admin_role_changed",
+               {"username": user.username, "id": user.id, "role": body.role})
     db.commit()
     return _view(user)
 

@@ -13,6 +13,11 @@ from central.security import hash_secret
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
+# An auditor may read everything an admin can, and change nothing: the only
+# writes allowed are those on their own account (sign out, own password).
+READ_ONLY_ROLES = {"auditor"}
+OWN_ACCOUNT_WRITES = {"/admin/logout", "/admin/me/password"}
+
 
 def get_db(request: Request) -> Iterator[Session]:
     with request.app.state.session_factory() as session:
@@ -26,6 +31,9 @@ def require_admin(request: Request,
     user = db.get(AdminUser, admin_id) if admin_id else None
     if user is None or session_version != user.session_version:
         raise HTTPException(401, "login required")
+    if (user.role in READ_ONLY_ROLES and request.method not in SAFE_METHODS
+            and request.url.path not in OWN_ACCOUNT_WRITES):
+        raise HTTPException(403, "this account is read-only")
     return user
 
 

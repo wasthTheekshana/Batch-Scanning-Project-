@@ -35,8 +35,11 @@ def create_admin(session_factory, username: str, password: str,
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    if len(argv) != 2 or argv[0] != "create-admin":
-        print("usage: python -m central.manage create-admin USERNAME",
+    role = "admin"
+    if len(argv) == 4 and argv[2] == "--role":
+        role, argv = argv[3], argv[:2]
+    if len(argv) != 2 or argv[0] != "create-admin" or role not in ("admin", "auditor"):
+        print("usage: python -m central.manage create-admin USERNAME [--role admin|auditor]",
               file=sys.stderr)
         return 2
     factory = make_session_factory(
@@ -46,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
         print("passwords differ", file=sys.stderr)
         return 1
     try:
-        create_admin(factory, argv[1], password)
+        create_admin(factory, argv[1], password, role=role)
     except ValueError as e:
         print(e, file=sys.stderr)
         return 1

@@ -1,4 +1,4 @@
-"""The admin dashboard: three static files and nothing else. The shell holds
+"""The admin dashboard: four static files and nothing else. The shell holds
 no data; every number comes from the authenticated /admin API."""
 from pathlib import Path
 
@@ -10,6 +10,7 @@ router = APIRouter(include_in_schema=False)
 ROOT = Path(__file__).parent / "dashboard"
 _FILES = {"index.html": "text/html; charset=utf-8",
           "app.js": "text/javascript; charset=utf-8",
+          "form.js": "text/javascript; charset=utf-8",
           "style.css": "text/css; charset=utf-8"}
 
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; "
