@@ -283,9 +283,37 @@ class MainWindow(QMainWindow):
 
     def _on_pipeline_event(self, event: dict) -> None:
         if event.get("stage") == "custody" and event.get("status") == "unknown_label":
-            self.warn_unknown_custody_label(event.get("batch_id", ""), event.get("page_no"))
+            self.warn_unknown_custody_label(event.get("batch_id", ""),
+                                            event.get("page_no"),
+                                            event.get("left_out", True))
+        elif event.get("stage") == "batch" and event.get("status") == "no_documents":
+            self.warn_no_documents(event.get("pages", 0), event.get("reasons") or {})
 
-    def warn_unknown_custody_label(self, batch_id: str, page_no) -> None:
+    _REASON_TEXT = {"custody_label": "custody label sheet",
+                    "separator": "barcode separator sheet",
+                    "blank": "blank page"}
+
+    def warn_no_documents(self, pages: int, reasons: dict) -> None:
+        """A batch whose every page was left out has nothing to review: say so
+        and why, instead of leaving the operator to look for documents."""
+        counts: dict[str, int] = {}
+        for why in reasons.values():
+            counts[why] = counts.get(why, 0) + 1
+        detail = ", ".join(f"{n} {self._REASON_TEXT.get(why, why)}"
+                           for why, n in sorted(counts.items()))
+        box = QMessageBox(
+            QMessageBox.Icon.Warning, "No documents created",
+            f"None of the {pages} scanned page(s) became a document ({detail}). "
+            "Nothing was added to QC Review or exported. If these pages were "
+            "real documents, check the project's separation settings.",
+            parent=self)
+        box.setTextFormat(Qt.TextFormat.PlainText)
+        box.setModal(False)
+        box.show()
+        self._no_documents_box = box
+
+    def warn_unknown_custody_label(self, batch_id: str, page_no,
+                                   left_out: bool = True) -> None:
         """One non-blocking warning per batch: a custody label QR that no
         bundle in this database owns was scanned (the page was left out of
         the documents)."""
@@ -296,9 +324,11 @@ class MainWindow(QMainWindow):
             QMessageBox.Icon.Warning, "Unknown custody label",
             f"Page {page_no} of the batch you are scanning carries a custody "
             "label that this system does not know (another PC's bundle, a "
-            "mistyped or reissued sheet). It was left out of the documents "
-            "and no custody checkpoint was recorded. Check the bundle in the "
-            "Custody tab.", parent=self)
+            "mistyped or reissued sheet). "
+            + ("It was left out of the documents" if left_out
+               else "The page was kept as a document")
+            + " and no custody checkpoint was recorded. Check the bundle in "
+            "the Custody tab.", parent=self)
         box.setTextFormat(Qt.TextFormat.PlainText)
         box.setModal(False)
         box.show()

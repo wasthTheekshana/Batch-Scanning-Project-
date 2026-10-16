@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import queue
+import re
 import threading
 import traceback
 from pathlib import Path
@@ -40,6 +41,10 @@ from separation.rule_engine import RuleEngine, RuleSetError
 from separation.splitter import split_documents
 
 log = logging.getLogger(__name__)
+
+# a page with a custody QR and fewer letters than this besides the QR is a label
+# sheet (a real sheet has ~50; an invoice or form page has over 1000)
+CUSTODY_SHEET_MAX_CHARS = 200
 
 
 def _starts_document(text: str, ocr_cfg: dict) -> bool:
@@ -291,45 +296,73 @@ class Pipeline:
                 # only the project's own barcodes may separate documents
                 record.barcodes = filter_barcodes(decoded, sep_cfg)
                 if decoded:
-                    from custody.bundle_manager import (
-                        record_checkpoint_from_barcode)
-                    with self._lock:
-                        operator = self._batches.get(job.batch_id, {}).get(
-                            "operator", "system")
-                    from custody.bundle_manager import QR_PREFIX
-                    unknown = []
-                    for bc in decoded:
-                        try:
-                            matched = record_checkpoint_from_barcode(
-                                self.db, bc["value"], "scanning", operator,
-                                batch_id=job.batch_id, audit=self.audit)
-                            if matched:
-                                record.is_custody_label = True
-                            elif str(bc["value"]).startswith(QR_PREFIX):
-                                unknown.append(bc["value"])
-                        except Exception:
-                            log.exception(
-                                "custody checkpoint failed for barcode %s on "
-                                "job %s", bc.get("value"), job.job_id)
-                    if unknown:
-                        # a custody label from a bundle this database does not
-                        # know (another PC, a mistyped or reissued sheet): it
-                        # is never document content and must not become a
-                        # document's barcode, and the operator must be told
-                        record.is_custody_label = True
-                        record.barcodes = [b for b in record.barcodes
-                                           if b["value"] not in unknown]
-                        if self.audit is not None:
-                            self.audit.log("custody_label_unknown", operator,
-                                           batch_id=job.batch_id,
-                                           page_no=job.page_no,
-                                           labels=len(unknown))
-                        self._emit("custody", "unknown_label",
-                                   batch_id=job.batch_id, page_no=job.page_no)
+                    self._note_custody_codes(record, decoded)
             self._emit("ingest", "done", job_id=job.job_id,
                        batch_id=job.batch_id, page_no=job.page_no)
             self.ocr_q.put(record)
         self._pump(self.ingest_q, "ingest", handle)
+
+    def _note_custody_codes(self, record: PageRecord, decoded: list) -> None:
+        """Custody QR labels among the barcodes of a page. A known bundle gets
+        its "scanning" checkpoint (once per batch, however many pages carry the
+        label); the label's value never becomes a document barcode. Whether the
+        PAGE is a label sheet (left out of the documents) or a document that
+        merely carries the label is decided after OCR, from how much else is
+        written on it (see _decide_custody_sheet)."""
+        from custody.bundle_manager import QR_PREFIX, record_checkpoint
+        job = record.job
+        with self._lock:
+            state = self._batches.get(job.batch_id, {})
+            operator = state.get("operator", "system")
+            seen = state.setdefault("custody_seen", set())
+        for bc in decoded:
+            value = str(bc["value"])
+            try:
+                bundle = self.db.get_bundle_by_qr(value)
+                if bundle is not None:
+                    record.custody_codes.append(value)
+                    if bundle["bundle_id"] not in seen:
+                        seen.add(bundle["bundle_id"])
+                        record_checkpoint(self.db, bundle["bundle_id"], "scanning",
+                                          operator, batch_id=job.batch_id,
+                                          audit=self.audit)
+                elif value.startswith(QR_PREFIX):
+                    record.custody_codes.append(value)
+                    record.custody_unknown = True
+            except Exception:
+                log.exception("custody checkpoint failed for barcode %s on job %s",
+                              value, job.job_id)
+        if record.custody_codes:
+            record.barcodes = [b for b in record.barcodes
+                               if str(b["value"]) not in record.custody_codes]
+
+    def _decide_custody_sheet(self, record: PageRecord, has_text: bool) -> None:
+        """A page with a custody QR is a label SHEET (never document content)
+        only when hardly anything else is written on it. A document that
+        carries the bundle's label (the same sticker on every invoice) stays
+        in the batch. With no text to judge by, the page is treated as a
+        sheet, as before."""
+        if not record.custody_codes:
+            return
+        if has_text:
+            text = record.ocr_text
+            for code in record.custody_codes:
+                text = text.replace(code, " ")
+            record.is_custody_label = (
+                len(re.sub(r"\W", "", text)) < CUSTODY_SHEET_MAX_CHARS)
+        else:
+            record.is_custody_label = True
+        if record.custody_unknown:
+            operator = self._batches.get(record.job.batch_id, {}).get(
+                "operator", "system")
+            if self.audit is not None:
+                self.audit.log("custody_label_unknown", operator,
+                               batch_id=record.job.batch_id,
+                               page_no=record.job.page_no,
+                               labels=len(record.custody_codes))
+            self._emit("custody", "unknown_label", batch_id=record.job.batch_id,
+                       page_no=record.job.page_no,
+                       left_out=record.is_custody_label)
 
     def _ocr_worker(self) -> None:
         def handle(record: PageRecord):
@@ -338,10 +371,11 @@ class Pipeline:
             # separator, or an empty back when empty pages are discarded);
             # a merely sparse page (ID card, short note) is real content
             separation = rt.profile.get("separation", {})
-            skip_ocr = ((record.is_blank
-                         and "blank_page" in separation.get("strategy", []))
-                        or (record.is_empty
-                            and bool(separation.get("drop_blank_pages"))))
+            skip_ocr = (not record.custody_codes     # its text tells a label sheet from a document
+                        and ((record.is_blank
+                              and "blank_page" in separation.get("strategy", []))
+                             or (record.is_empty
+                                 and bool(separation.get("drop_blank_pages")))))
             if self.ocr_fn is not None and not skip_ocr:
                 image = cv2.imread(record.job.image_path, cv2.IMREAD_UNCHANGED)
                 result = self.ocr_fn(image)
@@ -355,6 +389,9 @@ class Pipeline:
                     record.ocr_confidence = result.confidence
                     record.ocr_words = list(getattr(result, "words", None) or [])
                 self._extract_zone_fields(record, image, rt)
+            self._decide_custody_sheet(
+                record, has_text=self.ocr_fn is not None and not skip_ocr
+                and bool(record.ocr_text))
             self._emit("ocr", "done", job_id=record.job.job_id,
                        batch_id=record.job.batch_id)
             self.enhance_q.put(record)
@@ -481,9 +518,18 @@ class Pipeline:
         rt = self._rt(batch_id, record.job.project_id)
         docs = split_documents(page_dicts, rt.profile.get("separation", {}))
         self._audit_excluded_pages(batch_id, page_dicts, docs)
-        self.db.update_batch_status(batch_id, "qc_pending", len(pages))
         self._emit("separation", "done", batch_id=batch_id,
                    documents=len(docs))
+        if not docs:
+            # every page was left out (label sheets, separators, blanks): there
+            # is nothing to review, so the batch must not sit at "qc_pending"
+            # and the operator must be told why
+            self.db.update_batch_status(batch_id, "complete", len(pages))
+            self._emit("batch", "no_documents", batch_id=batch_id,
+                       pages=len(pages),
+                       reasons=self._excluded_reasons(page_dicts, docs))
+            return
+        self.db.update_batch_status(batch_id, "qc_pending", len(pages))
         for doc in docs:
             self.rule_q.put({"batch_id": batch_id, "doc": doc})
 
@@ -492,17 +538,20 @@ class Pipeline:
         """Pages that ended up in no document (cover sheets, custody labels,
         discarded blank pages) are recorded, so a page is never dropped
         without a trace."""
-        kept = {p["page_no"] for d in docs for p in d["pages"]}
-        left_out = [p for p in page_dicts if p["page_no"] not in kept]
-        if not left_out or self.audit is None:
+        reason = Pipeline._excluded_reasons(page_dicts, docs)
+        if not reason or self.audit is None:
             return
-        reason = {}
-        for p in left_out:
-            reason[p["page_no"]] = ("custody_label" if p["is_custody_label"]
-                                    else "separator" if p["barcodes"]
-                                    else "blank")
         self.audit.log("pages_excluded", "system", batch_id=batch_id,
-                       count=len(left_out), reasons=reason)
+                       count=len(reason), reasons=reason)
+
+    @staticmethod
+    def _excluded_reasons(page_dicts: list, docs: list) -> dict:
+        """{page_no: why} for the pages that ended up in no document."""
+        kept = {p["page_no"] for d in docs for p in d["pages"]}
+        return {p["page_no"]: ("custody_label" if p["is_custody_label"]
+                               else "separator" if p["barcodes"]
+                               else "blank")
+                for p in page_dicts if p["page_no"] not in kept}
 
     def _rule_worker(self) -> None:
         def handle(item: dict):

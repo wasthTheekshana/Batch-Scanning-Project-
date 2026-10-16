@@ -41,6 +41,8 @@ class PageRecord:
     is_blank: bool = False
     ink_density: float = 1.0             # share of dark pixels (0 = empty page)
     is_custody_label: bool = False
+    custody_codes: list = field(default_factory=list)   # custody QR values seen on the page
+    custody_unknown: bool = False        # one of them belongs to no bundle here
     rotation: int = 0                    # clockwise degrees that make the page upright
     doc_type: str | None = None          # project document type of this page
     qc_score: int | None = None
