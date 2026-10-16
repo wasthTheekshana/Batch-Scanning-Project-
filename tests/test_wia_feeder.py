@@ -369,3 +369,106 @@ def test_the_scan_asks_for_the_devices_full_width():
     class NoRange:                      # a device that gives no range: A4 width
         SubType = 0
     assert _full_width(NoRange(), 200) in (1654, 1654.0)
+
+
+# -- two-sided scanning: say truthfully whether it took ----------------------------------------
+class RefusingSelect(Prop):
+    """A device whose Document Handling Select refuses any duplex request."""
+
+    def __init__(self, pid, accepts):
+        self.PropertyID = pid
+        self._accepts, self._value = accepts, 0
+
+    @property
+    def Value(self):
+        return self._value
+
+    @Value.setter
+    def Value(self, v):
+        if not self._accepts(v):
+            raise ComErr(0x80070057)
+        self._value = v
+
+
+def duplex_source(accepts):
+    item = Item([X])
+    s = WIASource()
+    dev = Device(item)
+    dev.Properties = [RefusingSelect(3088, accepts), Prop(3096, 5)]
+    s._device = dev
+    return s
+
+
+def test_duplex_that_takes_is_reported_as_applied():
+    src = duplex_source(lambda v: True)
+    src.acquire(300, "grayscale", True)
+    assert src.duplex_applied is True
+    assert src._device.Properties[0].Value & wia_source.DUPLEX
+
+
+def test_a_device_that_refuses_duplex_is_scanned_one_sided_and_says_so():
+    src = duplex_source(lambda v: not v & wia_source.DUPLEX)
+    pages = src.acquire(300, "grayscale", True)
+    assert pages == [X]                                       # still scans
+    assert src.duplex_applied is False
+    assert src._device.Properties[0].Value == wia_source.FEEDER
+
+
+def test_a_driver_that_wants_the_start_side_named_is_given_it():
+    src = duplex_source(lambda v: not (v & wia_source.DUPLEX and not v & wia_source.FRONT_FIRST))
+    src.acquire(300, "grayscale", True)
+    assert src.duplex_applied is True
+    assert src._device.Properties[0].Value & wia_source.FRONT_FIRST
+
+
+def test_a_device_that_silently_ignores_duplex_is_caught_by_reading_it_back():
+    class Ignoring(RefusingSelect):
+        @property
+        def Value(self):
+            return self._value
+
+        @Value.setter
+        def Value(self, v):
+            self._value = v & ~wia_source.DUPLEX              # accepts, but drops the flag
+    item = Item([X])
+    s = WIASource()
+    dev = Device(item)
+    dev.Properties = [Ignoring(3088, lambda v: True), Prop(3096, 5)]
+    s._device = dev
+    s.acquire(300, "grayscale", True)
+    assert s.duplex_applied is False
+
+
+def test_simplex_never_claims_duplex():
+    src = duplex_source(lambda v: True)
+    src.acquire(300, "grayscale", False)
+    assert src.duplex_applied is None
+
+
+def test_capabilities_say_whether_the_feeder_is_duplex():
+    for caps, expected in ((0x2025, True), (0x2021, False)):
+        s = WIASource()
+        dev = Device(Item([]))
+        dev.Properties = [Prop(3086, caps), Prop(3088), Prop(3096)]
+        s._device = dev
+        assert s.get_capabilities().supports_duplex is expected
+
+
+def test_the_wizard_warns_when_duplex_did_not_take(qtbot):
+    from ui.scan_wizard import ScanWorker
+
+    class Src:
+        duplex_applied = False
+
+        def connect(self, d): pass
+        def disconnect(self): pass
+        def acquire(self, dpi, color, duplex, on_page=None): return [X]
+    worker = ScanWorker(Src(), "dev", {"dpi": 300, "color": "grayscale", "duplex": True})
+    notices = []
+    worker.notice.connect(notices.append)
+    worker.run()
+    assert len(notices) == 1 and "only the front" in notices[0]
+    notices.clear()
+    Src.duplex_applied = True
+    worker.run()
+    assert notices == []

@@ -45,6 +45,7 @@ class ScanWorker(QThread):
     page = pyqtSignal(bytes, int)
     done = pyqtSignal(int)
     failed = pyqtSignal(str)
+    notice = pyqtSignal(str)
 
     def __init__(self, source, device: str, settings: dict, parent=None):
         super().__init__(parent)
@@ -69,6 +70,11 @@ class ScanWorker(QThread):
                 self.settings["dpi"], self.settings["color"],
                 self.settings["duplex"], **kwargs)
             self.done.emit(len(pages))
+            if self.settings["duplex"] and getattr(self.source, "duplex_applied", None) is False:
+                self.notice.emit(
+                    "This scanner would not scan both sides, so only the front of "
+                    "each sheet was scanned. Switch duplex off for this project, or "
+                    "check the scanner's two-sided setting.")
         except ScannerUnavailable as e:
             self.failed.emit(str(e))
         except Exception as e:
@@ -164,6 +170,7 @@ class SourcePage(QWizardPage):
         self._worker.page.connect(self._on_page)
         self._worker.done.connect(self._on_done)
         self._worker.failed.connect(self._on_failed)
+        self._worker.notice.connect(self._on_notice)
         self._worker.finished.connect(self._worker_finished)
         self.scan_button.setEnabled(False)
         self.source.setEnabled(False)
@@ -180,6 +187,9 @@ class SourcePage(QWizardPage):
     def _on_done(self, count: int) -> None:
         self.status.setText(f"Scan complete: {count} page(s) added. Load more "
                             "and press Scan again, or continue.")
+
+    def _on_notice(self, message: str) -> None:
+        self.status.setText(self.status.text() + " " + message)
 
     def _on_failed(self, message: str) -> None:
         added = self.file_list.count()

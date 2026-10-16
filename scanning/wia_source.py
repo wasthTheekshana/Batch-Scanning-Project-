@@ -34,6 +34,9 @@ WIA_BITS_PER_PIXEL = "4104"
 # WIA_IPA_DATATYPE value and bit depth per colour mode
 _DATA_TYPE = {"bw": (0, 1), "grayscale": (2, 8), "color": (3, 24)}
 FEEDER, FLATBED, DUPLEX = 1, 2, 4          # Document Handling Select flags
+FRONT_FIRST = 8                            # ... and the side to scan first
+WIA_DPS_DOCUMENT_HANDLING_CAPABILITIES = "3086"
+CAP_DUPLEX = 4                             # the capabilities flag for a duplex feeder
 A4_INCHES = (8.27, 11.69)                  # scan area when none is configured
 
 _PAPER_EMPTY = 0x80210003
@@ -173,6 +176,7 @@ def _wia_device_manager():
 
 
 class WIASource(BaseScannerSource):
+    duplex_applied: bool | None = None   # set by each scan: did two-sided scanning take?
     def __init__(self):
         self._device = None
 
@@ -212,7 +216,14 @@ class WIASource(BaseScannerSource):
 
     def get_capabilities(self) -> ScannerCapabilities:
         self._require_connected()
-        return ScannerCapabilities(max_dpi=600, supports_duplex=False,
+        duplex = False
+        try:
+            caps = {str(p.PropertyID): p for p in self._device.Properties}.get(
+                WIA_DPS_DOCUMENT_HANDLING_CAPABILITIES)
+            duplex = bool(caps is not None and int(caps.Value) & CAP_DUPLEX)
+        except Exception:
+            pass
+        return ScannerCapabilities(max_dpi=600, supports_duplex=duplex,
                                    supports_adf=True)
 
     def acquire(self, dpi: int, color: str, duplex: bool,
@@ -277,15 +288,30 @@ class WIASource(BaseScannerSource):
         so we ask for one page per call and loop until the feeder is empty.
         Falls back to the feeder alone when the device refuses duplex."""
         props = self._device.Properties
-        mode = FEEDER | (DUPLEX if duplex else 0)
-        try:
-            _set_props(props, {WIA_DPS_DOCUMENT_HANDLING_SELECT: mode,
-                               WIA_DPS_PAGES: 1})
-        except Exception:
-            if not duplex:
-                raise
+        self.duplex_applied = None if not duplex else False
+        if not duplex:
             _set_props(props, {WIA_DPS_DOCUMENT_HANDLING_SELECT: FEEDER,
                                WIA_DPS_PAGES: 1})
+            return
+        # some drivers want the side to start with named as well
+        for mode in (FEEDER | DUPLEX, FEEDER | DUPLEX | FRONT_FIRST):
+            try:
+                _set_props(props, {WIA_DPS_DOCUMENT_HANDLING_SELECT: mode,
+                                   WIA_DPS_PAGES: 1})
+            except Exception:
+                continue
+            chosen = {str(p.PropertyID): p for p in props}.get(
+                WIA_DPS_DOCUMENT_HANDLING_SELECT)
+            try:        # trust what the device says it will do, not what we asked
+                self.duplex_applied = bool(chosen is None or int(chosen.Value) & DUPLEX)
+            except (TypeError, ValueError):
+                self.duplex_applied = True
+            if self.duplex_applied:
+                return
+        log.warning("the scanner would not switch to two-sided scanning; "
+                    "scanning the front of each sheet only")
+        _set_props(props, {WIA_DPS_DOCUMENT_HANDLING_SELECT: FEEDER,
+                           WIA_DPS_PAGES: 1})
 
     @staticmethod
     def _describe(exc: Exception, prefix: str) -> str:
