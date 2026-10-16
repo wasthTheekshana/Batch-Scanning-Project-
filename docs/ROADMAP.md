@@ -1,6 +1,6 @@
 # DOK Scanner roadmap: what is built, what is missing
 
-Last reviewed 2026-10-15. This replaces the "what is left" part of
+Last reviewed 2026-10-16. This replaces the "what is left" part of
 `docs/ENHANCEMENT_PLAN_STATUS.md` (which stops at 2026-10-09). Work items that are
 being built have specs and tickets under `.scratch/<feature>/` (see
 `docs/agents/issue-tracker.md`).
@@ -22,6 +22,12 @@ being built have specs and tickets under `.scratch/<feature>/` (see
   bookmark for each document type.
 - Multi-PC: central service (API, admin users, sessions, audit, PC enrolment),
   admin dashboard, sync client with per-project settings.
+- Added 2026-10-15/16: Search tab with CSV download; index files (CSV/XML/JSON);
+  hot folder; split by form title; form setup from a blank copy; Education and
+  Home loan forms incl. joint column; field checks (NIC, date, phone, email) and
+  low-confidence highlighting; custody bundles that track their documents and
+  advance to QC; Kodak S3060 full-width scan; page orientation by Tesseract's
+  orientation test; OCR benchmark script.
 - Operations: installer (unsigned), crash guard with `crash.log`, `--selftest`,
   separate demo data (`scripts/demo_setup.py`), demo script and sample files.
 
@@ -50,6 +56,17 @@ and open its PDF.
 - ~~A stack without barcodes cannot be split by form type~~ DONE 2026-10-15: tick
   "A page like this starts a new document" on a document type and enable the
   `document_type` separation strategy.
+
+### 3b. Found while testing on the real Kodak S3060 (2026-10-16)
+- Handwritten boxed digits on the Home loan form: account number 7/10 and NIC
+  8/12 digits right; name, email, address and date of birth mostly missed. Needs a
+  stronger hand-digit model and filled forms with the true values (`--real`).
+- Home loan form: pages 2-4 and the Sinhala-language page 1 (same boxes, but no
+  Sinhala OCR data to line it up by its labels) are not read.
+- Duplex on the S3060 is requested but 7 sheets gave 7 images: not verified.
+- Custody: documents scanned before 2026-10-16 are not linked to bundles; no
+  expected-count check ("this box should hold N documents"); storage and return
+  stay manual physical steps.
 
 ### 4. Handwriting and language
 - Free handwriting is unreliable; boxed handwritten digits are about 82%.
