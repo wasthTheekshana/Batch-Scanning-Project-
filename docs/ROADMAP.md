@@ -1,6 +1,6 @@
 # DOK Scanner roadmap: what is built, what is missing
 
-Last reviewed 2026-10-16. This replaces the "what is left" part of
+Last reviewed 2026-10-16 (evening). This replaces the "what is left" part of
 `docs/ENHANCEMENT_PLAN_STATUS.md` (which stops at 2026-10-09). Work items that are
 being built have specs and tickets under `.scratch/<feature>/` (see
 `docs/agents/issue-tracker.md`).
@@ -63,10 +63,15 @@ and open its PDF.
   stronger hand-digit model and filled forms with the true values (`--real`).
 - Home loan form: pages 2-4 and the Sinhala-language page 1 (same boxes, but no
   Sinhala OCR data to line it up by its labels) are not read.
-- Duplex on the S3060 is requested but 7 sheets gave 7 images: not verified.
-- Custody: documents scanned before 2026-10-16 are not linked to bundles; no
-  expected-count check ("this box should hold N documents"); storage and return
-  stay manual physical steps.
+- Duplex on the S3060: the app now READS BACK whether the scanner accepted
+  two-sided scanning (retrying with the start side named), says so in the Scan
+  wizard when it did not, and `scripts/scanner_probe.py --scan N` measures it
+  with N sheets loaded. NOT yet confirmed on the real scanner: it was switched
+  off when this was built.
+- Custody (DONE 2026-10-16): earlier documents can be linked to their bundles
+  (button in the Custody tab), a bundle can carry an expected document count
+  (mismatch flagged in the reconciliation). Storage and return stay manual,
+  physical steps by design.
 
 ### 4. Handwriting and language
 - Free handwriting is unreliable; boxed handwritten digits are about 82%.
@@ -80,17 +85,15 @@ and open its PDF.
   (ID cards and many forms carry both).
 
 ### 5. Operator workflow
-- Correct a page's document type (NOT DONE: page types are stored per page
-  and drive the PDF bookmarks, so a correction after export needs the PDF
-  re-exported, not just the index file); low-confidence fields are now
-  highlighted in the Index tab (DONE); a separate review queue is not built.
-- ~~Field validation~~ DONE 2026-10-15 for NIC, dates, phone and email
-  (`core/validation.py`; the Index editor marks a wrong value and asks before
-  saving it). Lookup against a customer list still needs the bank's list.
-- ~~Warning for an unknown custody QR~~ DONE (the page is left out of the
-  documents, audited `custody_label_unknown`, one warning per batch).
-  ~~Startup notice for unreadable projects~~ DONE. Designer repair path when a
-  project file is also corrupt: not done.
+- DONE 2026-10-16: correct a page's document type in the Index tab (the
+  exported PDF's bookmarks are rewritten in place and the PDF and its index file
+  are redelivered); a "Fields to check (low confidence)" queue; a repair for a
+  project whose settings are damaged (restores the current file or the newest
+  intact saved version, or the default settings after an explicit yes; the damaged
+  text is kept aside).
+- Field validation (NIC, dates, phone, email), unknown custody QR warning and
+  the startup notice for unreadable projects were done earlier.
+- Still open: lookup against a customer list (needs the bank's list).
 
 ### 6. Release readiness
 - Code-signing certificate; install and silent-deploy test on a clean PC.
@@ -102,9 +105,17 @@ and open its PDF.
   that see all batches can search them). Untested with a real network scanner.
 
 ### 7. Central service
-Read-only auditor role; form editor instead of raw JSON; deployment package
-(HTTPS, Docker or service files, backups); Postgres concurrency tests; decide
-whether the slim dashboard is enough or a fuller one is needed.
+- DONE 2026-10-16: read-only `auditor` role; project settings edited as a form
+  (OCR, quality checks, splitting, features, index fields) with the raw JSON one
+  tab away; deployment package in `central/deploy/` (Docker Compose with
+  PostgreSQL and a TLS proxy, or systemd + nginx, a backup script and restore
+  steps, all checked by tests); a race fixed where two admins could disable
+  each other.
+- Concurrency tests exist (`tests/central/test_concurrency.py`) and pass on
+  SQLite. They have NOT been run against PostgreSQL: Docker was not running on
+  the build PC. Run them once before production with
+  `CENTRAL_TEST_DATABASE_URL=postgresql+psycopg://...` (throw-away database).
+- Still open: decide whether the slim dashboard is enough or a fuller one is needed.
 
 ### 8. Needs a business decision, not code
 Bank document-system field mapping (plan 3.5), incident and insurance workflow
@@ -113,9 +124,12 @@ security evidence (4.7, 7). Scale to 15M pages (4.2) is a real redesign.
 `docs/SDLC.md` has known factual errors and is parked.
 
 ### 9. Housekeeping
-Full test run takes 2-4 minutes with an occasional timing flake; audit-log
-noise; CD/DVD burning only works for the startup project; the Index tab
-and admin screens need a usability pass after the above.
+- DONE 2026-10-16: the test run is 1.5 min quick / 2.5 min full in parallel
+  (`scripts/run_tests.py`, was 8 min); the audit log no longer fills with one
+  custody entry per page; the CD/DVD tab lists and burns every project's queue; a
+  usability pass on Custody and Index (no clipped headings, buttons that need a
+  selection are off until there is one).
+- Still open: a fuller usability pass with real operators.
 
 ## After the missing items: improvement pass
 Performance (large batches), usability of every tab, OCR accuracy tuning on the

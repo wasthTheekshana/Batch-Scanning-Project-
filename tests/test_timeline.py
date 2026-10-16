@@ -228,9 +228,12 @@ def test_custody_export_requires_report_export_permission(
     from ui.custody_panel import CustodyPanel
     operator = CustodyPanel(db, audit, User("u2", "op", "operator"))
     qtbot.addWidget(operator)
-    assert not operator.export_timeline_btn.isEnabled()  # custody.manage only
+    operator.bundle_list.setCurrentRow(0)                # a bundle is selected...
+    assert not operator.export_timeline_btn.isEnabled()  # ...but custody.manage alone may not export
     admin = CustodyPanel(db, audit, _panel_user())
     qtbot.addWidget(admin)
+    assert not admin.export_timeline_btn.isEnabled()     # nothing selected yet
+    admin.bundle_list.setCurrentRow(0)
     assert admin.export_timeline_btn.isEnabled()
 
 

@@ -118,8 +118,12 @@ class CustodyPanel(QWidget):
         self.recon_table.setHorizontalHeaderLabels(
             ["Bundle", "Status", "Received", "Scanned", "QC", "Storage",
              "Returned", "Documents", "Expected", "Mismatch"])
+        self.recon_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        # ten narrow columns: size each to its heading so none is clipped, and
+        # let the last one take the slack
         self.recon_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch)
+            QHeaderView.ResizeMode.ResizeToContents)
+        self.recon_table.horizontalHeader().setStretchLastSection(True)
         rl.addWidget(self.recon_table, stretch=1)
 
         self.summary_label = QLabel("")
@@ -130,7 +134,8 @@ class CustodyPanel(QWidget):
         self.docs_table.setHorizontalHeaderLabels(
             ["Document", "Batch", "Pages", "QC", "Delivery", "Scanned (UTC)"])
         self.docs_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch)
+            QHeaderView.ResizeMode.ResizeToContents)
+        self.docs_table.horizontalHeader().setStretchLastSection(True)
         self.docs_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         rl.addWidget(self.docs_table, stretch=1)
 
@@ -139,7 +144,8 @@ class CustodyPanel(QWidget):
         self.timeline_table.setHorizontalHeaderLabels(
             ["Time (UTC)", "Source", "Action", "User", "Batch", "Document"])
         self.timeline_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch)
+            QHeaderView.ResizeMode.ResizeToContents)
+        self.timeline_table.horizontalHeader().setStretchLastSection(True)
         self.timeline_table.setEditTriggers(
             QTableWidget.EditTrigger.NoEditTriggers)
         rl.addWidget(self.timeline_table, stretch=1)
@@ -153,7 +159,17 @@ class CustodyPanel(QWidget):
         splitter.addWidget(right)
         splitter.setSizes([280, 620])
 
+        self._sync_buttons()
         self.refresh()
+
+    def _sync_buttons(self) -> None:
+        """What acts on a bundle is available only once one is selected."""
+        has = self._selected_bundle_id() is not None
+        for w in (self.print_label_btn, self.record_checkpoint_btn, self.flag_incident_btn,
+                  self.set_expected_btn, self.expected_spin, self.stage_combo,
+                  self.incident_combo):
+            w.setEnabled(has)
+        self.export_timeline_btn.setEnabled(has and self._can_export)
 
     # -- data -----------------------------------------------------------------
     def refresh(self) -> None:
@@ -187,6 +203,7 @@ class CustodyPanel(QWidget):
                 self.recon_table.setItem(r, c, QTableWidgetItem(value))
 
     def _on_select(self, current, _previous=None) -> None:
+        self._sync_buttons()
         if current is None:
             self.selected_label.setText("Select a bundle from the list.")
             self.timeline_table.setRowCount(0)

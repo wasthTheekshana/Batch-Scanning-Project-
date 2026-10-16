@@ -108,6 +108,13 @@ class IndexEditor(QWidget):
 
         self.set_zones(self.zones)
         self.refresh()
+        self._sync_buttons()
+
+    def _sync_buttons(self) -> None:
+        """Saving and extracting need a selected document and something to fill."""
+        has = self.document_id is not None
+        self.save_button.setEnabled(has and bool(self._inputs))
+        self.extract_btn.setEnabled(has and bool(self.zones))
 
     # -- configuration ---------------------------------------------------------
     def set_zones(self, zones: list[dict], full_page: bool | None = None) -> None:
@@ -130,7 +137,7 @@ class IndexEditor(QWidget):
         if not self.zones:
             self.hint.setText(
                 "No index zones configured for the active project. "
-                "Define zones in Projects → Index zones, then new scans "
+                "Add index fields in the Projects tab (Workflow Designer), then new scans "
                 "auto-extract these fields.")
         else:
             self.hint.setText("")
@@ -261,6 +268,7 @@ class IndexEditor(QWidget):
         zones, full_page = self._project_zones(doc["project_id"])
         if zones != self.zones or full_page != self.full_page:
             self.set_zones(zones, full_page)
+        self._sync_buttons()
         self._ocr_cfg = (self._ocr_cfg_for_project(doc["project_id"])
                          if self._ocr_cfg_for_project else None)
         self.title.setText(f"Document {document_id[:8]} · "
