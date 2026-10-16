@@ -130,6 +130,24 @@ def selftest() -> int:
         from scanning.sources import available_sources
         return str(available_sources())
 
+    def twain_driver():
+        """The TWAIN library loads inside the packaged app and, when the scanner
+        is on, its driver opens (no paper used)."""
+        from scanning.sources import available_sources, preferred_choice
+        from scanning.twain_source import TWAINSource
+        import twain                                       # the bundled library
+        found = available_sources()
+        choice = preferred_choice(found)
+        if choice is None:
+            return f"library loads; {len(found.get('twain', []))} source(s), none matched to a scanner"
+        source = TWAINSource()
+        try:
+            source.connect(choice[1])
+        except Exception as e:                             # scanner off: not a build fault
+            return f"library loads; {choice[1]} listed but not opened ({e})"
+        source.disconnect()
+        return f"{choice[1]} opens"
+
     def dialog():
         from PyQt6.QtWidgets import QApplication
         app = QApplication.instance() or QApplication([])
@@ -141,7 +159,7 @@ def selftest() -> int:
     for name, work in (("modules", modules), ("cover sheet PDF", cover_sheet),
                        ("barcode round trip", barcode_roundtrip),
                        ("OCR engine", ocr), ("digit model", digit_model),
-                       ("scanners", scanner),
+                       ("scanners", scanner), ("TWAIN driver", twain_driver),
                        ("SFTP library", sftp_library),
                        ("searchable PDF", searchable_pdf),
                        ("passwords", passwords),

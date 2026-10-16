@@ -19,6 +19,6 @@ sqlcipher3-wheels==0.5.7
 qrcode==8.2
 paramiko==5.0.0            # SFTP delivery (delivery/sftp_channel.py)
 
-# Optional: TWAIN scanner driver (scanning/twain_source.py). The app runs
-# without it and uses WIA instead; install on PCs that need TWAIN.
-# pytwain
+# TWAIN scanner driver (scanning/twain_source.py): the Kodak S3060 feeds continuously and
+# delivers both sides through it; through WIA it is slow and loses backs.
+pytwain==2.3.0

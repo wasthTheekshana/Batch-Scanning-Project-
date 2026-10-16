@@ -40,7 +40,8 @@ a = Analysis(
     # PyInstaller cannot see: without these, "Print cover sheets" fails with
     # "No module named reportlab.graphics.barcode.code93" in the built exe.
     hiddenimports=["pytesseract", "pyzbar.pyzbar", "imagehash", "qrcode",
-                  "qrcode.image.pil", "pythoncom", "pywintypes"]
+                  "qrcode.image.pil", "pythoncom", "pywintypes",
+                  "win32gui", "win32con", "twain"]
                  + collect_submodules("reportlab.graphics.barcode"),
     hookspath=[],
     runtime_hooks=[],
