@@ -472,3 +472,35 @@ def test_the_wizard_warns_when_duplex_did_not_take(qtbot):
     Src.duplex_applied = True
     worker.run()
     assert notices == []
+
+
+# -- the last-sheet limitation is shown to the operator ------------------------------------------
+def _page(qtbot, devices, duplex):
+    from ui.scan_wizard import SourcePage
+    page = SourcePage(devices=devices, settings=lambda: {"dpi": 300, "color": "grayscale",
+                                                         "duplex": duplex})
+    qtbot.addWidget(page)
+    page.show()
+    return page
+
+
+def test_the_wizard_warns_about_the_last_sheet_for_two_sided_wia_scanning(qtbot):
+    page = _page(qtbot, {"wia": ["KODAK S3060 Scanner"]}, duplex=True)
+    page.source.setCurrentIndex(1)                     # the scanner
+    assert not page.duplex_hint.isHidden()
+    assert "LAST sheet" in page.duplex_hint.text() and "blank sheet" in page.duplex_hint.text()
+
+
+def test_no_warning_for_one_sided_scanning_or_file_import(qtbot):
+    one_sided = _page(qtbot, {"wia": ["KODAK S3060 Scanner"]}, duplex=False)
+    one_sided.source.setCurrentIndex(1)
+    assert one_sided.duplex_hint.isHidden()
+    importing = _page(qtbot, {"wia": ["KODAK S3060 Scanner"]}, duplex=True)
+    importing.source.setCurrentIndex(0)                # file import
+    assert importing.duplex_hint.isHidden()
+
+
+def test_no_warning_for_a_scanner_that_is_not_the_wia_driver(qtbot):
+    page = _page(qtbot, {"twain": ["Some Scanner"]}, duplex=True)
+    page.source.setCurrentIndex(1)
+    assert page.duplex_hint.isHidden()

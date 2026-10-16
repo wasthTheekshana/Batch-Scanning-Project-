@@ -76,10 +76,20 @@ def main(argv=None) -> int:
         print(f"  image {len(images)}: {img.shape[1]}x{img.shape[0]}  dark {(img < 128).mean() * 100:5.2f}%"
               f"  (the driver says {remaining} more)")
 
+    import os
+    import threading
+
+    def give_up():                       # never hang: say so and stop
+        print("TIMED OUT: the driver did not answer in 60 seconds", flush=True)
+        os._exit(4)
+    watchdog = threading.Timer(60, give_up)
+    watchdog.daemon = True
+    watchdog.start()
     try:
         src.acquire_natively(after, show_ui=False)       # runs its own event loop; no driver window
     except Exception as e:
         print("  acquisition ended:", type(e).__name__, e)
+    watchdog.cancel()
     print(f"\n{len(images)} image(s) -> {folder}")
     try:
         src.destroy()

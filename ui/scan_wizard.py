@@ -40,6 +40,14 @@ class ProjectPage(QWizardPage):
         return self.combo.currentData()
 
 
+# The Kodak S3060's WIA driver does not hand over the back of the LAST sheet in
+# the feeder (found on the real scanner; every other sheet gives both sides).
+DUPLEX_HINT = ("Two-sided scanning: this scanner's driver does not deliver the back of "
+               "the LAST sheet in the feeder. If that sheet has printing on its back, put "
+               "a blank sheet after it. Blank pages are removed automatically when the "
+               "project discards empty pages.")
+
+
 class ScanWorker(QThread):
     """Runs one feeder scan off the UI thread; emits each page as it lands."""
     page = pyqtSignal(bytes, int)
@@ -132,6 +140,10 @@ class SourcePage(QWizardPage):
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
+        self.duplex_hint = QLabel(DUPLEX_HINT)
+        self.duplex_hint.setTextFormat(Qt.TextFormat.PlainText)
+        self.duplex_hint.setWordWrap(True)
+        layout.addWidget(self.duplex_hint)
         self.file_list = QListWidget()
         layout.addWidget(self.file_list)
         self._source_changed()
@@ -146,6 +158,9 @@ class SourcePage(QWizardPage):
         self.scan_button.setVisible(scanner)
         self.status.setText("Load the pages in the document feeder, then "
                             "press Scan." if scanner else "")
+        choice = self.source.currentData()
+        self.duplex_hint.setVisible(bool(
+            choice and choice[0] == "wia" and self._settings().get("duplex")))
 
     def pick_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(

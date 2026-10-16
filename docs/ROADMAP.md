@@ -63,11 +63,18 @@ and open its PDF.
   stronger hand-digit model and filled forms with the true values (`--real`).
 - Home loan form: pages 2-4 and the Sinhala-language page 1 (same boxes, but no
   Sinhala OCR data to line it up by its labels) are not read.
-- Duplex on the S3060: the app now READS BACK whether the scanner accepted
-  two-sided scanning (retrying with the start side named), says so in the Scan
-  wizard when it did not, and `scripts/scanner_probe.py --scan N` measures it
-  with N sheets loaded. NOT yet confirmed on the real scanner: it was switched
-  off when this was built.
+- Duplex on the S3060 (found on the real scanner, 2026-10-16): two-sided WIA scanning
+  DOES give both sides for every sheet EXCEPT THE LAST one in the feeder (after its
+  front the driver answers "paper empty"; asking again at once, after a pause,
+  re-arming, re-sending the setting or reconnecting did not help). The driver also
+  drops blank backs by itself, so image counts cannot reveal a lost back. The Scan
+  screen now says so (put a blank sheet after the last real sheet; the project's
+  "discard empty pages" removes it). A proper fix needs the Kodak TWAIN driver
+  (installed: `C:\Windows	wain_64\Kodak`, reachable from Python with pytwain):
+  its scan call timed out twice here, probably waiting for paper it could not see,
+  and each abort left the scanner locked until it was switched off and on, so it
+  is NOT done. Tools: `scripts/scanner_probe.py`, `duplex_experiment.py`,
+  `duplex_last_sheet.py`, `twain_probe.py`.
 - Custody (DONE 2026-10-16): earlier documents can be linked to their bundles
   (button in the Custody tab), a bundle can carry an expected document count
   (mismatch flagged in the reconciliation). Storage and return stay manual,
