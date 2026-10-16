@@ -269,6 +269,7 @@ def rendered_text_page():
     return np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width).copy()
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("fed", [0, 90, 180, 270])
 def test_a_real_page_fed_any_way_is_read_upright(fed):
     from ocr.tesseract_engine import ocr_page

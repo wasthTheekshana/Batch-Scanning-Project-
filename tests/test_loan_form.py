@@ -18,8 +18,9 @@ FORM = ROOT / "docs" / "education-loan-english.pdf"
 sys.path.insert(0, str(ROOT / "scripts"))
 import loan_form  # noqa: E402
 
-pytestmark = pytest.mark.skipif(not FORM.exists(),
-                                reason="the sample bank form is not in docs/")
+pytestmark = [pytest.mark.slow,
+              pytest.mark.skipif(not FORM.exists(),
+                                 reason="the sample bank form is not in docs/")]
 
 
 def render(pdf_path, dpi=200):

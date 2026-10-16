@@ -16,6 +16,8 @@ img2pdf · reportlab · SQLite (WAL, SQLCipher) · paramiko (SFTP)
 python -m venv .venv
 .\.venv\Scripts\pip install -r requirements-dev.txt   # runtime + test + build tools
 .\.venv\Scripts\python -m pytest        # run test suite
+.\.venv\Scripts\python scriptsun_tests.py          # quick run (about 1.5 min): parallel, skips the slow real-OCR tests
+.\.venv\Scripts\python scriptsun_tests.py --all    # everything, in parallel (about 2.5 min): run before a release build
 .\.venv\Scripts\python main.py          # launch the app (first login admin / admin; you must set a new password at once)
 ```
 
