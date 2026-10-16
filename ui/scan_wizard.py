@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (QComboBox, QFileDialog, QLabel, QListWidget,
 from core.models import ScanJob
 from scanning.base import ScannerUnavailable
 from scanning.file_import import import_files
+from scanning.sources import preferred_choice
 
 log = logging.getLogger(__name__)
 
@@ -128,6 +129,12 @@ class SourcePage(QWizardPage):
             for device in names:
                 self.source.addItem(f"Scanner: {device} ({name.upper()})",
                                     (name, device))
+        preferred = preferred_choice(devices or {})
+        if preferred is not None:               # e.g. the Kodak through its own TWAIN driver
+            for i in range(self.source.count()):
+                if self.source.itemData(i) == preferred:      # (findData cannot compare tuples)
+                    self.source.setCurrentIndex(i)
+                    break
         self.source.currentIndexChanged.connect(self._source_changed)
         layout.addWidget(self.source)
         self.pick_button = QPushButton("Add files…")

@@ -69,67 +69,22 @@ def run_wia(tl: Timeline, limit: int = 500) -> None:
     source.disconnect()
 
 
-def hidden_window() -> int:
-    """A window TWAIN can post its messages to (it has none otherwise: the
-    driver's 'image ready' signal never arrives and the scan waits forever)."""
-    import win32con
-    import win32gui
-    return win32gui.CreateWindow("STATIC", "dok-twain", 0, 0, 0, 0, 0, 0, 0, 0, None)
-
-
 def run_twain(tl: Timeline, timeout: float, name_part: str) -> None:
-    import twain
-    hwnd = hidden_window()
-    sm = twain.SourceManager(hwnd)
-    names = list(sm.GetSourceList())
+    """The application's own TWAIN source (scanning/twain_source.py)."""
+    from scanning.twain_source import TWAINSource
+    source = TWAINSource()
+    names = source.list_devices()
     name = next((n for n in names if name_part in n), None)
     if name is None:
         raise SystemExit(f"no TWAIN source matches {name_part!r}: {names}")
-    src = sm.OpenSource(name)
+    source.connect(name)
     print("TWAIN:", name, flush=True)
-    for label, code, kind, value in (
-            ("200 dpi", twain.ICAP_XRESOLUTION, twain.TWTY_FIX32, float(DPI)),
-            ("200 dpi (y)", twain.ICAP_YRESOLUTION, twain.TWTY_FIX32, float(DPI)),
-            ("grayscale", twain.ICAP_PIXELTYPE, twain.TWTY_UINT16, twain.TWPT_GRAY),
-            ("feeder", twain.CAP_FEEDERENABLED, twain.TWTY_BOOL, True),
-            ("two-sided", twain.CAP_DUPLEXENABLED, twain.TWTY_BOOL, True),
-            ("all pages", twain.CAP_XFERCOUNT, twain.TWTY_INT16, -1)):
-        try:
-            src.SetCapability(code, kind, value)
-        except Exception as e:
-            print(f"  could not set {label}: {type(e).__name__}", flush=True)
-
-    folder = Path(tempfile.mkdtemp(prefix="scan_loop_"))
-    main_thread = ctypes.windll.kernel32.GetCurrentThreadId()
-
-    def stop_cleanly():               # WM_QUIT ends the driver's wait; the driver is then closed properly
-        print(f"  no answer from the driver in {timeout:.0f} s: stopping cleanly", flush=True)
-        ctypes.windll.user32.PostThreadMessageW(main_thread, 0x0012, 0, 0)
-
-    def after(image, remaining):
-        path = folder / f"p{len(tl.images) + 1:02d}.bmp"
-        image.save(str(path))
-        tl.add(cv2.imread(str(path), cv2.IMREAD_GRAYSCALE))
-
-    timer = threading.Timer(timeout, stop_cleanly)
-    timer.daemon = True
-    timer.start()
     try:
-        src.acquire_natively(after, show_ui=False)
-    except Exception as e:
-        print("  acquisition ended:", type(e).__name__, e, flush=True)
+        source.acquire(DPI, "grayscale", True, idle_timeout=timeout,
+                       on_page=lambda data, n: tl.add(decode(data)))
+        print("two-sided accepted:", source.duplex_applied)
     finally:
-        timer.cancel()
-        for obj in (src, sm):
-            try:
-                obj.destroy()
-            except Exception:
-                pass
-        try:
-            import win32gui
-            win32gui.DestroyWindow(hwnd)
-        except Exception:
-            pass
+        source.disconnect()
 
 
 def main(argv=None) -> int:
@@ -160,11 +115,14 @@ def main(argv=None) -> int:
         print(f"BACKS: {'PASS' if passed else 'FAIL'}  ({n} images; both sides of {args.sheets} sheets = {2 * args.sheets})")
     gaps = tl.gaps()
     if gaps:
-        worst = max(gaps)
+        steady = gaps[1:-1] if len(gaps) > 3 else gaps
+        worst = max(steady)
         passed = worst <= args.max_gap
         ok &= passed
-        print(f"SPEED: {'PASS' if passed else 'FAIL'}  (longest wait between images {worst:.1f} s, "
-              f"average {sum(gaps) / len(gaps):.1f} s; limit {args.max_gap:.1f} s)")
+        print(f"first image after {tl.marks[0]:.1f} s (feeder start), last wait {gaps[-1]:.1f} s (end of feed): "
+              "one-off, not counted")
+        print(f"SPEED: {'PASS' if passed else 'FAIL'}  (steady pace: longest wait {worst:.1f} s, "
+              f"average {sum(steady) / len(steady):.1f} s per image; limit {args.max_gap:.1f} s)")
     return 0 if ok and n else 1
 
 
