@@ -70,12 +70,18 @@ def page_counts(docs):
     return sorted(len(json.loads(d["qc_detail"])["pages"]) for d in docs)
 
 
-def test_invoices_that_carry_a_custody_qr_are_kept_as_document_pages(tmp_path, db, monkeypatch):
+def test_invoices_that_carry_a_custody_qr_are_kept_and_separate_by_barcode(tmp_path, db, monkeypatch):
     bundle, docs, _ = run(tmp_path, db, monkeypatch,
                           [(True, DENSE), (True, DENSE), (True, DENSE)])
-    assert page_counts(docs) == [3]                          # nothing was thrown away
-    barcode = json.loads(docs[0]["extracted_fields"]).get("barcode", "")
-    assert barcode != bundle["qr_value"]                     # the bundle is not the document's id
+    assert page_counts(docs) == [1, 1, 1]            # nothing thrown away; one per barcode
+    assert {json.loads(d["extracted_fields"]).get("barcode") for d in docs} == {bundle["qr_value"]}
+
+
+def test_pages_after_a_barcode_page_stay_in_its_document(tmp_path, db, monkeypatch):
+    """The user's case: 4 sheets carry the QR, the 5th has none."""
+    _b, docs, _ = run(tmp_path, db, monkeypatch,
+                      [(True, DENSE)] * 4 + [(False, DENSE)])
+    assert page_counts(docs) == [1, 1, 1, 2]
 
 
 def test_the_custody_checkpoint_is_logged_once_per_batch_not_once_per_page(tmp_path, db, monkeypatch):

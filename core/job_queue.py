@@ -305,8 +305,9 @@ class Pipeline:
     def _note_custody_codes(self, record: PageRecord, decoded: list) -> None:
         """Custody QR labels among the barcodes of a page. A known bundle gets
         its "scanning" checkpoint (once per batch, however many pages carry the
-        label); the label's value never becomes a document barcode. Whether the
-        PAGE is a label sheet (left out of the documents) or a document that
+        label). The label's value stays among the page's barcodes: on a document
+        page it separates documents like any other barcode the project uses.
+        Whether the PAGE is a label sheet (left out of the documents) or a document that
         merely carries the label is decided after OCR, from how much else is
         written on it (see _decide_custody_sheet)."""
         from custody.bundle_manager import QR_PREFIX, record_checkpoint
@@ -332,9 +333,6 @@ class Pipeline:
             except Exception:
                 log.exception("custody checkpoint failed for barcode %s on job %s",
                               value, job.job_id)
-        if record.custody_codes:
-            record.barcodes = [b for b in record.barcodes
-                               if str(b["value"]) not in record.custody_codes]
 
     def _decide_custody_sheet(self, record: PageRecord, has_text: bool) -> None:
         """A page with a custody QR is a label SHEET (never document content)
@@ -379,7 +377,9 @@ class Pipeline:
             if self.ocr_fn is not None and not skip_ocr:
                 image = cv2.imread(record.job.image_path, cv2.IMREAD_UNCHANGED)
                 result = self.ocr_fn(image)
-                if not record.barcodes:        # a barcode page is known: leave it
+                own = [b for b in record.barcodes       # the project's own barcodes
+                       if str(b["value"]) not in record.custody_codes]
+                if not own:        # a barcode page is known: leave it
                     # a page fed upside down or sideways reads as gibberish:
                     # read it the other ways up and keep the one that reads
                     record.rotation, image, result = upright(
