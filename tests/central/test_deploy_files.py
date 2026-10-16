@@ -181,3 +181,17 @@ def test_the_backup_script_keeps_the_newest_and_refuses_an_empty_dump(tmp_path):
     assert bad.returncode == 1 and "FAILED" in bad.stderr
     assert not list(dest.glob("*.part"))
     assert len(list(dest.glob("dokcentral-*.sql.gz"))) == 2                        # nothing deleted by a failed run
+
+
+def test_the_build_context_is_limited_to_what_the_dockerfile_copies():
+    """The context is the repository root (gigabytes of environment and
+    installers); the ignore file must allow only the files that are copied."""
+    lines = [l.strip() for l in read("Dockerfile.dockerignore").splitlines()
+             if l.strip() and not l.strip().startswith("#")]
+    assert lines[0] == "*"                                   # everything excluded first
+    allowed = {l[1:] for l in lines if l.startswith("!")}
+    assert allowed == {"central", "core/__init__.py", "core/profile_manager.py",
+                       "core/project_schema.json"}
+    for source, _dest in copied_by_dockerfile():
+        top = source.rstrip("/")
+        assert top in allowed or top.split("/")[0] in allowed, source   # nothing the image needs is excluded

@@ -111,10 +111,13 @@ and open its PDF.
   PostgreSQL and a TLS proxy, or systemd + nginx, a backup script and restore
   steps, all checked by tests); a race fixed where two admins could disable
   each other.
-- Concurrency tests exist (`tests/central/test_concurrency.py`) and pass on
-  SQLite. They have NOT been run against PostgreSQL: Docker was not running on
-  the build PC. Run them once before production with
-  `CENTRAL_TEST_DATABASE_URL=postgresql+psycopg://...` (throw-away database).
+- Verified 2026-10-16 with Docker: the concurrency tests pass on a real
+  PostgreSQL 16 (15 runs, no failure); the image builds (context 140 kB with the
+  new `Dockerfile.dockerignore`); the compose stack starts healthy, an admin and
+  an auditor can be created, sign-in works, `backup.sh` writes a dump and a
+  restore into a fresh database brings both accounts and the audit log back.
+  Not tried here: the TLS proxy on ports 80/443 and a certificate for a public
+  name (needs the real domain).
 - Still open: decide whether the slim dashboard is enough or a fuller one is needed.
 
 ### 8. Needs a business decision, not code
