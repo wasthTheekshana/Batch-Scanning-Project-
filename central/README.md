@@ -22,6 +22,11 @@ Run behind a reverse proxy that terminates TLS. Do not expose uvicorn directly.
 
 ## Deployment requirements
 
+Ready-made files for a production install (Docker Compose with PostgreSQL and a TLS
+proxy, or systemd + nginx, plus a nightly backup and a restore procedure) are in
+`central/deploy/` - start with `central/deploy/DEPLOY.md`. The notes below are the
+rules those files implement.
+
 - HTTPS only. Keep `CENTRAL_COOKIE_SECURE=1` (the default) in production.
 - The reverse proxy MUST cap request body size (for nginx:
   `client_max_body_size 1m;`). The service's 256 KB config cap applies only

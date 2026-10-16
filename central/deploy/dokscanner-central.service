@@ -1,0 +1,31 @@
+# systemd unit for a server WITHOUT Docker. Install under /etc/systemd/system/.
+# Assumes: the repository files `central/` and the two core files (see DEPLOY.md)
+# in /opt/dokscanner-central, a virtualenv with central/requirements.txt in
+# /opt/dokscanner-central/venv, a PostgreSQL database, and
+# /etc/dokscanner-central.env holding CENTRAL_DATABASE_URL, CENTRAL_SESSION_SECRET
+# (chmod 600, owned by root). Put a TLS proxy (nginx.conf.example) in front.
+[Unit]
+Description=DOK Scanner central service
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dokcentral
+Group=dokcentral
+WorkingDirectory=/opt/dokscanner-central
+EnvironmentFile=/etc/dokscanner-central.env
+Environment=CENTRAL_COOKIE_SECURE=1
+ExecStart=/opt/dokscanner-central/venv/bin/uvicorn central.app:create_app_from_env --factory --host 127.0.0.1 --port 8000 --workers 2 --proxy-headers
+Restart=on-failure
+RestartSec=5
+
+# the service needs no more than read access to its own files and the network
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/opt/dokscanner-central
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,21 @@
+# TLS termination for the central service. Caddy obtains and renews the
+# certificate by itself when CENTRAL_DOMAIN is a public name pointing at this
+# server. On a private network with no public name, replace the first line with
+#     {$CENTRAL_DOMAIN} { tls internal
+# (Caddy then issues a certificate from its own CA, which each PC must trust).
+{$CENTRAL_DOMAIN} {
+	# The service's own 256 KB config cap only applies after a body has been
+	# read, so the proxy must cap what it lets through.
+	request_body {
+		max_size 1MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+
+	encode gzip
+	reverse_proxy central:8000
+}

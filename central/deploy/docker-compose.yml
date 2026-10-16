@@ -1,0 +1,61 @@
+# DOK Scanner central service: PostgreSQL + the service + a TLS reverse proxy.
+#
+#   cp .env.example .env        # then edit it: domain, passwords, secret
+#   docker compose up -d --build
+#   docker compose run --rm central python -m central.manage create-admin root
+#
+# Run from this folder (central/deploy). Only the proxy publishes ports; the
+# database and the service are reachable from inside the compose network only.
+name: dokscanner-central
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dokcentral}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-dokcentral}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dokcentral} -d ${POSTGRES_DB:-dokcentral}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  central:
+    build:
+      context: ../..
+      dockerfile: central/deploy/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      CENTRAL_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-dokcentral}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-dokcentral}
+      CENTRAL_SESSION_SECRET: ${CENTRAL_SESSION_SECRET:?set CENTRAL_SESSION_SECRET (32+ characters) in .env}
+      CENTRAL_COOKIE_SECURE: "1"
+      CENTRAL_WORKERS: ${CENTRAL_WORKERS:-1}
+    expose:
+      - "8000"
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - central
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      CENTRAL_DOMAIN: ${CENTRAL_DOMAIN:?set CENTRAL_DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  dbdata:
+  caddy_data:
+  caddy_config:

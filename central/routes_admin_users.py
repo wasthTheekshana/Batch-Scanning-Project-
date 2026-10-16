@@ -1,4 +1,5 @@
 """Admin: manage the admin accounts of the central service."""
+import threading
 from datetime import datetime
 from typing import Literal
 
@@ -16,6 +17,11 @@ from central.security import hash_password, verify_password
 router = APIRouter(prefix="/admin", tags=["admin-users"],
                    dependencies=[Depends(require_admin),
                                  Depends(require_csrf)])
+
+# Disabling or demoting an admin must see the other admins' committed state.
+# The database row lock below does that on PostgreSQL across workers; this lock
+# does it inside one process on any database (SQLite ignores row locks).
+_ADMIN_CHANGE = threading.Lock()
 
 MIN_PASSWORD_LEN = 12
 # A disabled account is one locked "forever": the login path already treats a
@@ -159,42 +165,44 @@ def revoke_all_sessions(admin: AdminUser = Depends(require_admin),
 @router.post("/users/{user_id}/disable")
 def disable_user(user_id: int, admin: AdminUser = Depends(require_admin),
                  db: Session = Depends(get_db)):
-    # Lock every admin row first (a handful): two admins disabling each
-    # other at the same moment would otherwise each see the other as still
-    # active and both succeed, leaving nobody able to sign in. The second
-    # request waits here and then counts the first one's committed result.
-    db.execute(select(AdminUser.id).with_for_update()).all()
-    user = _get(db, user_id)
-    if user.id == admin.id:
-        raise HTTPException(409, "you cannot disable yourself")
-    if active_admin_count(db, excluding_id=user.id) < 1:
-        raise HTTPException(409, "at least one admin must stay enabled")
-    user.locked_until = DISABLED_UNTIL
-    user.failed_count = 0
-    _bump(user)
-    record(db, _actor(admin), "admin_user_disabled",
-           {"username": user.username, "id": user.id})
-    db.commit()
-    return _view(user)
+    with _ADMIN_CHANGE:
+        # Lock every admin row first (a handful): two admins disabling each
+        # other at the same moment would otherwise each see the other as still
+        # active and both succeed, leaving nobody able to sign in. The second
+        # request waits here and then counts the first one's committed result.
+        db.execute(select(AdminUser.id).with_for_update()).all()
+        user = _get(db, user_id)
+        if user.id == admin.id:
+            raise HTTPException(409, "you cannot disable yourself")
+        if active_admin_count(db, excluding_id=user.id) < 1:
+            raise HTTPException(409, "at least one admin must stay enabled")
+        user.locked_until = DISABLED_UNTIL
+        user.failed_count = 0
+        _bump(user)
+        record(db, _actor(admin), "admin_user_disabled",
+               {"username": user.username, "id": user.id})
+        db.commit()
+        return _view(user)
 
 
 @router.post("/users/{user_id}/role")
 def change_role(user_id: int, body: RoleIn, admin: AdminUser = Depends(require_admin),
                 db: Session = Depends(get_db)):
-    # same lock as disabling: two admins demoting each other must not both succeed
-    db.execute(select(AdminUser.id).with_for_update()).all()
-    user = _get(db, user_id)
-    if user.id == admin.id:
-        raise HTTPException(409, "you cannot change your own role")
-    if user.role == "admin" and body.role != "admin"             and active_admin_count(db, excluding_id=user.id) < 1:
-        raise HTTPException(409, "at least one admin must stay enabled")
-    if user.role != body.role:
-        user.role = body.role
-        _bump(user)                       # their open sessions pick up the new rights
-        record(db, _actor(admin), "admin_role_changed",
-               {"username": user.username, "id": user.id, "role": body.role})
-    db.commit()
-    return _view(user)
+    with _ADMIN_CHANGE:
+        # same lock as disabling: two admins demoting each other must not both succeed
+        db.execute(select(AdminUser.id).with_for_update()).all()
+        user = _get(db, user_id)
+        if user.id == admin.id:
+            raise HTTPException(409, "you cannot change your own role")
+        if user.role == "admin" and body.role != "admin"             and active_admin_count(db, excluding_id=user.id) < 1:
+            raise HTTPException(409, "at least one admin must stay enabled")
+        if user.role != body.role:
+            user.role = body.role
+            _bump(user)                       # their open sessions pick up the new rights
+            record(db, _actor(admin), "admin_role_changed",
+                   {"username": user.username, "id": user.id, "role": body.role})
+        db.commit()
+        return _view(user)
 
 
 @router.post("/users/{user_id}/enable")
