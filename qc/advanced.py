@@ -84,14 +84,19 @@ class AdvancedStage(BaseQCStage):
             deduction += 20
             flags.append("blur_warn")
 
-        out = remove_shadow(image)
-        gray = cv2.cvtColor(out, cv2.COLOR_BGR2GRAY) if out.ndim == 3 else out
+        # the enhance step already removed shadows and cleaned the page: measure what
+        # is left, but keep the page as it is (a third whitening greys the ink)
+        enhanced = bool(context.get("enhanced"))
+        measured = remove_shadow(image)
+        out = image if enhanced else measured
+        gray = cv2.cvtColor(measured, cv2.COLOR_BGR2GRAY) if measured.ndim == 3 else measured
         bg_std = float(np.std(gray[gray > 128])) if (gray > 128).any() else 0.0
         detail["background_std"] = round(bg_std, 1)
         if bg_std > SHADOW_RESIDUAL_STD:
             deduction += 10
             flags.append("residual_shadow")
 
+        before_creases = out
         out, crease_found, crease_fixed = fix_creases(out)
         if crease_found:
             detail["crease"] = "fixed" if crease_fixed else "unfixable"
@@ -105,6 +110,7 @@ class AdvancedStage(BaseQCStage):
                              interpolation=cv2.INTER_LANCZOS4)
             detail["resized_to"] = list(target)
 
+        changed = (not enhanced) or out is not before_creases or "resized_to" in detail
         return QCStageResult(stage=self.name, deduction=deduction,
-                             auto_fail=auto_fail, fixed=True, flags=flags,
-                             detail=detail, image=out)
+                             auto_fail=auto_fail, fixed=changed, flags=flags,
+                             detail=detail, image=out if changed else None)

@@ -8,7 +8,9 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from imaging.enhance import apply_clahe, despeckle, to_color_mode, whiten_background
+from imaging.enhance import (apply_clahe, contrast, despeckle, to_color_mode,
+                             whiten_background)
+from imaging.enhance import CLAHE_BELOW
 from qc.base import BaseQCStage, QCStageResult
 
 MICHELSON_MIN = 0.3
@@ -29,19 +31,26 @@ class ColorStage(BaseQCStage):
         return "color"
 
     def run(self, image: np.ndarray, context: dict) -> QCStageResult:
-        out = whiten_background(image)
-        out = apply_clahe(out)
-        out = despeckle(out)
+        if context.get("enhanced"):
+            # the enhance step already cleaned this page: measure it, do not run the
+            # same filters over it again (each pass costs sharpness)
+            out, fixed = image, False
+        else:
+            out = whiten_background(image)
+            if contrast(out) < CLAHE_BELOW:
+                out = apply_clahe(out)
+            out = despeckle(out, int(context.get("dpi", 300)))
+            fixed = True
         mode = context.get("color_mode")
         if mode:
-            out = to_color_mode(out, mode)
+            out, fixed = to_color_mode(out, mode, int(context.get("dpi", 300))), True
 
-        contrast = michelson_contrast(out)
+        contrast_now = michelson_contrast(out)
         deduction, flags = 0, []
-        if contrast < MICHELSON_MIN:
+        if contrast_now < MICHELSON_MIN:
             deduction = 10
             flags.append("low_contrast")
 
-        return QCStageResult(stage=self.name, deduction=deduction, fixed=True,
-                             flags=flags, image=out,
-                             detail={"michelson_contrast": round(contrast, 3)})
+        return QCStageResult(stage=self.name, deduction=deduction, fixed=fixed,
+                             flags=flags, image=out if fixed else None,
+                             detail={"michelson_contrast": round(contrast_now, 3)})

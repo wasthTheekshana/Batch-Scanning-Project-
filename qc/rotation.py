@@ -57,7 +57,10 @@ class RotationStage(BaseQCStage):
                 deduction += 5
                 flags.append("low_osd_confidence")
 
-        out, applied = deskew(out)
+        if context.get("enhanced"):
+            applied = 0.0       # already straightened by the enhance step: do not resample again
+        else:
+            out, applied = deskew(out)
         residual = detect_skew_angle(out)
         detail["fine_skew_applied"] = round(applied, 2)
         detail["residual_skew"] = round(residual, 2)

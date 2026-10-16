@@ -272,8 +272,12 @@ class ScanWizard(QWizard):
         cfg = next((p.get("config") or {} for p in projects
                     if p["project_id"] == chosen), {})
         scanner = cfg.get("scanner") or {}
+        color = scanner.get("color", "grayscale")
         return {"dpi": int(scanner.get("dpi", 300)),
-                "color": scanner.get("color", "grayscale"),
+                # a black-and-white project is scanned in grayscale: the page is turned
+                # into black and white afterwards, adaptively, which keeps thin strokes
+                # (the scanner's own 1-bit mode uses one fixed threshold for the page)
+                "color": "grayscale" if color == "bw" else color,
                 "duplex": bool(scanner.get("duplex", True))}
 
     def done(self, result: int) -> None:

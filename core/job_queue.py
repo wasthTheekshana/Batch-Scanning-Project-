@@ -30,7 +30,7 @@ from core.project_runtime import ProjectRuntime, ProjectUnavailable
 from imaging.blank_detect import ink_density, is_blank
 from imaging.crop import auto_crop
 from imaging.deskew import deskew
-from imaging.enhance import apply_profile
+from imaging.enhance import apply_profile, to_color_mode
 from qc.pipeline import run_qc
 from export.index_export import (append_running_csv, build_record,
                                  write_index)
@@ -471,11 +471,18 @@ class Pipeline:
             image = turn(cv2.imread(record.job.image_path, cv2.IMREAD_UNCHANGED),
                          record.rotation)
             if not record.is_empty:
+                scanner = self._rt(record.job.batch_id,
+                                   record.job.project_id).profile.get("scanner", {})
+                dpi = int(scanner.get("dpi") or 300)
                 if profile.get("deskew"):
                     image, _ = deskew(image)
                 if profile.get("crop"):
                     image = auto_crop(image)
-                image = apply_profile(image, profile)
+                image = apply_profile(image, profile, dpi)
+                if scanner.get("color") == "bw":
+                    # black and white is decided here, locally adaptive, from the
+                    # grayscale scan (the scanner's own 1-bit mode loses thin strokes)
+                    image = to_color_mode(image, "bw", dpi)
             working = self.working_dir / f"{record.job.job_id}_work.png"
             cv2.imwrite(str(working), image)
             record.working_path = str(working)
@@ -494,7 +501,8 @@ class Pipeline:
                 image = cv2.imread(record.working_path, cv2.IMREAD_UNCHANGED)
                 fixed, verdict = run_qc(
                     image, qc_cfg,
-                    {"dpi": rt.profile.get("scanner", {}).get("dpi", 300)})
+                    {"dpi": rt.profile.get("scanner", {}).get("dpi", 300),
+                     "enhanced": True})      # the enhance step already filtered this page
                 cv2.imwrite(record.working_path, fixed)
                 record.qc_score = verdict.score
                 record.qc_grade = verdict.grade

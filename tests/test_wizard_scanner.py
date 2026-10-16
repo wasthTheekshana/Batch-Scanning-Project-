@@ -97,7 +97,9 @@ def test_the_chosen_projects_scanner_settings_are_used(qtbot, tmp_path):
         qtbot, tmp_path, src,
         scanner={"dpi": 200, "color": "bw", "duplex": False}))
     scan(qtbot, page)
-    assert src.calls == [(200, "bw", False)]
+    # a black-and-white project is scanned in grayscale; the page is made black and white
+    # afterwards, locally adaptive (the scanner's own 1-bit mode loses thin strokes)
+    assert src.calls == [(200, "grayscale", False)]
 
 
 def test_defaults_apply_when_the_project_has_no_scanner_section(qtbot, tmp_path):

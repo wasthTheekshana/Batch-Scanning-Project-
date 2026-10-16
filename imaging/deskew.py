@@ -9,6 +9,9 @@ import cv2
 import numpy as np
 
 MAX_CORRECTION_DEG = 15.0
+# A page off by less than this is not worth turning: resampling blurs the text
+# more than a fraction of a degree of tilt hurts reading.
+MIN_CORRECTION_DEG = 0.3
 
 
 def _to_gray(img: np.ndarray) -> np.ndarray:
@@ -39,11 +42,11 @@ def deskew(img: np.ndarray) -> tuple[np.ndarray, float]:
     """Rotate the image to correct detected skew. White border fill.
     Returns (corrected_image, applied_angle_degrees)."""
     angle = detect_skew_angle(img)
-    if abs(angle) < 0.05:
+    if abs(angle) < MIN_CORRECTION_DEG:
         return img, 0.0
     h, w = img.shape[:2]
     m = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
     white = (255, 255, 255) if img.ndim == 3 else 255
-    fixed = cv2.warpAffine(img, m, (w, h), flags=cv2.INTER_LINEAR,
+    fixed = cv2.warpAffine(img, m, (w, h), flags=cv2.INTER_CUBIC,
                            borderMode=cv2.BORDER_CONSTANT, borderValue=white)
     return fixed, angle
