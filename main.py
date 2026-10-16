@@ -99,6 +99,33 @@ def selftest() -> int:
         glyph[5:55, 17:23] = 255                      # a plain vertical stroke
         return "reads " + digits.read_digit(glyph)[0]
 
+    def sftp_library():
+        import paramiko
+        return "paramiko " + paramiko.__version__
+
+    def searchable_pdf():
+        """Write a PDF whose text layer sits on a word, then find the word."""
+        import cv2
+        import fitz
+        import numpy as np
+        from export.pdf_writer import write_searchable_pdf
+        tmp = Path(tempfile.mkdtemp())
+        cv2.imwrite(str(tmp / "p.png"), np.full((300, 600), 255, np.uint8))
+        word = {"text": "Account", "left": 60, "top": 60, "width": 240,
+                "height": 40}
+        out = write_searchable_pdf([tmp / "p.png"], ["Account"], tmp / "t.pdf",
+                                   words=[[word]])
+        with fitz.open(str(out)) as pdf:
+            if not pdf[0].search_for("Account"):
+                raise RuntimeError("text layer not searchable")
+        return "text layer found"
+
+    def passwords():
+        from core.rbac import hash_password, verify_password
+        if not verify_password("a-long-password", hash_password("a-long-password")):
+            raise RuntimeError("bcrypt check failed")
+        return "bcrypt works"
+
     def scanner():
         from scanning.sources import available_sources
         return str(available_sources())
@@ -115,6 +142,9 @@ def selftest() -> int:
                        ("barcode round trip", barcode_roundtrip),
                        ("OCR engine", ocr), ("digit model", digit_model),
                        ("scanners", scanner),
+                       ("SFTP library", sftp_library),
+                       ("searchable PDF", searchable_pdf),
+                       ("passwords", passwords),
                        ("cover sheet dialog", dialog)):
         check(name, work)
     text = chr(10).join(lines) + chr(10)
