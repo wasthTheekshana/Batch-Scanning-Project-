@@ -19,6 +19,7 @@ from core.search import (SearchQuery, count_documents, known_field_names,
                          search_documents)
 from core.search_export import MAX_ROWS, export_csv
 from custody.timeline import document_timeline, export_timeline
+from ui.flow import FlowLayout
 from ui.theme import fit_to_screen, mark
 
 PAGE = 100
@@ -113,7 +114,7 @@ class SearchPanel(QWidget):
         top.addWidget(self.clear_btn)
         layout.addLayout(top)
 
-        filters = QHBoxLayout()
+        filters = FlowLayout()
         self.project = QComboBox()
         self.status = QComboBox()
         for label, key in VALIDATION:
@@ -155,7 +156,7 @@ class SearchPanel(QWidget):
         self.table.itemDoubleClicked.connect(lambda _i: self.open_pdf())
         layout.addWidget(self.table, stretch=1)
 
-        actions = QHBoxLayout()
+        actions = FlowLayout()
         self.open_btn = QPushButton("Open PDF")
         self.folder_btn = QPushButton("Show in folder")
         self.timeline_btn = QPushButton("History...")
@@ -174,7 +175,6 @@ class SearchPanel(QWidget):
         for b in (self.open_btn, self.folder_btn, self.timeline_btn, self.edit_btn,
                   self.export_btn):
             actions.addWidget(b)
-        actions.addStretch(1)
         actions.addWidget(self.more_btn)
         layout.addLayout(actions)
         self.reload_choices()

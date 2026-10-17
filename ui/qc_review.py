@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QListWidget,
                              QVBoxLayout, QWidget)
 
 from core.job_queue import REASON_NO_PAGE_IMAGES
+from ui.flow import FlowLayout
 from ui.image_viewer import ImageView
 
 
@@ -37,6 +38,8 @@ class QCReviewPanel(QWidget):
         self.filter_combo.currentIndexChanged.connect(lambda _: self.refresh())
         left_layout.addWidget(self.filter_combo)
         self.queue = QListWidget()
+        from ui.theme import tidy_list
+        tidy_list(self.queue, 250)
         self.queue.currentItemChanged.connect(self._show_document)
         left_layout.addWidget(self.queue)
         splitter.addWidget(left)
@@ -46,6 +49,8 @@ class QCReviewPanel(QWidget):
         views = QHBoxLayout()
         self.before_view = ImageView()
         self.after_view = ImageView()
+        for view in (self.before_view, self.after_view):
+            view.setMinimumSize(240, 240)
         for label, view in (("Original", self.before_view),
                             ("After QC fixes", self.after_view)):
             col = QVBoxLayout()
@@ -60,7 +65,7 @@ class QCReviewPanel(QWidget):
         self.score_label.setWordWrap(True)
         right_layout.addWidget(self.score_label)
 
-        buttons = QHBoxLayout()
+        buttons = FlowLayout()
         self.accept_btn = QPushButton("Accept → export")
         self.reject_btn = QPushButton("Reject")
         self.rescan_btn = QPushButton("Flag for rescan")
@@ -80,7 +85,8 @@ class QCReviewPanel(QWidget):
         mark(self.reject_btn, "danger")
         right_layout.addLayout(buttons)
         splitter.addWidget(right)
-        splitter.setSizes([250, 750])
+        splitter.setChildrenCollapsible(False)
+        splitter.setSizes([280, 780])
         self.refresh()  # show documents held in previous sessions too
 
     # -- data ----------------------------------------------------------------
@@ -93,11 +99,11 @@ class QCReviewPanel(QWidget):
             docs = self.db.list_documents(validation_status="pending_qc")
         from PyQt6.QtGui import QBrush, QColor
 
-        from ui.theme import STATUS_COLORS
+        from ui.theme import STATUS_COLORS, two_lines
         for doc in docs:
-            item = QListWidgetItem(
-                f"{doc['document_id'][:8]} · pages {doc['page_range']} · "
-                f"score {doc['qc_score']} · {doc['validation_status']}")
+            item = QListWidgetItem()
+            two_lines(item, f"{doc['document_id'][:8]} · pages {doc['page_range']}",
+                      f"score {doc['qc_score']} · {doc['validation_status']}")
             item.setData(Qt.ItemDataRole.UserRole, doc["document_id"])
             color = STATUS_COLORS.get(doc["validation_status"])
             if color:

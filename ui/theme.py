@@ -88,11 +88,11 @@ QTabBar {{ background: {SURFACE}; }}
 QTabBar::tab {{
     background: {SURFACE};
     color: {TEXT_MUTED};
-    padding: 10px 20px;
+    padding: 9px 10px;
     border: none;
     border-bottom: 3px solid transparent;
     font-weight: 500;
-    min-width: 60px;
+    min-width: 48px;
 }}
 QTabBar::tab:hover {{ color: {TEXT}; background: #FAFBFC; }}
 QTabBar::tab:selected {{
@@ -123,7 +123,8 @@ QPushButton {{
     background: {SURFACE};
     border: 1px solid {LINE};
     border-radius: 6px;
-    padding: 7px 16px;
+    padding: 6px 14px;
+    min-height: 20px;
     font-weight: 500;
 }}
 QPushButton:hover {{ border-color: {ACCENT}; color: {ACCENT}; }}
@@ -150,7 +151,8 @@ QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTextEdit {{
     background: {SURFACE};
     border: 1px solid {LINE};
     border-radius: 6px;
-    padding: 6px 10px;
+    padding: 5px 10px;
+    min-height: 20px;
     selection-background-color: {ACCENT};
 }}
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
@@ -171,7 +173,7 @@ QListWidget {{
     border-radius: 8px;
     padding: 4px;
 }}
-QListWidget::item {{ padding: 8px 10px; border-radius: 5px; }}
+QListWidget::item {{ padding: 7px 10px; border-radius: 5px; }}
 QListWidget::item:hover {{ background: {PAPER}; }}
 QListWidget::item:selected {{
     background: #E5F2EF;
@@ -184,7 +186,7 @@ QTableWidget {{
     gridline-color: transparent;
     alternate-background-color: #F8FAFB;
 }}
-QTableWidget::item {{ padding: 6px 8px; border-bottom: 1px solid #EEF1F4; }}
+QTableWidget::item {{ padding: 4px 8px; border-bottom: 1px solid #EEF1F4; }}
 QTableWidget::item:selected {{ background: #E5F2EF; color: {ACCENT_DOWN}; }}
 QHeaderView::section {{
     background: {SURFACE};
@@ -217,7 +219,10 @@ QStatusBar {{
     border-top: 1px solid {LINE};
     color: {TEXT_MUTED};
 }}
-QSplitter::handle {{ background: {PAPER}; width: 6px; }}
+QSplitter::handle {{ background: {PAPER}; }}
+QSplitter::handle:horizontal {{ width: 8px; }}
+QSplitter::handle:vertical {{ height: 8px; }}
+QSplitter::handle:hover {{ background: {LINE}; }}
 QScrollBar:vertical {{
     background: transparent; width: 10px; margin: 0;
 }}
@@ -281,3 +286,36 @@ def mark(widget, css_class: str) -> None:
     widget.setProperty("class", css_class)
     widget.style().unpolish(widget)
     widget.style().polish(widget)
+
+
+def tidy_list(widget, min_width: int = 240) -> None:
+    """A work-queue list that stays readable at any width: rows are cut with an
+    ellipsis (full text in the tooltip) instead of a sideways scroll bar, and the
+    list never gets narrower than a document line needs."""
+    from PyQt6.QtCore import Qt
+    widget.setTextElideMode(Qt.TextElideMode.ElideRight)
+    widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    widget.setMinimumWidth(min_width)
+    widget.setUniformItemSizes(True)
+
+
+def scroll_column(content, min_width: int = 300, max_width: int | None = None):
+    """Put a tall form in its own vertical scroll area, so its rows keep their
+    natural height (a layout would squash them) and the window can still be small."""
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QScrollArea
+    area = QScrollArea()
+    area.setWidgetResizable(True)
+    area.setFrameShape(QScrollArea.Shape.NoFrame)
+    area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    area.setWidget(content)
+    area.setMinimumWidth(min_width)
+    if max_width:
+        area.setMaximumWidth(max_width)
+    return area
+
+
+def two_lines(item, first: str, second: str) -> None:
+    """A list row with its identity on the first line and its state on the second."""
+    item.setText(first + chr(10) + second)
+    item.setToolTip(first + chr(10) + second)

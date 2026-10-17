@@ -64,3 +64,24 @@ def test_workflow_designer_form_does_not_force_horizontal_scrolling(admin_window
     designer = next(tabs.widget(i) for i in range(tabs.count())
                     if tabs.tabText(i) == "Projects")
     assert designer.form_body.minimumSizeHint().width() <= SMALL_W - 60
+
+
+def test_the_window_fits_a_small_laptop_in_height_too(admin_window):
+    """The Custody tab once needed 582 px by itself, so the whole window was taller than
+    a 1366x768 screen at 125% scaling and its bottom buttons were out of reach."""
+    assert admin_window.minimumSizeHint().height() <= 614
+
+
+def test_a_filled_form_keeps_readable_fields_and_the_tables_keep_their_rows(admin_window):
+    """With many index fields the form once squashed every box to a sliver, and the
+    three custody tables to a couple of rows each."""
+    admin_window.resize(1093, 614)
+    admin_window.show()
+    editor = admin_window.index_editor
+    editor.set_zones([{"name": f"field_{i}"} for i in range(18)])
+    admin_window.tabs.setCurrentWidget(editor)
+    assert all(e.height() >= 22 for e in editor._inputs.values())
+    panel = admin_window.custody_panel
+    admin_window.tabs.setCurrentWidget(panel)
+    panel.views.setCurrentIndex(0)
+    assert panel.recon_table.height() >= 140

@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (QComboBox, QCompleter, QFormLayout, QGroupBox, QHBo
 
 from core.validation import kind_for, validate
 from ui.image_viewer import ImageView
-from ui.theme import STATUS_COLORS, mark
+from ui.theme import STATUS_COLORS, mark, scroll_column, tidy_list, two_lines
 
 
 class IndexEditor(QWidget):
@@ -60,31 +60,32 @@ class IndexEditor(QWidget):
         self.filter_combo.currentIndexChanged.connect(lambda _: self.refresh())
         ll.addWidget(self.filter_combo)
         self.doc_list = QListWidget()
+        tidy_list(self.doc_list, 220)
         self.doc_list.currentItemChanged.connect(self._on_select)
         ll.addWidget(self.doc_list)
         splitter.addWidget(left)
 
         # -- right: page + fields ----------------------------------------------
-        right = QWidget()
-        rl = QHBoxLayout(right)
         self.page_view = ImageView()
-        rl.addWidget(self.page_view, stretch=3)
+        self.page_view.setMinimumSize(260, 260)
 
-        form_col = QVBoxLayout()
+        form_body = QWidget()
+        form_col = QVBoxLayout(form_body)
+        form_col.setContentsMargins(0, 0, 8, 0)
         self.title = QLabel("Select a document from the list.")
         mark(self.title, "muted")
         self.title.setWordWrap(True)
         form_col.addWidget(self.title)
         self.form = QFormLayout()
+        self.form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)   # label above a full-width field
+        self.form.setVerticalSpacing(4)
         form_col.addLayout(self.form)
 
         self.extract_btn = QPushButton("Auto-extract from page")
         self.extract_btn.clicked.connect(self.auto_extract)
-        form_col.addWidget(self.extract_btn)
         self.save_button = QPushButton("Save index fields")
         mark(self.save_button, "primary")
         self.save_button.clicked.connect(self.save)
-        form_col.addWidget(self.save_button)
         # the type of each page (NIC, Application, ...): drives the PDF bookmarks
         self.types_box = QGroupBox("Page types")
         self.types_form = QFormLayout(self.types_box)
@@ -102,9 +103,23 @@ class IndexEditor(QWidget):
         self.hint.setWordWrap(True)
         form_col.addWidget(self.hint)
         form_col.addStretch(1)
-        rl.addLayout(form_col, stretch=2)
-        splitter.addWidget(right)
-        splitter.setSizes([280, 900])
+
+        # the fields scroll; the buttons that act on them stay in view underneath
+        side = QWidget()
+        side_layout = QVBoxLayout(side)
+        side_layout.setContentsMargins(0, 0, 0, 0)
+        side_layout.addWidget(scroll_column(form_body, 280), stretch=1)
+        buttons = QVBoxLayout()
+        buttons.addWidget(self.extract_btn)
+        buttons.addWidget(self.save_button)
+        side_layout.addLayout(buttons)
+        splitter.addWidget(self.page_view)
+        splitter.addWidget(side)
+        splitter.setChildrenCollapsible(False)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 3)
+        splitter.setStretchFactor(2, 2)
+        splitter.setSizes([280, 560, 380])
 
         self.set_zones(self.zones)
         self.refresh()
@@ -214,10 +229,10 @@ class IndexEditor(QWidget):
             if mode == "lowconf" and not self._to_check(doc):
                 continue
             check = self._to_check(doc)
-            item = QListWidgetItem(
-                f"{doc['document_id'][:8]} · pages {doc['page_range']} · "
-                f"{doc['validation_status']}"
-                + (f" · {check} field(s) to check" if check else ""))
+            item = QListWidgetItem()
+            two_lines(item, f"{doc['document_id'][:8]} · pages {doc['page_range']}",
+                      f"{doc['validation_status']}"
+                      + (f" · {check} field(s) to check" if check else ""))
             item.setData(Qt.ItemDataRole.UserRole, doc["document_id"])
             from PyQt6.QtGui import QBrush, QColor
             color = STATUS_COLORS.get(doc["validation_status"])
