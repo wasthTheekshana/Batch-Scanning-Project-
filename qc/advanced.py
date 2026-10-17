@@ -10,6 +10,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
+from imaging.enhance import whiten_background
 from qc.base import BaseQCStage, QCStageResult
 
 CREASE_MIN_WIDTH_PX = 8
@@ -23,14 +24,7 @@ def laplacian_variance(img: np.ndarray) -> float:
 
 
 def remove_shadow(img: np.ndarray) -> np.ndarray:
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
-    background = cv2.medianBlur(cv2.dilate(gray, np.ones((7, 7), np.uint8)), 21)
-    normalised = cv2.divide(gray, background, scale=255)
-    if img.ndim == 3:
-        gain = cv2.divide(normalised.astype(np.float32),
-                          np.maximum(gray.astype(np.float32), 1))
-        return np.clip(img.astype(np.float32) * gain[..., None], 0, 255).astype(np.uint8)
-    return normalised
+    return whiten_background(img)
 
 
 def fix_creases(img: np.ndarray) -> tuple[np.ndarray, bool, bool]:

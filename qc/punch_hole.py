@@ -17,6 +17,21 @@ MAX_RADIUS = 40
 WHITE_FILL_BRIGHTNESS = 240
 
 
+def _is_hole(strip: np.ndarray, cx: int, cy: int, r: float) -> bool:
+    """A real hole is a solid dark disc inside a ring of bright paper. Round-ish
+    letters, logos and halftone bars also fool the circle detector, and painting
+    over them destroys content, so check what the circle actually contains."""
+    h, w = strip.shape
+    yy, xx = np.ogrid[:h, :w]
+    dist = np.hypot(xx - cx, yy - cy)
+    inside = strip[dist <= r * 0.8]
+    ring = strip[(dist >= r + 3) & (dist <= r * 1.5 + 4)]
+    if inside.size == 0 or ring.size < 20:
+        return False
+    return (float(np.mean(inside < 128)) >= 0.9          # solid dark
+            and float(np.mean(ring > 180)) >= 0.85)      # paper all round it
+
+
 class PunchHoleStage(BaseQCStage):
     @property
     def name(self) -> str:
@@ -41,7 +56,7 @@ class PunchHoleStage(BaseQCStage):
                     # punch holes scan dark: require a dark centre
                     cyi, cxi = int(cy), int(cx)
                     if 0 <= cyi < strip.shape[0] and 0 <= cxi < strip.shape[1] \
-                            and strip[cyi, cxi] < 128:
+                            and strip[cyi, cxi] < 128 and _is_hole(strip, cxi, cyi, float(r)):
                         holes.append((int(cx) + x_off, int(cy), int(r)))
 
         if not holes:

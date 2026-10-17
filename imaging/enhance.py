@@ -15,6 +15,13 @@ def whiten_background(img: np.ndarray) -> np.ndarray:
     kernel = np.ones((7, 7), np.uint8)
     background = cv2.medianBlur(cv2.dilate(gray, kernel), 21)
     normalised = cv2.divide(gray, background, scale=255)
+    # Only where the surroundings look like paper. A large dark filled area (a
+    # section bar, a logo, a stamp) has itself as its "background", so dividing
+    # by it would turn it into a pale, speckled patch: leave such areas alone.
+    paper = float(np.percentile(gray, 90))
+    t = np.clip((background.astype(np.float32) - 0.5 * paper) / (0.25 * paper + 1e-6), 0.0, 1.0)
+    weight = t * t * (3.0 - 2.0 * t)                       # 0 over dark areas, 1 over paper
+    normalised = (weight * normalised + (1.0 - weight) * gray).astype(np.uint8)
     if img.ndim == 3:
         # apply the same gain per channel to keep colour data
         gain = cv2.divide(normalised.astype(np.float32),
