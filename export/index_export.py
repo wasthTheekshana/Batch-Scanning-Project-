@@ -15,6 +15,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import logging
 import json
 import os
 import re
@@ -33,6 +34,7 @@ RUNNING_NAME = "index.csv"
 
 _FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 _ELEMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
+log = logging.getLogger(__name__)
 _running_lock = threading.Lock()
 LOCK_WAIT = 15.0        # seconds to wait for another writer of the running index
 LOCK_STALE = 60.0       # a lock file older than this was left by a crashed writer
@@ -58,7 +60,9 @@ class _FolderLock:
                 handle = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
                 os.close(handle)
                 return self
-            except FileExistsError:
+            except (FileExistsError, PermissionError):
+                # Windows reports "access denied" instead of "exists" while the other writer is
+                # deleting the lock file: the same situation, wait and try again
                 try:
                     if time.time() - self.path.stat().st_mtime > LOCK_STALE:
                         self.path.unlink(missing_ok=True)      # a crashed writer's
@@ -70,7 +74,13 @@ class _FolderLock:
                 time.sleep(0.05)
 
     def __exit__(self, *exc):
-        self.path.unlink(missing_ok=True)
+        for _ in range(40):                 # another process may be checking the file just now
+            try:
+                self.path.unlink(missing_ok=True)
+                return
+            except PermissionError:
+                time.sleep(0.05)
+        log.warning("could not remove %s; it is treated as stale after %d s", self.path.name, LOCK_STALE)
 
 
 def _text(value) -> str:

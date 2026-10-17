@@ -296,6 +296,7 @@ def main() -> int:
                         sync_worker=sync_worker)
     window.restore_geometry_or_default()
     window.show()
+    window.start_idle_lock(app)
     window.report_refused_batches(pipeline.refused_batches)
     window.report_unreadable_projects()
     hot_folders = HotFolderService(db, pipeline, root / "staging", audit=audit)

@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import bcrypt as _bcrypt
 
@@ -60,6 +61,30 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
+MAX_FAILED_LOGINS = 5            # consecutive wrong passwords that lock an account
+LOCK_SECONDS = 15 * 60           # ... for this long
+
+
+class AccountLocked(AuthError):
+    """Too many wrong passwords: the account is locked for a while."""
+
+    def __init__(self, minutes: int):
+        self.minutes = minutes
+        super().__init__(f"account locked after too many wrong passwords; "
+                         f"try again in {minutes} minute(s) or ask an administrator to unlock it")
+
+
+def _minutes_left(locked_until: str | None) -> int:
+    if not locked_until:
+        return 0
+    try:
+        until = datetime.fromisoformat(locked_until)
+    except ValueError:
+        return 0
+    seconds = (until - datetime.now(timezone.utc)).total_seconds()
+    return max(0, int(seconds // 60) + (1 if seconds % 60 else 0)) if seconds > 0 else 0
+
+
 MIN_PASSWORD_LENGTH = 8
 DEFAULT_PASSWORD = "admin"   # the seeded admin's first-run password
 
@@ -97,8 +122,20 @@ class Session:
         row = db.get_user(username)
         if row is None or not row["active"]:
             raise AuthError("unknown or inactive user")
+        left = _minutes_left(row["locked_until"])
+        if left:
+            db.append_audit(None, username, "login_blocked", {"minutes_left": left})
+            raise AccountLocked(left)
         if not verify_password(password, row["password_hash"]):
+            failures, locked_until = db.record_login_failure(
+                username, MAX_FAILED_LOGINS, LOCK_SECONDS)
+            db.append_audit(None, username, "login_failed", {"failures": failures})
+            if locked_until:
+                db.append_audit(None, username, "account_locked",
+                                {"minutes": LOCK_SECONDS // 60})
+                raise AccountLocked(LOCK_SECONDS // 60)
             raise AuthError("invalid password")
+        db.clear_login_failures(username)
         if is_legacy_hash(row["password_hash"]):
             # self-migrating: upgrade Phase 1 sha256 hash to bcrypt
             db.set_password_hash(username, hash_password(password))
@@ -146,6 +183,34 @@ def create_user(db, actor: User | None, username: str, password: str,
     db.append_audit(None, actor.username, "user_create",
                     {"username": username, "role": role})
     return user_id
+
+
+def unlock_user(db, actor: User | None, username: str) -> None:
+    """Let a locked account sign in again now (an administrator's decision)."""
+    _require(actor, "user.manage")
+    db.clear_login_failures(username)
+    db.append_audit(None, actor.username, "account_unlocked", {"username": username})
+
+
+def is_locked(db, username: str) -> bool:
+    row = db.get_user(username)
+    return bool(row is not None and _minutes_left(row["locked_until"]))
+
+
+def verify_session_password(db, username: str, password: str) -> bool:
+    """Is this the signed-in user's password? Used to unlock a session that went idle. Wrong
+    attempts count towards the same lock as at sign-in."""
+    row = db.get_user(username)
+    if row is None or _minutes_left(row["locked_until"]):
+        return False
+    if verify_password(password, row["password_hash"]):
+        db.clear_login_failures(username)
+        return True
+    failures, locked_until = db.record_login_failure(username, MAX_FAILED_LOGINS, LOCK_SECONDS)
+    db.append_audit(None, username, "login_failed", {"failures": failures, "where": "session_unlock"})
+    if locked_until:
+        db.append_audit(None, username, "account_locked", {"minutes": LOCK_SECONDS // 60})
+    return False
 
 
 def set_user_active(db, actor: User | None, username: str,

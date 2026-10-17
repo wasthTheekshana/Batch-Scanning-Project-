@@ -16,8 +16,8 @@ from PyQt6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
                              QTableWidgetItem, QTabWidget, QVBoxLayout,
                              QWidget)
 
-from core.rbac import (ROLE_PERMISSIONS, AuthError, create_user,
-                       reset_password, set_user_active, set_user_role)
+from core.rbac import (ROLE_PERMISSIONS, AuthError, create_user, is_locked,
+                       reset_password, set_user_active, set_user_role, unlock_user)
 
 log = logging.getLogger(__name__)
 
@@ -85,12 +85,14 @@ class UsersTab(QWidget):
         self.toggle_btn = QPushButton("Activate / deactivate")
         self.role_btn = QPushButton("Change role…")
         self.reset_btn = QPushButton("Reset password…")
+        self.unlock_btn = QPushButton("Unlock account")
         can_manage = current_user is not None and \
             current_user.can("user.manage")
         for btn, handler in ((self.add_btn, self.add_user),
                              (self.toggle_btn, self.toggle_active),
                              (self.role_btn, self.change_role),
-                             (self.reset_btn, self.reset_pw)):
+                             (self.reset_btn, self.reset_pw),
+                             (self.unlock_btn, self.unlock)):
             btn.setEnabled(can_manage)
             btn.clicked.connect(handler)
             buttons.addWidget(btn)
@@ -106,7 +108,8 @@ class UsersTab(QWidget):
         for i, row in enumerate(rows):
             for col, value in enumerate(
                     [row["username"], row["role"],
-                     "yes" if row["active"] else "no",
+                     ("yes" if row["active"] else "no")
+                     + (" - LOCKED" if is_locked(self.db, row["username"]) else ""),
                      row["last_login"] or "never"]):
                 self.table.setItem(i, col, QTableWidgetItem(str(value)))
 
@@ -149,6 +152,11 @@ class UsersTab(QWidget):
         if ok:
             self._guard(lambda: set_user_role(
                 self.db, self.current_user, username, role))
+
+    def unlock(self) -> None:
+        username = self.selected_username()
+        if username:
+            self._guard(lambda: unlock_user(self.db, self.current_user, username))
 
     def reset_pw(self) -> None:
         username = self.selected_username()

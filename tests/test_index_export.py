@@ -7,6 +7,8 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
+from export import index_export
+
 from export.index_export import (FIXED_COLUMNS, append_running_csv,
                                  build_record, render, write_index)
 
@@ -235,3 +237,19 @@ def test_two_real_processes_writing_one_running_index_lose_no_rows(tmp_path):
     rows = parse_csv((tmp_path / "index.csv").read_text(encoding="utf-8-sig"))
     assert sorted(r[0] for r in rows[1:]) == sorted(
         f"{tag}-{n}" for tag in ("p1", "p2", "p3") for n in range(12))
+
+
+def test_a_lock_file_that_is_busy_being_deleted_is_waited_for_not_an_error(tmp_path, monkeypatch):
+    """On Windows, creating the lock while another process is deleting it fails with
+    PermissionError (not FileExistsError). That made concurrent writers crash."""
+    real_open, calls = index_export.os.open, {"n": 0}
+
+    def flaky(path, flags, *args, **kwargs):
+        if str(path).endswith(".lock") and calls["n"] < 3:
+            calls["n"] += 1
+            raise PermissionError(13, "Permission denied")
+        return real_open(path, flags, *args, **kwargs)
+    monkeypatch.setattr(index_export.os, "open", flaky)
+    with index_export._FolderLock(tmp_path / "index.csv"):
+        assert (tmp_path / "index.csv.lock").exists()
+    assert calls["n"] == 3 and not (tmp_path / "index.csv.lock").exists()

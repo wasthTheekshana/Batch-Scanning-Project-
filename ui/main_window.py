@@ -304,6 +304,34 @@ class MainWindow(QMainWindow):
             return
         fit_to_screen(self, DEFAULT_W, DEFAULT_H, share=0.94)
 
+    def start_idle_lock(self, app, minutes: float | None = None) -> None:
+        """Lock the session after `minutes` without keyboard or mouse use (0 = never)."""
+        from ui.idle_lock import IdleGuard, configured_minutes
+        self._idle = IdleGuard(configured_minutes() if minutes is None else minutes, self)
+        self._idle.idle.connect(self.lock_session)
+        self._idle.start(app)
+
+    def lock_session(self) -> None:
+        """Cover the window until the signed-in user types their password; a wrong
+        password three times, or Sign out, ends the session."""
+        from ui.idle_lock import UnlockDialog
+        user = Session.current_user()
+        if user is None or getattr(self, "_locked", False):
+            return
+        self._locked = True
+        self.db.append_audit(None, user.username, "session_locked", {})
+        try:
+            dialog = UnlockDialog(self.db, user.username, self)
+            ok = dialog.exec() == dialog.DialogCode.Accepted
+        finally:
+            self._locked = False
+        if ok:
+            self.db.append_audit(None, user.username, "session_unlocked", {})
+            if getattr(self, "_idle", None) is not None:
+                self._idle.rearm()
+        else:
+            self.sign_out()
+
     def closeEvent(self, event) -> None:
         if getattr(self, "_remember_geometry", False):
             from PyQt6.QtCore import QSettings

@@ -80,6 +80,13 @@ class QCReviewPanel(QWidget):
         self.edit_btn.setEnabled(can_review)
         self.edit_btn.clicked.connect(self.open_editor)
         buttons.addWidget(self.edit_btn)
+        self.split_merge_btn = QPushButton("Split / merge…")
+        self.split_merge_btn.setToolTip(
+            "The automatic separation got it wrong: cut this document in two, or join it "
+            "with another document of the same batch.")
+        self.split_merge_btn.setEnabled(can_review)
+        self.split_merge_btn.clicked.connect(self.open_split_merge)
+        buttons.addWidget(self.split_merge_btn)
         from ui.theme import mark
         mark(self.accept_btn, "primary")
         mark(self.reject_btn, "danger")
@@ -180,6 +187,23 @@ class QCReviewPanel(QWidget):
                 for no, info in pages.items()
                 if isinstance(info, dict) and info.get("working_path")
                 and Path(info["working_path"]).exists()}
+
+    def open_split_merge(self) -> None:
+        doc_id = self.current_document_id()
+        if doc_id is None:
+            return
+        from ui.split_merge_dialog import SplitMergeDialog
+        user = self.current_user.username if self.current_user else "unknown"
+        dlg = SplitMergeDialog(self.db, self.audit, user, doc_id, parent=self)
+        dlg.exec()
+        if dlg.result_edit is not None:
+            self.filter_combo.setCurrentIndex(self.filter_combo.findData("pending"))
+            self.refresh()
+            first_new = dlg.result_edit.new_ids[0]
+            for row in range(self.queue.count()):
+                if self.queue.item(row).data(Qt.ItemDataRole.UserRole) == first_new:
+                    self.queue.setCurrentRow(row)
+                    break
 
     def open_editor(self) -> None:
         doc_id = self.current_document_id()

@@ -173,7 +173,7 @@ CREATE INDEX IF NOT EXISTS idx_custody_bundle ON custody_events(bundle_id);
 # SCHEMA_VERSION to that number. Each migration runs in one transaction with its
 # version stamp; a failure rolls everything back, and a copy of the database
 # is kept first as <name>.before-v<N>.bak.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 _MIGRATIONS: list[tuple[int, str]] = [
     # 2: which documents were scanned under which custody bundle's QR label
     (2, """
@@ -188,6 +188,11 @@ CREATE INDEX IF NOT EXISTS idx_bundle_documents_bundle ON bundle_documents(bundl
 """),
     # 3: how many documents a bundle is expected to hold (optional)
     (3, "ALTER TABLE bundles ADD COLUMN expected_documents INTEGER;"),
+    # 4: sign-in protection: consecutive wrong passwords and the lock that follows
+    (4, """
+ALTER TABLE users ADD COLUMN failed_logins INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN locked_until TEXT;
+"""),
 ]
 
 
@@ -636,6 +641,31 @@ class Database:
         with self._lock:
             return self.conn.execute(
                 "SELECT * FROM users ORDER BY username").fetchall()
+
+    def record_login_failure(self, username: str, max_failures: int,
+                             lock_seconds: int) -> tuple[int, str | None]:
+        """Count one more wrong password; on reaching `max_failures` lock the account for
+        `lock_seconds`. Returns (failures so far, locked_until or None)."""
+        from datetime import timedelta
+        with self._lock, self.conn:
+            row = self.conn.execute(
+                "SELECT failed_logins FROM users WHERE username=?", (username,)).fetchone()
+            if row is None:
+                return 0, None
+            failures = int(row["failed_logins"]) + 1
+            locked_until = None
+            if failures >= max_failures:
+                locked_until = (datetime.now(timezone.utc)
+                                + timedelta(seconds=lock_seconds)).isoformat()
+                failures = 0                    # the lock is the penalty; count afresh after it
+            self.conn.execute("UPDATE users SET failed_logins=?, locked_until=? WHERE username=?",
+                              (failures, locked_until, username))
+            return failures, locked_until
+
+    def clear_login_failures(self, username: str) -> None:
+        with self._lock, self.conn:
+            self.conn.execute(
+                "UPDATE users SET failed_logins=0, locked_until=NULL WHERE username=?", (username,))
 
     def touch_login(self, username: str) -> None:
         with self._lock, self.conn:
