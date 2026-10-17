@@ -282,6 +282,7 @@ def main() -> int:
                         central_state=central_state,
                         sync_service=sync_service,
                         sync_worker=sync_worker)
+    window.restore_geometry_or_default()
     window.show()
     window.report_refused_batches(pipeline.refused_batches)
     window.report_unreadable_projects()

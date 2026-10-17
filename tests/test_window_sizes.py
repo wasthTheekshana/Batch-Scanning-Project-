@@ -35,7 +35,7 @@ def test_every_tab_fits_a_small_laptop(admin_window):
                 for i in range(tabs.count())
                 if tabs.widget(i).minimumSizeHint().width() > SMALL_W}
     assert not too_wide
-    assert admin_window.minimumSizeHint().width() <= SMALL_W
+    assert admin_window.minimumSizeHint().width() <= SMALL_W, admin_window.minimumSizeHint()
 
 
 @pytest.mark.parametrize("make", [ZoneDialog, CoverSheetDialog,

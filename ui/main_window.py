@@ -18,7 +18,8 @@ from ui.index_editor import IndexEditor
 from ui.job_monitor import JobMonitor
 from ui.qc_review import QCReviewPanel
 from ui.scan_wizard import ScanWizard
-from ui.theme import ACCENT, fit_to_screen, icon, mark
+from ui.sidebar import SideNav
+from ui.theme import ACCENT, fit_to_screen, icon, mark, nav_icon
 from ui.workflow_designer import WorkflowDesigner
 
 log = logging.getLogger(__name__)
@@ -29,6 +30,53 @@ REENROLL_NOTICE = "Central: new enrollment code needed"
 
 ROLE_LABELS = {"admin": "Administrator", "operator": "Operator",
                "qc_officer": "QC Officer", "viewer": "Viewer"}
+
+
+DEFAULT_W, DEFAULT_H = 1360, 860
+
+
+class BrandBlock(QWidget):
+    """The product name at the top of the sidebar (just the mark when the rail is narrow)."""
+
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 0, 4, 0)
+        layout.setSpacing(0)
+        self.title = QLabel("DOK Scanner")
+        self.title.setObjectName("HeaderTitle")
+        self.sub = QLabel("Capture · QC · Delivery")
+        self.sub.setObjectName("HeaderSub")
+        layout.addWidget(self.title)
+        layout.addWidget(self.sub)
+
+    def set_compact(self, compact: bool) -> None:
+        self.title.setText("DOK" if compact else "DOK Scanner")
+        self.sub.setVisible(not compact)
+
+
+class UserBlock(QWidget):
+    """Who is signed in, and Sign out, at the bottom of the sidebar."""
+
+    def __init__(self, who: str | None):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        self.chip = QLabel(who or "")
+        self.chip.setObjectName("UserChip")
+        self.chip.setWordWrap(True)
+        self.chip.setVisible(bool(who))
+        self.signout_btn = QPushButton("Sign out")
+        self.signout_btn.setObjectName("SignOut")
+        layout.addWidget(self.chip)
+        layout.addWidget(self.signout_btn)
+        self._who = who
+
+    def set_compact(self, compact: bool) -> None:
+        self.chip.setVisible(bool(self._who) and not compact)
+        self.signout_btn.setText("⏻" if compact else "Sign out")
+        self.signout_btn.setToolTip("Sign out")
 
 
 class MainWindow(QMainWindow):
@@ -49,7 +97,8 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("DOK Scanner — Batch Document Capture")
         self.setWindowIcon(icon("fa5s.file-import", color=ACCENT))
-        fit_to_screen(self, 1280, 840)
+        fit_to_screen(self, DEFAULT_W, DEFAULT_H, share=0.94)
+        self._remember_geometry = False
 
         central = QWidget()
         root = QVBoxLayout(central)
@@ -57,36 +106,17 @@ class MainWindow(QMainWindow):
         root.setSpacing(0)
         self.setCentralWidget(central)
 
-        # -- header band ------------------------------------------------------
-        header = QWidget()
-        header.setObjectName("HeaderBar")
-        header.setFixedHeight(58)
-        hl = QHBoxLayout(header)
-        hl.setContentsMargins(18, 8, 18, 8)
-        brand = QVBoxLayout()
-        brand.setSpacing(0)
-        title = QLabel("DOK Scanner")
-        title.setObjectName("HeaderTitle")
-        sub = QLabel("Batch capture · Auto-QC · Delivery")
-        sub.setObjectName("HeaderSub")
-        brand.addWidget(title)
-        brand.addWidget(sub)
-        hl.addLayout(brand)
-        hl.addStretch(1)
-        if user is not None:
-            chip = QLabel(f"{user.username}  ·  "
-                          f"{ROLE_LABELS.get(user.role, user.role)}")
-            chip.setObjectName("UserChip")
-            hl.addWidget(chip)
-        self.signout_btn = QPushButton("Sign out")
+        # -- sidebar navigation: brand on top, the user and Sign out below -----------
+        self.tabs = SideNav()
+        self.tabs.setIconSize(QSize(18, 18))
+        brand = BrandBlock()
+        self.tabs.set_brand(brand)
+        footer = UserBlock(
+            None if user is None else
+            f"{user.username}  ·  {ROLE_LABELS.get(user.role, user.role)}")
+        self.signout_btn = footer.signout_btn
         self.signout_btn.clicked.connect(self.sign_out)
-        hl.addWidget(self.signout_btn)
-        root.addWidget(header)
-
-        # -- navigation tabs ---------------------------------------------------
-        self.tabs = QTabWidget()
-        self.tabs.setIconSize(QSize(16, 16))
-        self.tabs.setDocumentMode(True)
+        self.tabs.set_footer(footer)
         root.addWidget(self.tabs, stretch=1)
 
         # Scan tab
@@ -115,11 +145,11 @@ class MainWindow(QMainWindow):
         scan_layout.addLayout(bar)
         self.viewer = ImageViewer()
         scan_layout.addWidget(self.viewer, stretch=1)
-        self.tabs.addTab(scan_tab, icon("fa5s.file-import"), "Scan")
+        self.tabs.addTab(scan_tab, nav_icon("fa5s.file-import"), "Scan")
 
         # QC review tab
         self.qc_panel = QCReviewPanel(db, audit, user, pipeline=pipeline)
-        self.tabs.addTab(self.qc_panel, icon("fa5s.check-double"),
+        self.tabs.addTab(self.qc_panel, nav_icon("fa5s.check-double"),
                          "QC Review")
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
@@ -137,7 +167,7 @@ class MainWindow(QMainWindow):
             ocr_cfg_for_project=self._ocr_cfg_for_project)
         self.index_editor.fields_saved.connect(self._on_fields_saved)
         self.index_editor.page_types_saved.connect(self._on_page_types_saved)
-        self.tabs.addTab(self.index_editor, icon("fa5s.tags"), "Index")
+        self.tabs.addTab(self.index_editor, nav_icon("fa5s.tags"), "Index")
 
         # Search tab: every role may find documents (an operator only those
         # of batches they scanned)
@@ -145,24 +175,24 @@ class MainWindow(QMainWindow):
             from ui.search_panel import SearchPanel
             self.search_panel = SearchPanel(db, user, audit=audit)
             self.search_panel.edit_requested.connect(self.show_in_index)
-            self.tabs.addTab(self.search_panel, icon("fa5s.search"), "Search")
+            self.tabs.addTab(self.search_panel, nav_icon("fa5s.search"), "Search")
 
         # Job monitor tab
         self.job_monitor = JobMonitor(bus)
-        self.tabs.addTab(self.job_monitor, icon("fa5s.tasks"), "Job Monitor")
+        self.tabs.addTab(self.job_monitor, nav_icon("fa5s.tasks"), "Job Monitor")
 
         # Reports tab — report.view roles (admin, qc_officer, viewer)
         if user is not None and user.can("report.view"):
             from ui.reports_panel import ReportsPanel
             self.reports_panel = ReportsPanel(db, user)
-            self.tabs.addTab(self.reports_panel, icon("fa5s.chart-bar"),
+            self.tabs.addTab(self.reports_panel, nav_icon("fa5s.chart-bar"),
                              "Reports")
 
         # Workflow designer — project.edit only (HLD §17.5 role gate)
         if user is not None and user.can("project.edit"):
             self.designer = WorkflowDesigner(db, profile_manager, user,
                                             bus=bus)
-            self.tabs.addTab(self.designer, icon("fa5s.project-diagram"),
+            self.tabs.addTab(self.designer, nav_icon("fa5s.project-diagram"),
                              "Projects")
 
         # Admin panel — user.manage only (Phase 2)
@@ -174,14 +204,14 @@ class MainWindow(QMainWindow):
                                           central_service=sync_service,
                                           central_worker=sync_worker,
                                           bus=bus)
-            self.tabs.addTab(self.admin_panel, icon("fa5s.user-shield"),
+            self.tabs.addTab(self.admin_panel, nav_icon("fa5s.user-shield"),
                              "Admin")
 
         # Custody tab - custody.manage (admin, operator, qc_officer)
         if user is not None and user.can("custody.manage"):
             from ui.custody_panel import CustodyPanel
             self.custody_panel = CustodyPanel(db, audit, user)
-            self.tabs.addTab(self.custody_panel, icon("fa5s.boxes"),
+            self.tabs.addTab(self.custody_panel, nav_icon("fa5s.boxes"),
                              "Custody")
 
         bus.qc_ready.connect(lambda _doc_id: self.qc_panel.refresh())
@@ -263,6 +293,22 @@ class MainWindow(QMainWindow):
             self.custody_panel.refresh()
         elif widget is getattr(self, "search_panel", None):
             self.search_panel.reload_choices()
+
+    def restore_geometry_or_default(self) -> None:
+        """Open where the operator left the window (if that is still on a screen),
+        otherwise at a size that suits this screen; remember it from now on."""
+        from PyQt6.QtCore import QSettings
+        self._remember_geometry = True
+        saved = QSettings("DOKScanner", "DOKScanner").value("window/geometry")
+        if saved is not None and self.restoreGeometry(saved):
+            return
+        fit_to_screen(self, DEFAULT_W, DEFAULT_H, share=0.94)
+
+    def closeEvent(self, event) -> None:
+        if getattr(self, "_remember_geometry", False):
+            from PyQt6.QtCore import QSettings
+            QSettings("DOKScanner", "DOKScanner").setValue("window/geometry", self.saveGeometry())
+        super().closeEvent(event)
 
     def sign_out(self) -> None:
         Session.logout(self.db)
