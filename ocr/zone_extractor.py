@@ -89,6 +89,36 @@ def prepare_strip(strip: np.ndarray) -> np.ndarray:
 FIXERS = {"name": "fix_name", "email": "fix_email", "mobile": "fix_mobile", "nic": "fix_nic"}
 
 
+TYPED_SURE = 0.80       # the ordinary reader at least this sure of a line: typed or printed text (typed: 0.82-0.94, real handwriting: at most 0.77)
+
+
+def _read_typed(strip: np.ndarray, zone: dict, run_ocr) -> OCRResult:
+    """A cropped strip is a line (or a few), not a page: read it with the ordinary OCR engine."""
+    lines = int(zone.get("lines") or 0)
+    if not lines:
+        lines = 1 if strip.shape[0] <= 0.2 * strip.shape[1] else 2
+    result = run_ocr(prepare_strip(strip), psm=7 if lines == 1 else 6,
+                     min_conf=0 if lines == 1 else 45)
+    printable = re.sub(r"[^\x20-\x7e\n]", "", result.text)
+    if lines > 1:      # keep real lines, drop the box-edge debris
+        printable = " ".join(
+            ln.strip() for ln in printable.splitlines()
+            if re.search(r"[A-Za-z0-9]{2}", ln))
+    return OCRResult(text=printable, confidence=result.confidence)
+
+
+def _clearly_typed(result: OCRResult, zone: dict) -> bool:
+    """Did the ordinary reader read this strip with confidence, and is what it read the right
+    shape for the field (its clean-up pattern finds a value)?"""
+    if not result.text.strip() or result.confidence < TYPED_SURE:
+        return False
+    pattern = zone.get("regex")
+    if not pattern:
+        return True
+    found = _extract_match_value(pattern, result.text.strip())
+    return bool(found and found.strip())        # an empty box can "match" with just a space
+
+
 def read_handwritten(strip: np.ndarray, zone: dict) -> OCRResult | None:
     """A handwritten line (or lines) read with the handwriting model, then corrected for the
     kind of field it is (name, e-mail, mobile, branch ...). None when the model is not
@@ -174,9 +204,19 @@ def extract_fields(img: np.ndarray, zones: list[dict], lang: str = "eng",
         x1 = max(x0 + 1, min(x0 + zw, w))
         y1 = max(y0 + 1, min(y0 + zh, h))
         strip = img[y0:y1, x0:x1]
-        hand = (read_handwritten(strip, zone)
-                if (zone.get("hand") or zone.get("charset") == "email") and ocr_fn is None else None)
-        if hand is not None:
+        hand = typed = None
+        if (zone.get("hand") or zone.get("charset") == "email") and ocr_fn is None:
+            if not zone.get("comb"):
+                # typed or printed entries are read better by the ordinary reader, and say so
+                # with a high confidence; only what is not clearly typed goes to the handwriting model
+                typed = _read_typed(strip, zone, run_ocr)
+                if not _clearly_typed(typed, zone):
+                    typed = None
+            if typed is None:
+                hand = read_handwritten(strip, zone)
+        if typed is not None:
+            result = typed
+        elif hand is not None:
             result = hand
         elif zone.get("comb"):
             # one character per box (account no., NIC, date of birth)
@@ -185,18 +225,7 @@ def extract_fields(img: np.ndarray, zones: list[dict], lang: str = "eng",
         elif ocr_fn is not None:
             result = ocr_fn(strip)
         else:
-            # a cropped strip is a line (or a few), not a page
-            lines = int(zone.get("lines") or 0)
-            if not lines:
-                lines = 1 if strip.shape[0] <= 0.2 * strip.shape[1] else 2
-            result = run_ocr(prepare_strip(strip), psm=7 if lines == 1 else 6,
-                             min_conf=0 if lines == 1 else 45)
-            printable = re.sub(r"[^\x20-\x7e\n]", "", result.text)
-            if lines > 1:      # keep real lines, drop the box-edge debris
-                printable = " ".join(
-                    ln.strip() for ln in printable.splitlines()
-                    if re.search(r"[A-Za-z0-9]{2}", ln))
-            result = OCRResult(text=printable, confidence=result.confidence)
+            result = _read_typed(strip, zone, run_ocr)
         value = result.text.strip()
         if zone.get("regex"):
             extracted = _extract_match_value(zone["regex"], value)

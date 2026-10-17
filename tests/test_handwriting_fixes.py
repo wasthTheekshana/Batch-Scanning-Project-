@@ -155,3 +155,36 @@ def test_handwritten_zones_are_marked_for_the_handwriting_reader():
     kinds = {z["name"]: z.get("kind") for z in doc_type["zones"] if z.get("hand")}
     assert kinds["branch"] == "branch" and kinds["applicant_name"] == "name"
     assert kinds["email"] == "email" and kinds["mobile"] == "mobile"
+
+
+# -- typed text must not be sent to the handwriting model ------------------------------------------------
+def _zone():
+    return {"name": "applicant_name", "x": 0, "y": 0, "w": 300, "h": 40, "lines": 1, "hand": True,
+            "kind": "name", "regex": r"^[\s|.,;:_-]*([^|]+?)[\s|.,;:_-]*$"}
+
+
+def _run(monkeypatch, typed_text, typed_conf):
+    """Read one zone with a fake ordinary reader and a fake handwriting reader; which one decided?"""
+    from ocr import zone_extractor as ze
+    from ocr.tesseract_engine import OCRResult
+    calls = []
+    monkeypatch.setattr(ze, "ocr_page", lambda region, **kw: OCRResult(text=typed_text, confidence=typed_conf))
+    monkeypatch.setattr(ze, "read_handwritten",
+                        lambda strip, zone: calls.append("handwriting") or OCRResult(text="Written Name", confidence=0.6))
+    got = ze.extract_fields(np.full((60, 400, 3), 255, np.uint8), [_zone()])["applicant_name"]
+    return got, calls
+
+
+def test_confidently_read_typed_text_is_kept_and_the_handwriting_model_is_not_asked(monkeypatch):
+    got, calls = _run(monkeypatch, "| NIMAL KUMARA PERERA |", 0.88)
+    assert got.value == "NIMAL KUMARA PERERA" and calls == []
+
+
+def test_a_doubtful_reading_goes_to_the_handwriting_model(monkeypatch):
+    got, calls = _run(monkeypatch, "IDV W Thumar | | pevera |", 0.77)         # what real handwriting gave
+    assert calls == ["handwriting"] and got.value == "Written Name"
+
+
+def test_an_empty_typed_reading_goes_to_the_handwriting_model(monkeypatch):
+    got, calls = _run(monkeypatch, "| |", 0.95)
+    assert calls == ["handwriting"]
