@@ -10,6 +10,7 @@ later stage.
 """
 from __future__ import annotations
 
+import math
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -72,32 +73,59 @@ def record_checkpoint_from_barcode(db, barcode_value: str, stage: str,
     return True
 
 
-def generate_label_sheet(bundle: dict, out_path: str | Path) -> Path:
-    """A one-page PDF separator sheet: a QR code encoding the bundle's
-    qr_value plus human-readable bundle_id/label text underneath. This
-    sheet is printed and placed as the first page of the physical
-    bundle when it goes to the scanner - scanning it is what lets
-    record_checkpoint_from_barcode (Task 4) auto-log the "scanning"
-    checkpoint without any extra operator action."""
+MAX_LABEL_COPIES = 24      # the most QR codes that stay readable on one page
+
+
+def generate_label_sheet(bundle: dict, out_path: str | Path,
+                         copies: int = 1) -> Path:
+    """A one-page PDF separator sheet: `copies` identical QR codes encoding the
+    bundle's qr_value, each with the bundle's label and ids underneath, laid
+    out in a grid. The sheet is printed and placed in the physical bundle when
+    it goes to the scanner - scanning any one of the codes is what lets the
+    pipeline auto-log the "scanning" checkpoint. Several copies let the sheet
+    be cut into stickers for the folders of one bundle."""
+    if not 1 <= copies <= MAX_LABEL_COPIES:
+        raise ValueError(f"copies must be 1 to {MAX_LABEL_COPIES}, got {copies}")
     out_path = Path(out_path)
     qr_img = qrcode.make(bundle["qr_value"])
     buf = BytesIO()
     qr_img.save(buf, format="PNG")
     buf.seek(0)
+    qr_reader = ImageReader(buf)
 
-    c = canvas.Canvas(str(out_path), pagesize=letter)
-    page_w, _ = letter
-    qr_size = 200
-    x = (page_w - qr_size) / 2
-    c.drawImage(ImageReader(buf), x, 500, width=qr_size, height=qr_size)
     label_text = bundle["label"]
     if len(label_text) > 40:
         label_text = label_text[:37] + "..."
-    c.setFont("Helvetica-Bold", 16)
-    c.drawCentredString(page_w / 2, 470, label_text)
-    c.setFont("Helvetica", 11)
-    c.drawCentredString(page_w / 2, 450, f"Bundle ID: {bundle['bundle_id']}")
-    c.drawCentredString(page_w / 2, 434, f"QR: {bundle['qr_value']}")
+
+    c = canvas.Canvas(str(out_path), pagesize=letter)
+    page_w, page_h = letter
+    if copies == 1:
+        qr_size = 200
+        c.drawImage(qr_reader, (page_w - qr_size) / 2, 500,
+                    width=qr_size, height=qr_size)
+        c.setFont("Helvetica-Bold", 16)
+        c.drawCentredString(page_w / 2, 470, label_text)
+        c.setFont("Helvetica", 11)
+        c.drawCentredString(page_w / 2, 450, f"Bundle ID: {bundle['bundle_id']}")
+        c.drawCentredString(page_w / 2, 434, f"QR: {bundle['qr_value']}")
+    else:
+        margin = 36
+        cols = math.ceil(math.sqrt(copies))
+        rows = math.ceil(copies / cols)
+        cell_w = (page_w - 2 * margin) / cols
+        cell_h = (page_h - 2 * margin) / rows
+        text_h = 34                                 # label + qr value under the code
+        qr_size = min(cell_w - 12, cell_h - text_h - 8, 200)
+        for i in range(copies):
+            row, col = divmod(i, cols)
+            cx = margin + (col + 0.5) * cell_w
+            top = page_h - margin - row * cell_h
+            c.drawImage(qr_reader, cx - qr_size / 2, top - 4 - qr_size,
+                        width=qr_size, height=qr_size)
+            c.setFont("Helvetica-Bold", 9)
+            c.drawCentredString(cx, top - qr_size - 16, label_text[:int(cell_w / 5)])
+            c.setFont("Helvetica", 6)
+            c.drawCentredString(cx, top - qr_size - 26, bundle["qr_value"])
     c.save()
     return out_path
 

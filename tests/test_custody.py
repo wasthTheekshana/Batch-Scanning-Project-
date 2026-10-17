@@ -343,3 +343,33 @@ def test_generate_label_sheet_truncates_long_label(tmp_path):
     out = generate_label_sheet(bundle, tmp_path / "label.pdf")
     assert out.exists()
     assert out.read_bytes()[:5] == b"%PDF-"
+
+
+def _decode_sheet(path, dpi=300):
+    import cv2
+    import fitz
+    import numpy as np
+    from separation.barcode import decode_barcodes
+    doc = fitz.open(str(path))
+    pix = doc[0].get_pixmap(dpi=dpi)
+    img = np.frombuffer(pix.samples, np.uint8).reshape(pix.h, pix.w, pix.n)
+    return doc.page_count, decode_barcodes(cv2.cvtColor(img, cv2.COLOR_RGB2GRAY))
+
+
+@pytest.mark.parametrize("copies", [1, 2, 6, 12, 24])
+def test_label_sheet_prints_the_requested_number_of_qr_codes_on_one_page(tmp_path, copies):
+    from custody.bundle_manager import generate_label_sheet
+    bundle = {"bundle_id": "b1", "label": "Box 42",
+              "qr_value": "DOK-BUNDLE-ABC123456789"}
+    out = generate_label_sheet(bundle, tmp_path / "label.pdf", copies=copies)
+    pages, found = _decode_sheet(out)
+    assert pages == 1
+    assert [b["value"] for b in found] == [bundle["qr_value"]] * copies
+
+
+@pytest.mark.parametrize("copies", [0, 25, -1])
+def test_label_sheet_refuses_a_count_that_does_not_fit_one_page(tmp_path, copies):
+    from custody.bundle_manager import generate_label_sheet
+    with pytest.raises(ValueError):
+        generate_label_sheet({"bundle_id": "b", "label": "x", "qr_value": "DOK-BUNDLE-X"},
+                             tmp_path / "l.pdf", copies=copies)

@@ -4,17 +4,17 @@ checkpoints, flag incidents, and see the reconciliation view
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (QComboBox, QFileDialog, QFormLayout, QSpinBox,
+from PyQt6.QtWidgets import (QComboBox, QInputDialog, QFileDialog, QFormLayout, QGridLayout, QSpinBox,
                              QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                              QListWidget, QListWidgetItem, QMessageBox,
-                             QPushButton, QSplitter, QTableWidget,
+                             QPushButton, QSplitter, QTabWidget, QTableWidget,
                              QTableWidgetItem, QVBoxLayout, QWidget)
 
-from custody.bundle_manager import (VALID_STAGES, bundle_summary, create_bundle,
+from custody.bundle_manager import (MAX_LABEL_COPIES, VALID_STAGES, bundle_summary, create_bundle,
                                     flag_incident, generate_label_sheet,
                                     reconciliation_summary, record_checkpoint)
 from custody.timeline import bundle_timeline, export_timeline
-from ui.theme import mark
+from ui.theme import mark, scroll_column, tidy_list
 
 _CHECKPOINT_STAGES = ["prep", "scanning", "qc", "storage", "return"]
 _INCIDENT_STAGES = ["damaged", "missing", "compromised"]
@@ -42,6 +42,7 @@ class CustodyPanel(QWidget):
         ll = QVBoxLayout(left)
         ll.addWidget(QLabel("Bundles"))
         self.bundle_list = QListWidget()
+        tidy_list(self.bundle_list, 240)
         self.bundle_list.currentItemChanged.connect(self._on_select)
         ll.addWidget(self.bundle_list)
 
@@ -73,39 +74,37 @@ class CustodyPanel(QWidget):
         mark(self.hint, "muted")
         rl.addWidget(self.hint)
 
+        actions = QGridLayout()
+        actions.setHorizontalSpacing(8)
+        actions.setVerticalSpacing(6)
         self.print_label_btn = QPushButton("Print label sheet…")
         self.print_label_btn.clicked.connect(self.print_label_sheet)
-        rl.addWidget(self.print_label_btn)
-
-        checkpoint_row = QHBoxLayout()
         self.stage_combo = QComboBox()
         self.stage_combo.addItems(_CHECKPOINT_STAGES)
-        checkpoint_row.addWidget(self.stage_combo)
         self.record_checkpoint_btn = QPushButton("Record checkpoint")
         self.record_checkpoint_btn.clicked.connect(self.record_checkpoint)
-        checkpoint_row.addWidget(self.record_checkpoint_btn)
-        rl.addLayout(checkpoint_row)
-
-        incident_row = QHBoxLayout()
         self.incident_combo = QComboBox()
         self.incident_combo.addItems(_INCIDENT_STAGES)
-        incident_row.addWidget(self.incident_combo)
         self.flag_incident_btn = QPushButton("Flag incident")
         self.flag_incident_btn.clicked.connect(self.flag_incident)
-        incident_row.addWidget(self.flag_incident_btn)
-        rl.addLayout(incident_row)
-
-        expected_row = QHBoxLayout()
         self.expected_spin = QSpinBox()
         self.expected_spin.setRange(0, 100000)
         self.expected_spin.setSpecialValueText("(not set)")
-        expected_row.addWidget(QLabel("Documents expected in this bundle"))
-        expected_row.addWidget(self.expected_spin)
         self.set_expected_btn = QPushButton("Set")
         self.set_expected_btn.clicked.connect(self.set_expected)
+        actions.addWidget(self.print_label_btn, 0, 0, 1, 2)
+        actions.addWidget(self.stage_combo, 1, 0)
+        actions.addWidget(self.record_checkpoint_btn, 1, 1)
+        actions.addWidget(self.incident_combo, 2, 0)
+        actions.addWidget(self.flag_incident_btn, 2, 1)
+        expected_row = QHBoxLayout()
+        expected_row.addWidget(QLabel("Expected documents"))
+        expected_row.addWidget(self.expected_spin, stretch=1)
         expected_row.addWidget(self.set_expected_btn)
-        expected_row.addStretch(1)
-        rl.addLayout(expected_row)
+        actions.addLayout(expected_row, 3, 0, 1, 2)
+        actions.setColumnStretch(0, 1)
+        actions.setColumnStretch(1, 1)
+        rl.addLayout(actions)
         self.link_earlier_btn = QPushButton("Link earlier documents to their bundles")
         self.link_earlier_btn.setToolTip(
             "Read the saved page images of documents scanned before bundles tracked "
@@ -113,7 +112,10 @@ class CustodyPanel(QWidget):
         self.link_earlier_btn.clicked.connect(self.link_earlier)
         rl.addWidget(self.link_earlier_btn)
 
-        rl.addWidget(QLabel("Reconciliation"))
+        # the three tables get a page each: stacked in one column they were squeezed to
+        # a couple of rows apiece
+        self.views = QTabWidget()
+        self.views.setDocumentMode(True)
         self.recon_table = QTableWidget(0, 10)
         self.recon_table.setHorizontalHeaderLabels(
             ["Bundle", "Status", "Received", "Scanned", "QC", "Storage",
@@ -124,12 +126,15 @@ class CustodyPanel(QWidget):
         self.recon_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.ResizeToContents)
         self.recon_table.horizontalHeader().setStretchLastSection(True)
-        rl.addWidget(self.recon_table, stretch=1)
-
+        recon_page = QWidget()
+        recon_layout = QVBoxLayout(recon_page)
+        recon_layout.setContentsMargins(0, 8, 0, 0)
+        recon_layout.addWidget(self.recon_table, stretch=1)
         self.summary_label = QLabel("")
         self.summary_label.setWordWrap(True)
-        rl.addWidget(self.summary_label)
-        rl.addWidget(QLabel("Documents in this bundle (scanned with its QR label)"))
+        recon_layout.addWidget(self.summary_label)
+        self.views.addTab(recon_page, "Reconciliation")
+
         self.docs_table = QTableWidget(0, 6)
         self.docs_table.setHorizontalHeaderLabels(
             ["Document", "Batch", "Pages", "QC", "Delivery", "Scanned (UTC)"])
@@ -137,9 +142,13 @@ class CustodyPanel(QWidget):
             QHeaderView.ResizeMode.ResizeToContents)
         self.docs_table.horizontalHeader().setStretchLastSection(True)
         self.docs_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        rl.addWidget(self.docs_table, stretch=1)
+        docs_page = QWidget()
+        docs_layout = QVBoxLayout(docs_page)
+        docs_layout.setContentsMargins(0, 8, 0, 0)
+        docs_layout.addWidget(QLabel("Documents scanned with this bundle's QR label"))
+        docs_layout.addWidget(self.docs_table, stretch=1)
+        self.views.addTab(docs_page, "Documents")
 
-        rl.addWidget(QLabel("Timeline (custody + processing)"))
         self.timeline_table = QTableWidget(0, 6)
         self.timeline_table.setHorizontalHeaderLabels(
             ["Time (UTC)", "Source", "Action", "User", "Batch", "Document"])
@@ -148,15 +157,25 @@ class CustodyPanel(QWidget):
         self.timeline_table.horizontalHeader().setStretchLastSection(True)
         self.timeline_table.setEditTriggers(
             QTableWidget.EditTrigger.NoEditTriggers)
-        rl.addWidget(self.timeline_table, stretch=1)
+        timeline_page = QWidget()
+        timeline_layout = QVBoxLayout(timeline_page)
+        timeline_layout.setContentsMargins(0, 8, 0, 0)
+        timeline_layout.addWidget(self.timeline_table, stretch=1)
         self.export_timeline_btn = QPushButton("Export timeline (CSV/PDF)…")
         # exports leave the workstation: same permission as the Reports tab
         self._can_export = current_user is not None and \
             current_user.can("report.export")
         self.export_timeline_btn.setEnabled(self._can_export)
         self.export_timeline_btn.clicked.connect(self.export_timeline)
-        rl.addWidget(self.export_timeline_btn)
-        splitter.addWidget(right)
+        timeline_layout.addWidget(self.export_timeline_btn)
+        self.views.addTab(timeline_page, "Timeline")
+        rl.addWidget(self.views, stretch=1)
+        for table in (self.recon_table, self.docs_table, self.timeline_table):
+            table.setMinimumHeight(160)
+        # on a short screen the actions and tables scroll instead of being squeezed
+        splitter.addWidget(scroll_column(right, 460))
+        splitter.setChildrenCollapsible(False)
+        splitter.setStretchFactor(1, 1)
         splitter.setSizes([280, 620])
 
         self._sync_buttons()
@@ -320,15 +339,20 @@ class CustodyPanel(QWidget):
         if bundle_id is None:
             return
         bundle = dict(self.db.get_bundle(bundle_id))
+        copies, ok = QInputDialog.getInt(
+            self, "Label sheet", "How many QR codes on the page?",
+            1, 1, MAX_LABEL_COPIES)
+        if not ok:
+            return
         path, _ = QFileDialog.getSaveFileName(
             self, "Save label sheet", f"{bundle['label']}_label.pdf",
             "PDF (*.pdf)")
         if not path:
             return
-        generate_label_sheet(bundle, path)
+        generate_label_sheet(bundle, path, copies=copies)
         QMessageBox.information(self, "Label sheet",
-                                f"Saved to {path}. Print it and place it "
-                                "as the first page of this bundle.")
+                                f"Saved to {path} ({copies} QR code(s) on one "
+                                "page). Print it and place it with this bundle.")
 
     def export_timeline(self) -> None:
         if not self._can_export:

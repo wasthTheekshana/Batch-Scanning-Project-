@@ -274,3 +274,22 @@ def test_csv_neutralises_formula_cells(tmp_path):
     assert row["action"].startswith("'=")
     assert row["user"].startswith("'+")
     assert row["detail"].startswith("'@")
+
+
+def test_custody_panel_prints_the_chosen_number_of_qr_codes(
+        qtbot, db, audit, lifecycle, tmp_path, monkeypatch):
+    from PyQt6.QtWidgets import QMessageBox
+    from ui.custody_panel import CustodyPanel
+    out = tmp_path / "label.pdf"
+    monkeypatch.setattr("ui.custody_panel.QInputDialog.getInt",
+                        staticmethod(lambda *a, **k: (4, True)))
+    monkeypatch.setattr("ui.custody_panel.QFileDialog.getSaveFileName",
+                        staticmethod(lambda *a, **k: (str(out), "")))
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    panel = CustodyPanel(db, audit, _panel_user())
+    qtbot.addWidget(panel)
+    panel.bundle_list.setCurrentRow(0)
+    panel.print_label_btn.click()
+    from tests.test_custody import _decode_sheet
+    pages, found = _decode_sheet(out)
+    assert pages == 1 and len(found) == 4
