@@ -1,123 +1,92 @@
-# DOK Scanner — Batch Document Scanning · Auto-QC · Export Platform
+# DOK Scanner — batch document capture, auto-QC and indexing
 
-Fully offline Windows desktop application for batch document scanning with a
-5-stage automatic quality-control pipeline, OCR indexing, rule-based routing,
-and multi-channel export. Built per `DOK_HLD_v2.docx` (Phases 1–3, in
-progress toward go-live).
+A Windows desktop application for capturing batches of documents: it scans or imports them,
+separates them into documents, cleans and quality-checks every page, reads the index fields
+(including handwriting), lets staff correct what needs it, delivers a PDF with its index file, and
+keeps a chain-of-custody record of physical boxes. An optional **central service** lets an
+administrator manage projects for many PCs. Scanning works fully offline.
+
+Current version: see `version.py` and `CHANGELOG.md`. Status, known limits and what is next:
+`docs/RELEASE_NOTES.md` and `docs/ROADMAP.md`.
+
+## Documents
+
+| Read | If you are |
+|---|---|
+| `docs/OPERATOR_MANUAL.md` | scanning, checking and indexing documents every day |
+| `docs/ADMIN_GUIDE.md` | managing users, projects, backups, the word lists, the central connection |
+| `docs/INSTALL_GUIDE.md` | installing or upgrading on a PC; deploying the central service |
+| `docs/CENTRAL_API.md` | calling the central service (generated from its code) |
+| `central/README.md`, `central/deploy/DEPLOY.md` | running the central service |
+| `docs/RELEASE_PROCESS.md` | making a release |
+| `docs/INDEXING_SETUP.md` | setting up index fields for a new project |
+| `docs/UAT-checklist.md`, `docs/DEMO_SCRIPT.md` | acceptance testing and the bank demo |
+| `docs/GAP_ANALYSIS.md`, `docs/ROADMAP.md` | what is missing and the order to build it |
+| `docs/security/` | threat model, SAST report, security testing scope |
 
 ## Stack
 
-Python 3.11 · PyQt6 · OpenCV · Pillow · numpy · pytesseract · pyzbar ·
-img2pdf · reportlab · SQLite (WAL, SQLCipher) · paramiko (SFTP)
+Python 3.11 · PyQt6 · OpenCV · numpy · Tesseract (printed text) · TrOCR via onnxruntime (handwriting) ·
+pyzbar · img2pdf · reportlab · PyMuPDF · SQLite with SQLCipher · paramiko (SFTP) · pytwain (scanner).
+Central service: FastAPI · SQLAlchemy · Alembic · PostgreSQL.
 
 ## Development setup
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\pip install -r requirements-dev.txt   # runtime + test + build tools
-.\.venv\Scripts\python -m pytest        # run test suite
-.\.venv\Scripts\python scriptsun_tests.py          # quick run (about 1.5 min): parallel, skips the slow real-OCR tests
-.\.venv\Scripts\python scriptsun_tests.py --all    # everything, in parallel (about 2.5 min): run before a release build
-.\.venv\Scripts\python main.py          # launch the app (first login admin / admin; you must set a new password at once)
+.\.venv\Scripts\pip install -r requirements-dev.txt     # runtime + test + build tools
+.\.venv\Scripts\python scripts\fetch_models.py           # the handwriting model (about 250 MB, not in git)
+.\.venv\Scripts\python main.py                           # start the app (first sign-in: admin / admin, then you must change it)
 ```
 
-Tesseract 5 must be on PATH for OCR features (bundled in the packaged EXE).
+Tesseract 5 must be on PATH for the OCR features (it is bundled in a release build).
 
-## Layout (HLD §16)
+| Task | Command |
+|---|---|
+| Quick tests (about 1.5 minutes, parallel, skips the slow real-OCR tests) | `python scripts\run_tests.py` |
+| All tests (run before a release) | `python scripts\run_tests.py --all` |
+| Lint and type checks | `ruff check .` and `mypy` (configured in `pyproject.toml`) |
+| Look at every screen at a given window size | `python scripts\ui_snapshots.py DATA_COPY_DIR OUT_DIR 1280x720` |
+| How well are fields read from real forms? | `python scripts\index_accuracy.py SAMPLE_DIR` |
+| Central service tests | `python -m pytest tests\central` |
+
+The same checks run in CI (`.github/workflows/ci.yml`).
+
+## Layout
 
 | Package | Purpose |
 |---|---|
-| `core/` | job queue pipeline, project config, RBAC, event bus, models |
-| `data/` | SQLite layer, audit logging |
-| `scanning/` | scanner sources (TWAIN/WIA), file import, hot folder |
-| `imaging/` | deskew, crop, enhance, blank detection |
-| `separation/` | barcode/blank/zone splitters, rule engine JSON DSL |
-| `qc/` | 5 QC stages + score engine |
-| `ocr/` | Tesseract wrapper, zone field extraction, duplicate detection |
-| `export/` | PDF/TIFF writers, filename templates, batch exporter |
-| `delivery/` | local folder channel + SFTP/CD-DVD stubs (Phase 3) |
-| `ui/` | PyQt6 panels: scan wizard, viewer, QC review, index editor, job monitor |
-| `custody/` | bundle/box chain-of-custody tracking (Enhancement Plan §3.2) |
+| `core/` | the pipeline (`job_queue.py` and its mixins), project settings, users and roles, document split/merge |
+| `data/` | the encrypted SQLite layer, backup, key store, audit log |
+| `scanning/` | scanners (TWAIN, WIA, vendor SDK stubs), file import, hot folder |
+| `imaging/` | deskew, crop, enhancement, blank-page detection |
+| `separation/` | barcode, blank-page and zone separation, the rule engine |
+| `qc/` | the quality-control stages and score |
+| `ocr/` | Tesseract wrapper, zone and box reading, handwriting reader and its corrections, document types |
+| `export/` | PDF/TIFF writers, file names, index files |
+| `delivery/` | local folder, SFTP, CD/DVD |
+| `custody/` | chain-of-custody bundles and timeline |
+| `ui/` | the PyQt6 screens |
+| `central/` | the central service (API, dashboard, migrations, deployment files) |
+| `scripts/` | build, release, measuring and one-off tools |
+| `installer/` | the Inno Setup script |
 
-## Phase status
-
-- **Phase 1 (core)** — complete: pipeline, 5-stage QC, OCR, export, local delivery, UI.
-- **Phase 2 (enhanced)** — complete: bcrypt auth, DPAPI keystore, SQLCipher
-  encrypted DB (auto-migrates a plaintext Phase 1 DB on startup), encrypted
-  scheduled backups with restore, admin panel, workflow designer, vendor SDK
-  scaffolding (drop vendor DLLs into `vendor_sdks/`).
-- **Phase 3 (new modules)** — complete: real SFTP delivery (paramiko, LAN
-  only, retry + size verification), CD/DVD burn queue with checksum verify
-  and disc log (configure `burner_cmd` for ImgBurn/cdrecord; note: only the
-  startup project's disc queue can be burned in the Admin tab, so do not
-  enable CD/DVD delivery on other projects yet), multi-channel
-  delivery incl. rule-triggered channels, benchmark suite
-  (`python scripts/benchmark.py --pages 100 [--ocr]`; dev machine:
-  141 pages/min no-OCR, 115 pages/min with OCR).
-- **Layer 5 indexing (HLD §4)** — complete: indexing work queue with page
-  preview, zone-based auto-extract that searches every page and scales
-  resolution-independently, live zone-test/regex diagnosis in the workflow
-  designer (PDF or image samples, 300 DPI), and lookup-table validation
-  of extracted values against previously-indexed history.
-- **QC & reporting** — complete: manual page editor (rotate/crop/whiteout/
-  enhance, audit-logged), QC review "All documents" filter, reports tab
-  with QC report PDF export.
-- **Chain-of-custody tracking** — complete: QR-coded bundle label
-  sheets, auto-logged scanning checkpoint on scan, manual receipt/prep/
-  QC/storage/return checkpoints, reconciliation view with mismatch
-  flagging, and an escalation hook for damaged/missing/compromised
-  bundles (`docs/DOK_Scanner_Enhancement_Plan (1).docx` §3.2).
-- **Project templates** — complete: five built-in starter templates
-  (Banking, Insurance, HR/Personnel, Legal/Contracts, Invoices) plus
-  "Save as template" so admins can turn any configured project into a
-  reusable starting point for the next one
-  (`docs/DOK_Scanner_Enhancement_Plan (1).docx` §4.4, generalized beyond
-  banking-only per project direction).
-- **QC strictness profiles** — complete: a one-click Strict/Standard/
-  Lenient preset in the Workflow Designer sets pass score, blur, and DPI
-  thresholds together for document sensitivity (e.g. legal/financial vs
-  routine correspondence); DPI WARN/FAIL thresholds are now editable in
-  the UI (previously only configurable via the raw project JSON)
-  (`docs/DOK_Scanner_Enhancement_Plan (1).docx` §4.3 — the "sample QC
-  report format" half of this item is already satisfied by the existing
-  Reports tab's per-document QC score/status export).
-- **Reporting: rejection/rescan rate** — complete: explicit rejection-rate
-  and rescan-rate summary metrics on the Reports tab and in the QC
-  report PDF, not just derivable from raw data. Notably, "reject" and
-  "rescan" QC decisions both collapse to the same `validation_status`
-  value (`rejected`) — the rates are computed from the original decision
-  preserved in the audit log, per document's *latest* review
-  (`docs/DOK_Scanner_Enhancement_Plan (1).docx` §4.6 — the "location/site
-  as a report dimension" half of this item is deferred along with
-  Multi-Site Consolidation §3.3: a location field with no multi-site
-  aggregation behind it would be a hollow label in a single-site
-  deployment, so it's tied to that work rather than added standalone).
-- **Central sync client** — complete: Admin > Central enrols the PC with a
-  one-time code (enrollment is per Windows account: the key is DPAPI-protected
-  and the data lives under that user's `%LOCALAPPDATA%`). Assigned projects are
-  pulled in the background and apply to the next scan batch (no restart;
-  the Central tab says so). Central owns processing settings; the PC keeps its own
-  scanner / export / delivery. A project new to the PC has those three sections
-  seeded from the PC's previous project (the first active project that central
-  does not manage), so scans keep going to the same place, and they stay
-  editable for a managed project in the Workflow Designer (everything else is
-  read-only there).
-- **Remaining before go-live** — bundle `tesseract.exe`/`tessdata`/
-  `libzbar-64.dll` into the release build (blocked on binaries), vendor
-  SDK `acquire()` bodies for Kodak/Alaris/CZUR/Viisan (blocked on vendor
-  DLLs), code-signing cert, Inno Setup installer compile + verify, client
-  UAT sign-off (`docs/UAT-checklist.md`).
-- Phase 4 (on-premise LLM assistant + client web portal) is out of scope
-  per the HLD and deferred to a future release.
-
-## Packaging
-
-PyInstaller one-file build via `docscanner.spec` (see HLD §21):
+## Building
 
 ```powershell
-.\.venv\Scripts\pyinstaller docscanner.spec --noconfirm
+.\.venv\Scripts\python scripts\release.py     # checks, tests, builds exe + installer, self-test, checksums
+.\.venv\Scripts\python scripts\install_test.py   # silent install / uninstall on an empty profile
 ```
 
-For a release build, place `tesseract.exe`, `tessdata/` and
-`libzbar-64.dll` next to the spec first so OCR and barcode decoding work
-on machines without those components installed.
+`release.py` needs Inno Setup 6. The release build bundles `tesseract.exe`, `tessdata` and
+`libzbar-64.dll` when they are next to `docscanner.spec`; the handwriting model is copied from
+`models\trocr` by the installer. The installer is **not yet code-signed**. Details:
+`docs/RELEASE_PROCESS.md`.
+
+## What is not done
+
+See `docs/RELEASE_NOTES.md` (known limitations) and `docs/GAP_ANALYSIS.md`. In short: handwriting is read
+well but not perfectly and needs the bank's own branch list; only some bank forms have defined field
+positions; no automatic data retention; no code-signing certificate; multi-site consolidation, a mobile
+client and Sinhala/Tamil recognition are not built. Phase 4 (an on-premise assistant and client web portal)
+is out of scope for this release.

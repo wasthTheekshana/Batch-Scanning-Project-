@@ -21,7 +21,7 @@ USER dokcentral
 
 EXPOSE 8000
 # CENTRAL_WORKERS stays 1 for the very first start on an empty database (the
-# tables are created then), and can be raised afterwards.
+# migrations run then), and can be raised afterwards.
 CMD ["sh", "-c", "exec uvicorn central.app:create_app_from_env --factory --host 0.0.0.0 --port 8000 --workers ${CENTRAL_WORKERS:-1} --proxy-headers --forwarded-allow-ips='*'"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

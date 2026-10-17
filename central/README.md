@@ -35,12 +35,16 @@ rules those files implement.
 - The deployment MUST include `core/profile_manager.py` and
   `core/project_schema.json`: `central` imports them to validate project
   configs. Shipping `central/` alone fails at import time.
-- On an empty Postgres, start the FIRST time with ONE worker
-  (`--workers 1`) so the `create_all()` DDL does not race between workers;
-  scale workers afterwards.
-- `create_all()` never alters existing tables. At the first production deploy
-  generate an Alembic baseline from the models and `alembic stamp` it, so
-  later schema changes are migrations.
+- The schema is managed by Alembic migrations (`central/migrations/`). Starting the service brings the
+  database to the latest one: an empty database gets every migration, a database made by the earlier
+  `create_all()` is recognised as the baseline (stamped, nothing changed) and upgraded, and one already
+  under migration gets the ones it lacks. On an empty Postgres start the first time with ONE worker
+  (`--workers 1`) so two workers do not migrate at once; scale afterwards.
+- To change the schema edit `central/models.py`, run `python -m central.manage new-migration "what changed"`,
+  review and commit the file written in `central/migrations/versions/`.
+  `python -m central.manage db-status` reports the version and any drift from the models (the test
+  `tests/central/test_migrations.py` fails on drift); `python -m central.manage migrate` migrates without
+  starting the service.
 
 ## Enrolling a PC
 
@@ -78,10 +82,9 @@ rules those files implement.
 
 ## Operational notes
 
-- Tables are created with `create_all()`; see "Deployment requirements" for
-  the Alembic baseline.
-- Not available yet (needed by dashboard plan 3): admin password reset or
-  disable, "revoke all sessions", PC deletion, and an audit-log read API.
+- Tables are created and changed by migrations; see "Deployment requirements".
+- Built for the dashboard (see the table below and `docs/CENTRAL_API.md`): admin password reset,
+  disable/enable/unlock, "revoke all sessions", PC deletion and the audit-log read API.
 - Audit text can contain user-supplied characters: any UI that shows it MUST
   render it as plain text (never HTML).
 - `audit_events` grows by one row per PC poll (default every 10 minutes);

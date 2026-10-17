@@ -56,10 +56,14 @@ start.
 ### Infrastructure Vulnerability Assessment
 
 **Applies to:** any server/network infrastructure hosting a
-consolidation/aggregation service. **None currently exists** — the shipped
-product is a single-machine desktop application with no server component.
-**Cadence:** first run required once such infrastructure exists (tied to
-§3.3 Multi-Site Consolidation, currently deferred).
+consolidation/aggregation service. **Updated 2026-10-17:** a server component now
+exists: the central service (`central/`, deployed with Docker Compose, PostgreSQL and a TLS
+proxy per `central/deploy/DEPLOY.md`). It holds project settings and PC enrolments, no
+documents. Its application and proxy behaviour are tested (`tests/central/`,
+`scripts/check_tls.py`), but **no infrastructure vulnerability assessment of a real deployment
+(host, database, proxy) has been run yet: it is due before go-live.** Document and index
+consolidation across sites (§3.3 Multi-Site Consolidation) is still deferred.
+**Cadence:** first run required before the central service is used with real customer data.
 
 ### Security Logging and Monitoring
 
