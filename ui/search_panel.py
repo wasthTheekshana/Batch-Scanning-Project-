@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import QDate, Qt, QUrl, pyqtSignal
+from PyQt6.QtCore import QDate, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDateEdit, QDialog,
                              QFileDialog, QHBoxLayout, QHeaderView, QLabel,

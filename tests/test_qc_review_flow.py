@@ -4,7 +4,6 @@ in the panel (incl. after restart), show before/after images, and
 import json
 from pathlib import Path
 
-import cv2
 import pytest
 
 from core.job_queue import Pipeline

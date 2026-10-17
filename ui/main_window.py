@@ -6,7 +6,7 @@ import logging
 
 from PyQt6.QtCore import QSize, Qt, pyqtSlot
 from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QMainWindow, QMessageBox,
-                             QPushButton, QTabWidget, QVBoxLayout, QWidget)
+                             QPushButton, QVBoxLayout, QWidget)
 
 from core.project_runtime import ProjectUnavailable
 from core.project_store import load_config, readable_projects

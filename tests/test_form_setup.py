@@ -1,7 +1,6 @@
 """Setting up a form from a blank copy: anchor words are learned in the Designer."""
 import cv2
 import numpy as np
-import pytest
 
 from ocr.sample import describe, learn_anchors, load_sample_image
 

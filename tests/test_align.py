@@ -1,7 +1,6 @@
 """Lining zones up with a scan of the form (ocr.align) and the digit model."""
 import cv2
 import numpy as np
-import pytest
 
 from ocr.align import (build_anchors, dewarp, estimate_transform, map_zone,
                        rotation_degrees)

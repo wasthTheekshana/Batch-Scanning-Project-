@@ -222,7 +222,7 @@ class WIASource(BaseScannerSource):
                 WIA_DPS_DOCUMENT_HANDLING_CAPABILITIES)
             duplex = bool(caps is not None and int(caps.Value) & CAP_DUPLEX)
         except Exception:
-            pass
+            log.debug("the WIA device did not report its handling capabilities", exc_info=True)
         return ScannerCapabilities(max_dpi=600, supports_duplex=duplex,
                                    supports_adf=True)
 

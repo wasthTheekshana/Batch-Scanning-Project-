@@ -2,7 +2,6 @@
 import json
 
 import cv2
-import numpy as np
 import pytest
 
 from core.hot_folder import OPERATOR, HotFolderService
@@ -124,7 +123,6 @@ def test_subfolders_are_not_watched(env):
 
 
 def test_the_schema_accepts_the_setting():
-    import jsonschema
     schema = json.loads(open("core/project_schema.json", encoding="utf-8").read())
     props = schema["properties"]["scanner"]["properties"]["hot_folder"]["properties"]
     assert set(props) == {"enabled", "path"}

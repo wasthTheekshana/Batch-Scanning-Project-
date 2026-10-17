@@ -62,7 +62,7 @@ def _destroy_window(hwnd: int) -> None:
             import win32gui
             win32gui.DestroyWindow(hwnd)
         except Exception:
-            pass
+            log.debug("could not destroy the hidden TWAIN window", exc_info=True)
 
 
 def _png(bmp: bytes) -> bytes:
@@ -121,7 +121,7 @@ class TWAINSource(BaseScannerSource):
         try:
             duplex = int(self._source.GetCapability(tw.CAP_DUPLEX)[1]) > 0
         except Exception:
-            pass
+            log.debug("the TWAIN driver did not report a duplex capability", exc_info=True)
         return ScannerCapabilities(max_dpi=600, supports_duplex=duplex, supports_adf=True)
 
     # -- scanning ----------------------------------------------------------------
@@ -213,7 +213,7 @@ class TWAINSource(BaseScannerSource):
                 if obj is not None:
                     obj.destroy()
             except Exception:
-                pass
+                log.debug("closing a TWAIN object failed (ignored)", exc_info=True)
         _destroy_window(self._hwnd)
         self._source = self._sm = None
         self._hwnd = 0

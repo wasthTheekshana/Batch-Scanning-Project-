@@ -3,7 +3,7 @@ import pytest
 
 from core.models import new_id
 from data.db import Database
-from custody.bundle_manager import create_bundle, record_checkpoint, VALID_STAGES
+from custody.bundle_manager import create_bundle, record_checkpoint
 
 
 @pytest.fixture()
@@ -202,7 +202,6 @@ def test_flag_incident_rejects_unknown_kind(db):
         flag_incident(db, bundle["bundle_id"], "on_fire", "alice")
 
 
-from PyQt6.QtCore import Qt
 
 
 @pytest.fixture()

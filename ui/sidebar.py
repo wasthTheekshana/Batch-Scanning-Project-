@@ -17,6 +17,14 @@ COMPACT_BELOW = 1120
 RAIL_WIDE, RAIL_COMPACT = 218, 64
 
 
+def _restyle(widget: QWidget) -> None:
+    """Re-apply the stylesheet after a dynamic property changed."""
+    style = widget.style()
+    if style is not None:
+        style.unpolish(widget)
+        style.polish(widget)
+
+
 class SideNav(QWidget):
     currentChanged = pyqtSignal(int)
 
@@ -152,11 +160,9 @@ class SideNav(QWidget):
         for button, text in zip(self._buttons, self._texts):
             button.setText("" if self._compact else text)
             button.setProperty("compact", self._compact)
-            button.style().unpolish(button)
-            button.style().polish(button)
+            _restyle(button)
         self.rail.setProperty("compact", self._compact)
-        self.rail.style().unpolish(self.rail)
-        self.rail.style().polish(self.rail)
+        _restyle(self.rail)
         for slot in (self._brand_slot, self._footer_slot):
             for i in range(slot.count()):
                 w = slot.itemAt(i).widget()

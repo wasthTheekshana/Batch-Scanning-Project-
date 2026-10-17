@@ -1,6 +1,6 @@
 """Tests for SafeStr validator (rejects lone surrogates)."""
 import pytest
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ValidationError
 
 from central.routes_admin_pcs import PcIn
 from central.textsafe import SafeStr

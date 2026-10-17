@@ -20,10 +20,7 @@ application's data. A TWAIN scan that gets no answer is stopped cleanly after
 from __future__ import annotations
 
 import argparse
-import ctypes
 import sys
-import tempfile
-import threading
 import time
 from pathlib import Path
 

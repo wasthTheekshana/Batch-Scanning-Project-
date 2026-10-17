@@ -1,9 +1,7 @@
 """The central database is managed by migrations: a fresh one is built from the baseline, an
 older create_all() one is adopted, later changes are applied, and models and migrations cannot
 drift apart unnoticed."""
-import sqlite3
 
-import pytest
 from sqlalchemy import create_engine, inspect, text
 
 from central import migrate

@@ -72,7 +72,7 @@ def install(log_dir: str | Path,
             try:
                 show("DOK Scanner", describe(exc_type))
             except Exception:
-                pass
+                log.debug("could not show the crash message", exc_info=True)
             finally:
                 _guard["busy"] = False
 

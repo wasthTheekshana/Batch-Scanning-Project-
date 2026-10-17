@@ -65,7 +65,7 @@ def why_not_editable(row) -> str:
 
 
 def _types_of(pages: dict[str, dict]) -> str:
-    seen = [pages[n].get("doc_type") for n in sorted(pages, key=int) if pages[n].get("doc_type")]
+    seen: list[str] = [pages[n]["doc_type"] for n in sorted(pages, key=int) if pages[n].get("doc_type")]
     return ", ".join(dict.fromkeys(seen))
 
 

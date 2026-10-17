@@ -332,7 +332,6 @@ def run_bank() -> int:
     import _harness as h
     sandbox = KIT / "sandbox_bank"
     h.setup_env(sandbox)
-    shots = KIT / "screens_bank"
     report = h.Report()
 
     def scenario(app, win):

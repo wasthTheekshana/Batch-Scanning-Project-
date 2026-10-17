@@ -165,14 +165,16 @@ class Session:
 
 # -- user management (Admin panel backend, Phase 2) ---------------------------
 
-def _require(actor: User | None, permission: str) -> None:
+def _require(actor: User | None, permission: str) -> User:
+    """The actor, once known to hold `permission`; AuthError otherwise."""
     if actor is None or not actor.can(permission):
         raise AuthError(f"permission denied: {permission}")
+    return actor
 
 
 def create_user(db, actor: User | None, username: str, password: str,
                 role: str) -> str:
-    _require(actor, "user.manage")
+    actor = _require(actor, "user.manage")
     if role not in ROLE_PERMISSIONS:
         raise ValueError(f"unknown role: {role}")
     if db.get_user(username) is not None:
@@ -187,7 +189,7 @@ def create_user(db, actor: User | None, username: str, password: str,
 
 def unlock_user(db, actor: User | None, username: str) -> None:
     """Let a locked account sign in again now (an administrator's decision)."""
-    _require(actor, "user.manage")
+    actor = _require(actor, "user.manage")
     db.clear_login_failures(username)
     db.append_audit(None, actor.username, "account_unlocked", {"username": username})
 
@@ -215,14 +217,14 @@ def verify_session_password(db, username: str, password: str) -> bool:
 
 def set_user_active(db, actor: User | None, username: str,
                     active: bool) -> None:
-    _require(actor, "user.manage")
+    actor = _require(actor, "user.manage")
     db.set_user_active(username, active)
     db.append_audit(None, actor.username, "user_set_active",
                     {"username": username, "active": active})
 
 
 def set_user_role(db, actor: User | None, username: str, role: str) -> None:
-    _require(actor, "user.manage")
+    actor = _require(actor, "user.manage")
     if role not in ROLE_PERMISSIONS:
         raise ValueError(f"unknown role: {role}")
     db.set_user_role(username, role)
@@ -232,7 +234,7 @@ def set_user_role(db, actor: User | None, username: str, role: str) -> None:
 
 def reset_password(db, actor: User | None, username: str,
                    new_password: str) -> None:
-    _require(actor, "user.manage")
+    actor = _require(actor, "user.manage")
     validate_new_password(new_password, username)
     db.set_password_hash(username, hash_password(new_password))
     db.append_audit(None, actor.username, "password_reset",

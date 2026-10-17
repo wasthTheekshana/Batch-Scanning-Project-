@@ -46,7 +46,7 @@ def put(db, tmp_path, pid="proj-a", **kw):
 
 
 def test_resolve_builds_runtime_from_the_stored_config(db, resolver, tmp_path):
-    cfg = put(db, tmp_path, fmt="tiff", dpi=600)
+    put(db, tmp_path, fmt="tiff", dpi=600)
     rt = resolver.resolve("proj-a")
     assert isinstance(rt, ProjectRuntime)
     assert rt.project_id == "proj-a"

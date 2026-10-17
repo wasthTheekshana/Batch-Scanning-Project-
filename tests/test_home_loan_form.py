@@ -1,12 +1,10 @@
 """The Commercial Bank home loan application: its own zones and anchors, and the
 box reader on pale or dotted box lines (found on a real Kodak S3060 scan)."""
-import re
 import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
-import pytest
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))

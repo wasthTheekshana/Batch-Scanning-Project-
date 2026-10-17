@@ -1,0 +1,26 @@
+# Tooling configuration (the application itself is built by docscanner.spec).
+[tool.ruff]
+line-length = 120
+extend-exclude = [".venv", "build", "dist", "models", "vendor_sdks", "tessdata"]
+
+[tool.ruff.lint]
+# Real mistakes only: syntax errors (E9) and pyflakes (unused or undefined names, redefinitions).
+# Style rules are not enforced; the project predates a formatter and a style fight is not worth it.
+select = ["E9", "F", "S110"]    # S110: an error must never be swallowed silently (log it, even at debug level)
+
+[tool.ruff.lint.per-file-ignores]
+# the self-test imports modules only to prove they were bundled, and holds the Qt application alive
+"main.py" = ["F401", "F841"]
+# one-off hardware probes try things that are expected to fail
+"scripts/*probe*.py" = ["S110"]
+# pytest fixtures are imported from another module and used as arguments
+"tests/*" = ["F811"]
+"tests/**/*" = ["F811"]
+
+[tool.mypy]
+# Type checking is applied to the newer modules, which are written with annotations. The older
+# code is not annotated everywhere; widening this list is the way to adopt it gradually.
+python_version = "3.11"
+ignore_missing_imports = true
+files = ["core/doc_edit.py", "ocr/fieldfix.py", "ocr/handwriting.py", "central/migrate.py",
+         "ui/flow.py", "ui/sidebar.py", "ui/idle_lock.py", "version.py"]

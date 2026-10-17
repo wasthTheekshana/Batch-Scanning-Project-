@@ -1,6 +1,5 @@
 """Downloading search results as CSV."""
 import csv
-import io
 
 import pytest
 

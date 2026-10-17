@@ -157,7 +157,7 @@ def test_main_window_has_a_search_tab_that_opens_the_index(qtbot, db, tmp_path):
     from core.event_bus import EventBus
     from core.profile_manager import ProfileManager
     from ui.main_window import MainWindow
-    user = login_as(db, "admin")
+    login_as(db, "admin")
     win = MainWindow(db, ProfileManager(tmp_path / "profiles"), EventBus(), staging_dir=tmp_path / "staging")
     qtbot.addWidget(win)
     names = [win.tabs.tabText(i) for i in range(win.tabs.count())]

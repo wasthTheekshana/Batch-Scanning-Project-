@@ -4,13 +4,13 @@ instead of forcing the window to be as wide as one long row (Qt's standard
 from __future__ import annotations
 
 from PyQt6.QtCore import QPoint, QRect, QSize, Qt
-from PyQt6.QtWidgets import QLayout, QSizePolicy
+from PyQt6.QtWidgets import QLayout
 
 
 class FlowLayout(QLayout):
     def __init__(self, parent=None, spacing: int = 8):
         super().__init__(parent)
-        self._items = []
+        self._items: list = []
         self._spacing = spacing
         self.setContentsMargins(0, 0, 0, 0)
 

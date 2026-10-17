@@ -83,7 +83,6 @@ def test_create_admin_enforces_password_length_and_uniqueness(app):
 def test_login_rejects_surrogate_in_password(client, admin):
     # Test posting a raw JSON body with a lone surrogate escape sequence
     # httpx's json= parameter may refuse to encode it, so we use a raw body
-    import json
     body_with_surrogate = '{"username": "root", "password": "\\ud800"}'
     r = client.post(
         "/admin/login",
@@ -95,7 +94,6 @@ def test_login_rejects_surrogate_in_password(client, admin):
 
 def test_login_rejects_surrogate_in_username(client, admin):
     # Test posting a raw JSON body with a lone surrogate escape sequence
-    import json
     body_with_surrogate = '{"username": "\\ud800", "password": "x"}'
     r = client.post(
         "/admin/login",

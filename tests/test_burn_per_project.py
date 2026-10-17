@@ -1,6 +1,5 @@
 """The CD/DVD tab burns the queue of whichever project is chosen, not only the
 project that was open when the application started."""
-import json
 import sys
 
 import pytest

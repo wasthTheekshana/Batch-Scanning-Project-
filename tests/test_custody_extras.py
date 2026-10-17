@@ -1,6 +1,5 @@
 """Custody extras: an expected document count per bundle, and linking documents
 that were scanned before bundles tracked their documents."""
-import json
 
 import cv2
 import numpy as np

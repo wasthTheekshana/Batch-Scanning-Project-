@@ -3,7 +3,6 @@ import threading
 
 import cv2
 import numpy as np
-import pytest
 
 from scanning.base import ScannerUnavailable
 from ui.scan_wizard import ScanWizard

@@ -22,7 +22,6 @@ temp folder (printed) so the difference can be looked at.
 from __future__ import annotations
 
 import argparse
-import glob
 import os
 import sys
 import tempfile

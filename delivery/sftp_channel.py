@@ -123,7 +123,7 @@ class SFTPChannel(BaseDeliveryChannel):
                 sftp.close()
                 transport.close()
             except Exception:
-                pass
+                log.debug("closing the SFTP connection failed (ignored)", exc_info=True)
 
     @staticmethod
     def _mkdirs(sftp, remote_dir: str) -> None:

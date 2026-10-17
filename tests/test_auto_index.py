@@ -6,7 +6,7 @@ import pytest
 
 from data.db import Database
 from ocr.tesseract_engine import OCRResult
-from tests.test_pipeline import (build_pipeline, make_profile, wait_for,
+from tests.test_pipeline import (make_profile, wait_for,
                                  write_pages)
 
 

@@ -1,0 +1,73 @@
+# Checks that run on every push and pull request. A change is mergeable when all jobs are green
+# (turn on "require status checks" for the main branch in the repository settings).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint and types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install ruff mypy
+      - run: ruff check .
+      - run: mypy
+      - name: Version, installer script and changelog agree
+        run: python scripts/release.py --check
+
+  desktop:
+    name: Desktop tests (Windows)
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: pip }
+      - name: Tesseract (the OCR engine some tests run)
+        run: |
+          choco install tesseract -y --no-progress
+          echo "C:\Program Files\Tesseract-OCR" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - run: pip install -r requirements-dev.txt pytest-xdist
+      - name: Quick tests (the slow real-OCR tests are left for the release build)
+        run: python scripts/run_tests.py
+
+  central:
+    name: Central service tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dokcentral
+          POSTGRES_PASSWORD: ci-password
+          POSTGRES_DB: dokcentral
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U dokcentral" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      CENTRAL_DATABASE_URL: postgresql+psycopg://dokcentral:ci-password@localhost:5432/dokcentral
+      CENTRAL_SESSION_SECRET: ci-session-secret-0123456789abcdef0123456789
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: pip }
+      - run: pip install -r central/requirements.txt pytest pytest-xdist
+      - name: Tests (SQLite)
+        run: python -m pytest tests/central -n auto -q
+      - name: Migrations on a real PostgreSQL, and no drift between models and migrations
+        run: |
+          python -m central.manage migrate
+          python -m central.manage db-status
