@@ -101,6 +101,20 @@ def page_zone_groups(ocr_cfg: dict, text: str
     return groups, doc_type["name"]
 
 
+def enhancement_for(ocr_cfg: dict, base: dict | None, type_name: str | None) -> dict:
+    """The image enhancement settings for a page of this document type: the project's
+    settings, with whatever the type itself overrides (a handwritten form may want gentler
+    treatment than a printed invoice)."""
+    profile = dict(base or {})
+    if type_name:
+        for doc_type in document_types(ocr_cfg):
+            if doc_type.get("name") == type_name:
+                profile.update({k: v for k, v in (doc_type.get("enhancement_profile") or {}).items()
+                                if k != "target_dpi"})
+                break
+    return profile
+
+
 def all_zones(ocr_cfg: dict) -> list[dict]:
     """Every field the project can produce (common + each type's), first
     definition of a name wins. This is the Index tab's form."""

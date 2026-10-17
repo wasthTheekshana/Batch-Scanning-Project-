@@ -2,148 +2,422 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "DOK Scanner project configuration",
   "type": "object",
-  "required": ["project_id", "name", "version", "status", "scanner",
-               "enhancement_profile", "separation", "qc", "ocr",
-               "export", "delivery", "features"],
+  "required": [
+    "project_id",
+    "name",
+    "version",
+    "status",
+    "scanner",
+    "enhancement_profile",
+    "separation",
+    "qc",
+    "ocr",
+    "export",
+    "delivery",
+    "features"
+  ],
   "properties": {
-    "project_id": {"type": "string", "minLength": 1},
-    "name": {"type": "string", "minLength": 1},
-    "version": {"type": "integer", "minimum": 1},
-    "cloned_from": {"type": ["string", "null"]},
-    "status": {"enum": ["active", "inactive", "archived"]},
-    "created": {"type": "string"},
+    "project_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "cloned_from": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "enum": [
+        "active",
+        "inactive",
+        "archived"
+      ]
+    },
+    "created": {
+      "type": "string"
+    },
     "scanner": {
       "type": "object",
-      "required": ["dpi", "color", "duplex", "sdk"],
+      "required": [
+        "dpi",
+        "color",
+        "duplex",
+        "sdk"
+      ],
       "properties": {
-        "dpi": {"type": "integer", "minimum": 75, "maximum": 1200},
-        "color": {"enum": ["bw", "grayscale", "color"]},
-        "duplex": {"type": "boolean"},
-        "sdk": {"enum": ["twain", "wia", "folder", "file", "kodak", "alaris", "czur", "viisan"]},
+        "dpi": {
+          "type": "integer",
+          "minimum": 75,
+          "maximum": 1200
+        },
+        "color": {
+          "enum": [
+            "bw",
+            "grayscale",
+            "color"
+          ]
+        },
+        "duplex": {
+          "type": "boolean"
+        },
+        "sdk": {
+          "enum": [
+            "twain",
+            "wia",
+            "folder",
+            "file",
+            "kodak",
+            "alaris",
+            "czur",
+            "viisan"
+          ]
+        },
         "hot_folder": {
           "type": "object",
           "properties": {
-            "enabled": {"type": "boolean"},
-            "path": {"type": "string"}
+            "enabled": {
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string"
+            }
           }
         }
       }
     },
     "enhancement_profile": {
       "type": "object",
-      "required": ["deskew", "crop", "clahe", "despeckle", "whiten_bg", "target_dpi"],
+      "required": [
+        "deskew",
+        "crop",
+        "clahe",
+        "despeckle",
+        "whiten_bg",
+        "target_dpi"
+      ],
       "properties": {
-        "deskew": {"type": "boolean"},
-        "crop": {"type": "boolean"},
-        "clahe": {"type": "boolean"},
-        "despeckle": {"type": "boolean"},
-        "whiten_bg": {"type": "boolean"},
-        "target_dpi": {"type": "integer", "minimum": 75}
+        "deskew": {
+          "type": "boolean"
+        },
+        "crop": {
+          "type": "boolean"
+        },
+        "clahe": {
+          "type": "boolean"
+        },
+        "despeckle": {
+          "type": "boolean"
+        },
+        "whiten_bg": {
+          "type": "boolean"
+        },
+        "target_dpi": {
+          "type": "integer",
+          "minimum": 75
+        }
       }
     },
     "separation": {
       "type": "object",
-      "required": ["strategy"],
+      "required": [
+        "strategy"
+      ],
       "properties": {
         "strategy": {
           "type": "array",
-          "items": {"enum": ["barcode", "blank_page", "zone", "fixed_pages", "document_type"]}
+          "items": {
+            "enum": [
+              "barcode",
+              "blank_page",
+              "zone",
+              "fixed_pages",
+              "document_type"
+            ]
+          }
         },
-        "barcode_types": {"type": "array", "items": {"type": "string"}},
-        "barcode_role": {"type": "string",
-                         "enum": ["first_page", "cover_sheet", "auto"]},
-        "barcode_pattern": {"type": "string"},
-        "drop_blank_pages": {"type": "boolean"},
-        "drop_blank_threshold": {"type": "number", "minimum": 0, "maximum": 0.05},
-        "cover_max_chars": {"type": "integer", "minimum": 0},
-        "blank_threshold": {"type": "number", "minimum": 0, "maximum": 1},
-        "fixed_pages": {"type": ["integer", "null"], "minimum": 1},
-        "zones": {"type": "array"}
+        "barcode_types": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "barcode_role": {
+          "type": "string",
+          "enum": [
+            "first_page",
+            "cover_sheet",
+            "auto"
+          ]
+        },
+        "barcode_pattern": {
+          "type": "string"
+        },
+        "drop_blank_pages": {
+          "type": "boolean"
+        },
+        "drop_blank_threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 0.05
+        },
+        "cover_max_chars": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "blank_threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "fixed_pages": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "zones": {
+          "type": "array"
+        }
       }
     },
     "qc": {
       "type": "object",
-      "required": ["enabled", "stages", "pass_score"],
+      "required": [
+        "enabled",
+        "stages",
+        "pass_score"
+      ],
       "properties": {
-        "enabled": {"type": "boolean"},
+        "enabled": {
+          "type": "boolean"
+        },
         "stages": {
           "type": "array",
-          "items": {"enum": ["punch_hole", "rotation", "margin", "color", "advanced"]}
+          "items": {
+            "enum": [
+              "punch_hole",
+              "rotation",
+              "margin",
+              "color",
+              "advanced"
+            ]
+          }
         },
-        "blur_warn_threshold": {"type": "number"},
-        "blur_fail_threshold": {"type": "number"},
-        "dpi_warn": {"type": "integer"},
-        "dpi_fail": {"type": "integer"},
-        "pass_score": {"type": "integer", "minimum": 0, "maximum": 100}
+        "blur_warn_threshold": {
+          "type": "number"
+        },
+        "blur_fail_threshold": {
+          "type": "number"
+        },
+        "dpi_warn": {
+          "type": "integer"
+        },
+        "dpi_fail": {
+          "type": "integer"
+        },
+        "pass_score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
       }
     },
     "ocr": {
       "type": "object",
-      "required": ["lang"],
+      "required": [
+        "lang"
+      ],
       "properties": {
-        "lang": {"type": "string"},
-        "mode": {"type": "string", "enum": ["zone", "full_page"]},
-        "zones": {"type": "array"},
+        "lang": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "zone",
+            "full_page"
+          ]
+        },
+        "zones": {
+          "type": "array"
+        },
         "document_types": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["name"],
+            "required": [
+              "name"
+            ],
             "properties": {
-              "name": {"type": "string", "minLength": 1},
-              "regex": {"type": "string"},
-              "continuation_regex": {"type": "string"},
-              "starts_document": {"type": "boolean"},
-              "anchors": {"type": "array"},
-              "mode": {"type": "string", "enum": ["zone", "full_page"]},
-              "zones": {"type": "array"}
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "regex": {
+                "type": "string"
+              },
+              "continuation_regex": {
+                "type": "string"
+              },
+              "starts_document": {
+                "type": "boolean"
+              },
+              "anchors": {
+                "type": "array"
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "zone",
+                  "full_page"
+                ]
+              },
+              "zones": {
+                "type": "array"
+              },
+              "enhancement_profile": {
+                "type": "object",
+                "properties": {
+                  "deskew": {
+                    "type": "boolean"
+                  },
+                  "crop": {
+                    "type": "boolean"
+                  },
+                  "clahe": {
+                    "type": "boolean"
+                  },
+                  "despeckle": {
+                    "type": "boolean"
+                  },
+                  "whiten_bg": {
+                    "type": "boolean"
+                  }
+                }
+              }
             }
           }
         },
-        "confidence_threshold": {"type": "number", "minimum": 0, "maximum": 1}
+        "confidence_threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
       }
     },
     "export": {
       "type": "object",
-      "required": ["format", "filename_template", "output_path"],
+      "required": [
+        "format",
+        "filename_template",
+        "output_path"
+      ],
       "properties": {
-        "format": {"enum": ["image_pdf", "searchable_pdf", "pdf_a", "tiff"]},
-        "pdf_a": {"type": "boolean"},
-        "filename_template": {"type": "string"},
-        "output_path": {"type": "string"},
+        "format": {
+          "enum": [
+            "image_pdf",
+            "searchable_pdf",
+            "pdf_a",
+            "tiff"
+          ]
+        },
+        "pdf_a": {
+          "type": "boolean"
+        },
+        "filename_template": {
+          "type": "string"
+        },
+        "output_path": {
+          "type": "string"
+        },
         "index": {
           "type": "object",
           "properties": {
-            "enabled": {"type": "boolean"},
-            "format": {"enum": ["csv", "xml", "json"]},
-            "running_csv": {"type": "boolean"}
+            "enabled": {
+              "type": "boolean"
+            },
+            "format": {
+              "enum": [
+                "csv",
+                "xml",
+                "json"
+              ]
+            },
+            "running_csv": {
+              "type": "boolean"
+            }
           }
         }
       }
     },
     "delivery": {
       "type": "object",
-      "required": ["local_folder", "sftp", "cd_dvd"],
+      "required": [
+        "local_folder",
+        "sftp",
+        "cd_dvd"
+      ],
       "properties": {
         "local_folder": {
           "type": "object",
-          "required": ["enabled"],
-          "properties": {"enabled": {"type": "boolean"}, "path": {"type": "string"}}
+          "required": [
+            "enabled"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string"
+            }
+          }
         },
-        "sftp": {"type": "object", "required": ["enabled"]},
-        "cd_dvd": {"type": "object", "required": ["enabled"]}
+        "sftp": {
+          "type": "object",
+          "required": [
+            "enabled"
+          ]
+        },
+        "cd_dvd": {
+          "type": "object",
+          "required": [
+            "enabled"
+          ]
+        }
       }
     },
     "features": {
       "type": "object",
       "properties": {
-        "cd_burn": {"type": "boolean"},
-        "sftp": {"type": "boolean"},
-        "ai_assistant": {"type": "boolean"},
-        "auto_index": {"type": "boolean"},
-        "duplicate_check": {"type": "boolean"}
+        "cd_burn": {
+          "type": "boolean"
+        },
+        "sftp": {
+          "type": "boolean"
+        },
+        "ai_assistant": {
+          "type": "boolean"
+        },
+        "auto_index": {
+          "type": "boolean"
+        },
+        "duplicate_check": {
+          "type": "boolean"
+        }
       }
     },
-    "rules": {"type": "object"}
+    "rules": {
+      "type": "object"
+    }
   }
 }

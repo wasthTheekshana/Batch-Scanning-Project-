@@ -34,7 +34,7 @@ from imaging.enhance import apply_profile, to_color_mode
 from qc.pipeline import run_qc
 from export.index_export import (append_running_csv, build_record,
                                  write_index)
-from ocr.doc_types import inherit_types, match_page, page_zone_groups
+from ocr.doc_types import enhancement_for, inherit_types, match_page, page_zone_groups
 from ocr.orientation import turn, upright
 from separation.barcode import decode_barcodes, filter_barcodes
 from separation.rule_engine import RuleEngine, RuleSetError
@@ -465,9 +465,10 @@ class Pipeline:
 
     def _enhance_worker(self) -> None:
         def handle(record: PageRecord):
-            profile = self._rt(record.job.batch_id,
-                               record.job.project_id).profile.get(
-                "enhancement_profile", {})
+            rt = self._rt(record.job.batch_id, record.job.project_id)
+            # a document type may ask for gentler (or stronger) treatment than the project
+            profile = enhancement_for(rt.profile.get("ocr", {}),
+                                      rt.profile.get("enhancement_profile", {}), record.doc_type)
             image = turn(cv2.imread(record.job.image_path, cv2.IMREAD_UNCHANGED),
                          record.rotation)
             if not record.is_empty:

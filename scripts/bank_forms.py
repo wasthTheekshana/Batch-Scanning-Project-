@@ -92,9 +92,18 @@ def build_anchors(upright_scan, zones: list[dict], file: str, margin: int = 30) 
     return found
 
 
+def _gentle() -> dict:
+    """Handwriting forms: keep the pen strokes untouched (straighten and crop only)."""
+    import sys
+    sys.path.insert(0, str(HERE.parent))
+    from imaging.enhance import ENHANCEMENT_PRESETS
+    return dict(ENHANCEMENT_PRESETS["gentle"][1])
+
+
 def personal_document_type() -> dict:
     t = {"name": "Personal loan application", "regex": PERSONAL_TITLE,
-         "continuation_regex": PERSONAL_LATER, "mode": "zone", "zones": personal_zones()}
+         "continuation_regex": PERSONAL_LATER, "mode": "zone", "zones": personal_zones(),
+         "enhancement_profile": _gentle()}
     if _anchors("personal_loan_anchors.json"):
         t["anchors"] = _anchors("personal_loan_anchors.json")
     return t
@@ -102,7 +111,8 @@ def personal_document_type() -> dict:
 
 def credit_document_type() -> dict:
     t = {"name": "Credit card application", "regex": CREDIT_TITLE,
-         "continuation_regex": CREDIT_LATER, "mode": "zone", "zones": credit_zones()}
+         "continuation_regex": CREDIT_LATER, "mode": "zone", "zones": credit_zones(),
+         "enhancement_profile": _gentle()}
     if _anchors("credit_card_anchors.json"):
         t["anchors"] = _anchors("credit_card_anchors.json")
     return t

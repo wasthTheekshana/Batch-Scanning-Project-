@@ -112,6 +112,30 @@ def to_color_mode(img: np.ndarray, mode: str, dpi: int = 300) -> np.ndarray:
     raise ValueError(f"unknown color mode: {mode}")
 
 
+# Named choices for a document type's image clean-up (shown in the document type dialog).
+# "Gentle" leaves the pen strokes of a handwritten form alone: no whitening, contrast
+# boost or dust removal, only straightening and cropping.
+ENHANCEMENT_PRESETS: dict[str, tuple[str, dict]] = {
+    "project": ("Same as the project", {}),
+    "gentle": ("Gentle: straighten and crop only (handwritten forms)",
+               {"deskew": True, "crop": True, "clahe": False, "despeckle": False, "whiten_bg": False}),
+    "strong": ("Strong clean-up (faded or noisy printed pages)",
+               {"deskew": True, "crop": True, "clahe": True, "despeckle": True, "whiten_bg": True}),
+    "none": ("None: keep the scan as it is",
+             {"deskew": False, "crop": False, "clahe": False, "despeckle": False, "whiten_bg": False}),
+}
+
+
+def preset_name(overrides: dict | None) -> str:
+    """Which preset a stored override is (default "project" when there is none)."""
+    if not overrides:
+        return "project"
+    for key, (_label, values) in ENHANCEMENT_PRESETS.items():
+        if values and all(overrides.get(k) == v for k, v in values.items()):
+            return key
+    return "project"
+
+
 def apply_profile(img: np.ndarray, profile: dict, dpi: int = 300) -> np.ndarray:
     """Run enabled enhancement steps in fixed order:
     whiten background -> CLAHE (flat pages only) -> remove dust. Deskew/crop are

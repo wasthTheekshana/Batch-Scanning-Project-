@@ -90,6 +90,10 @@ def selftest() -> int:
         ocr_page(np.full((60, 200), 255, np.uint8))
         return "tesseract runs"
 
+    def app_version():
+        from version import __version__
+        return __version__
+
     def digit_model():
         import numpy as np
         from ocr import digits
@@ -167,7 +171,7 @@ def selftest() -> int:
         dlg.ids.setPlainText("A-1" + chr(10) + "A-2")
         return dlg.summary.text()
 
-    for name, work in (("modules", modules), ("cover sheet PDF", cover_sheet),
+    for name, work in (("version", app_version), ("modules", modules), ("cover sheet PDF", cover_sheet),
                        ("barcode round trip", barcode_roundtrip),
                        ("OCR engine", ocr), ("digit model", digit_model),
                        ("handwriting model", handwriting_model),

@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QF
                              QHBoxLayout, QLabel, QLineEdit, QListWidget,
                              QListWidgetItem, QPushButton, QVBoxLayout)
 
+from imaging.enhance import ENHANCEMENT_PRESETS, preset_name
 from ui.theme import fit_to_screen, mark
 from ui.zone_dialog import ZoneDialog
 
@@ -44,6 +45,14 @@ class DocumentTypeDialog(QDialog):
         self.mode.setCurrentIndex(max(0, self.mode.findData(
             doc_type.get("mode") if doc_type else None)))
         form.addRow("Fields are read by", self.mode)
+        self.enhancement = QComboBox()
+        for key, (label, _values) in ENHANCEMENT_PRESETS.items():
+            self.enhancement.addItem(label, key)
+        self.enhancement.setCurrentIndex(max(0, self.enhancement.findData(
+            preset_name(doc_type.get("enhancement_profile") if doc_type else None))))
+        self.enhancement.setToolTip("How the scanned image is cleaned up for pages of this type. "
+                                    "Handwriting reads best with the gentle setting.")
+        form.addRow("Image clean-up", self.enhancement)
         self.starts_document = QCheckBox("A page like this starts a new document")
         self.starts_document.setChecked(bool(doc_type and doc_type.get("starts_document")))
         form.addRow("", self.starts_document)
@@ -213,4 +222,7 @@ class DocumentTypeDialog(QDialog):
             doc_type["continuation_regex"] = self.continuation.text().strip()
         if self.mode.currentData():
             doc_type["mode"] = self.mode.currentData()
+        preset = ENHANCEMENT_PRESETS[self.enhancement.currentData()][1]
+        if preset:
+            doc_type["enhancement_profile"] = dict(preset)
         return doc_type

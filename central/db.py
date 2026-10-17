@@ -1,9 +1,9 @@
-"""Engine and session factory. Phase 1 creates tables with create_all();
-adopt Alembic before the first schema change after go-live."""
+"""Engine and session factory. The schema is managed by Alembic migrations
+(central/migrate.py): starting the service brings the database to the latest one."""
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
-from central.models import Base
+from central import migrate
 
 
 def make_engine(database_url: str):
@@ -16,7 +16,7 @@ def make_engine(database_url: str):
             dbapi_conn.execute("PRAGMA foreign_keys=ON")
     else:
         engine = create_engine(database_url, pool_pre_ping=True)
-    Base.metadata.create_all(engine)
+    migrate.upgrade(engine)
     return engine
 
 

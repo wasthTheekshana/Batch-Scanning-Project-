@@ -86,11 +86,20 @@ def zones() -> list[dict]:
             for name, x, y, w, h, extra, _ in FIELDS + JOINT_FIELDS]
 
 
+def _gentle() -> dict:
+    """Handwriting forms: keep the pen strokes untouched (straighten and crop only)."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from imaging.enhance import ENHANCEMENT_PRESETS
+    return dict(ENHANCEMENT_PRESETS["gentle"][1])
+
+
 def document_type() -> dict:
     """The document type for the Bank template (regions, not text patterns)."""
     doc_type = {"name": "Education loan application", "regex": TITLE_PATTERN,
                 "continuation_regex": LATER_PAGES_PATTERN,
-                "mode": "zone", "zones": zones()}
+                "mode": "zone", "zones": zones(),
+                "enhancement_profile": _gentle()}
     if anchors():
         doc_type["anchors"] = anchors()
     return doc_type

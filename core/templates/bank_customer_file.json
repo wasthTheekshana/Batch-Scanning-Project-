@@ -124,6 +124,13 @@
               "kind": "mobile"
             }
           ],
+          "enhancement_profile": {
+            "deskew": true,
+            "crop": true,
+            "clahe": false,
+            "despeckle": false,
+            "whiten_bg": false
+          },
           "anchors": [
             {
               "t": "application",
@@ -907,6 +914,13 @@
               "charset": "alnum"
             }
           ],
+          "enhancement_profile": {
+            "deskew": true,
+            "crop": true,
+            "clahe": false,
+            "despeckle": false,
+            "whiten_bg": false
+          },
           "anchors": [
             {
               "t": "commercial",
@@ -1552,6 +1566,13 @@
               "regex": "^[\\s|.,;:_-]*([^|]+?)[\\s|.,;:_-]*$"
             }
           ],
+          "enhancement_profile": {
+            "deskew": true,
+            "crop": true,
+            "clahe": false,
+            "despeckle": false,
+            "whiten_bg": false
+          },
           "anchors": [
             {
               "t": "commercial",
@@ -2231,6 +2252,13 @@
               "charset": "alnum"
             }
           ],
+          "enhancement_profile": {
+            "deskew": true,
+            "crop": true,
+            "clahe": false,
+            "despeckle": false,
+            "whiten_bg": false
+          },
           "anchors": [
             {
               "t": "commercial",

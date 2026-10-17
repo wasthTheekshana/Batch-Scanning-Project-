@@ -1,4 +1,10 @@
-"""Operator CLI.  Usage: python -m central.manage create-admin USERNAME"""
+"""Operator CLI.
+
+    python -m central.manage create-admin USERNAME [--role admin|auditor]
+    python -m central.manage migrate          bring the database to the latest schema
+    python -m central.manage db-status        show the schema version and any drift from the models
+    python -m central.manage new-migration "message"   write a migration for a model change
+"""
 from __future__ import annotations
 
 import getpass
@@ -33,8 +39,32 @@ def create_admin(session_factory, username: str, password: str,
     log.info("admin created: %s", username)
 
 
+def _schema_command(argv: list[str]) -> int | None:
+    """migrate / db-status / new-migration; None when argv is not one of them."""
+    from central import migrate
+    if not argv or argv[0] not in ("migrate", "db-status", "new-migration"):
+        return None
+    engine = make_engine(Settings.from_env().database_url)      # opening it migrates it
+    if argv[0] == "migrate":
+        print(f"schema is at {migrate.current_revision(engine)} (latest {migrate.head_revision()})")
+    elif argv[0] == "db-status":
+        drift = migrate.differences(engine)
+        print(f"schema {migrate.current_revision(engine)}; latest {migrate.head_revision()}; "
+              + ("matches the models" if not drift else f"DIFFERS from the models: {drift}"))
+        return 1 if drift else 0
+    else:
+        if len(argv) != 2:
+            print('usage: python -m central.manage new-migration "message"', file=sys.stderr)
+            return 2
+        print("wrote migration", migrate.new_migration(engine, argv[1]))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    handled = _schema_command(argv)
+    if handled is not None:
+        return handled
     role = "admin"
     if len(argv) == 4 and argv[2] == "--role":
         role, argv = argv[3], argv[:2]

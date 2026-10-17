@@ -72,7 +72,7 @@ def build_anchors(upright_scan, margin: int = 30) -> list[dict]:
 
 def document_type() -> dict:
     doc_type = {"name": "Home loan application", "regex": TITLE_PATTERN,
-                "mode": "zone", "zones": zones()}
+                "mode": "zone", "zones": zones(), "enhancement_profile": loan_form._gentle()}
     if anchors():
         doc_type["anchors"] = anchors()
     return doc_type

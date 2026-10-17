@@ -95,7 +95,8 @@ class MainWindow(QMainWindow):
         self.staging_dir = staging_dir
         user = Session.current_user()
 
-        self.setWindowTitle("DOK Scanner — Batch Document Capture")
+        from version import __version__
+        self.setWindowTitle(f"DOK Scanner {__version__} — Batch Document Capture")
         self.setWindowIcon(icon("fa5s.file-import", color=ACCENT))
         fit_to_screen(self, DEFAULT_W, DEFAULT_H, share=0.94)
         self._remember_geometry = False
