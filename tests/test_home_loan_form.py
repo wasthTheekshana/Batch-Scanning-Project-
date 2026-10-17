@@ -81,7 +81,10 @@ def test_a_letter_can_only_close_a_nic_and_a_12_box_number_has_no_letter(monkeyp
     assert set(seen) == {comb.CHARSETS["digits"]}                   # 12 boxes: digits only
     seen.clear()
     comb.read_comb(pale_row(10, digits="856789012V"), "nic")
-    assert seen.count(comb.CHARSETS["digits"]) == 9 and seen.count(comb.CHARSETS["nic"]) == 1
+    assert seen.count(comb.CHARSETS["digits"]) == 9 and seen.count("VX") == 1      # nine digits, then V or X
+    seen.clear()
+    comb.read_comb(pale_row(11, digits="85678901234"), "nic")
+    assert seen.count(comb.CHARSETS["nic"]) == 1
     seen.clear()
     comb.read_comb(pale_row(10, digits="8567890123"), "alnum")      # other charsets unchanged
     assert set(seen) == {comb.CHARSETS["alnum"]}

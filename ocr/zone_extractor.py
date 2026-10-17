@@ -86,6 +86,54 @@ def prepare_strip(strip: np.ndarray) -> np.ndarray:
     return cleaned
 
 
+FIXERS = {"name": "fix_name", "email": "fix_email", "mobile": "fix_mobile", "nic": "fix_nic"}
+
+
+def read_handwritten(strip: np.ndarray, zone: dict) -> OCRResult | None:
+    """A handwritten line (or lines) read with the handwriting model, then corrected for the
+    kind of field it is (name, e-mail, mobile, branch ...). None when the model is not
+    installed, so the caller reads it the older way."""
+    from ocr import fieldfix, handwriting
+    if not handwriting.available():
+        return None
+    lines = handwriting.clean_lines(strip)
+    if not lines:
+        return OCRResult(text="", confidence=0.0)
+    kind = zone.get("kind")
+    if kind == "branch":
+        text, conf = handwriting.read_line(lines[0])
+        ranked = handwriting.rank(lines[0], fieldfix.branches()) if fieldfix.branches() else None
+        value, factor = fieldfix.fix_branch(text, ranked)
+        return OCRResult(text=value, confidence=min(conf + 0.3, 1.0) * factor if ranked else conf * factor)
+    read = [handwriting.read_line(line) for line in lines]
+    fixer = getattr(fieldfix, FIXERS.get(kind, ""), None)
+    if kind == "email":
+        # the @ is the glyph the model misreads most: rank repaired addresses against the writing
+        text, conf = read[0] if read else ("", 0.0)
+        candidates = fieldfix.email_candidates(*[t for t, _ in handwriting.read_all(lines[0])])
+        if candidates:
+            ranked = sorted(handwriting.rank(lines[0], candidates),
+                            key=lambda c: -(c[1] + fieldfix.email_prior(c[0])))
+            value, factor = fieldfix.fix_email(ranked[0][0])
+            return OCRResult(text=value, confidence=max(conf, 0.5) * factor)
+    if kind == "name":              # clean each line on its own: a box edge sits at a line's end
+        parts = []
+        for (t, _), line in zip(read, lines):
+            variants = fieldfix.name_variants(t)
+            if len(variants) > 1:
+                ranked = handwriting.rank(line, variants)             # the one that fits the strokes
+                variants = [max(ranked, key=lambda c: c[1] + fieldfix.name_prior(c[0]))[0]]
+            parts += variants[:1] or [fieldfix.fix_name(t, snap=False)[0]]
+        text = " ".join(fieldfix.fix_name(p, snap=False)[0] for p in parts if p)
+    else:
+        text = " ".join(t for t, _ in read if t)
+    conf = sum(c for _, c in read) / len(read)
+    if fixer and kind != "name":
+        text, factor = fixer(text)
+        conf *= factor
+    return OCRResult(text=text, confidence=conf)
+
+
 def extract_fields(img: np.ndarray, zones: list[dict], lang: str = "eng",
                    ocr_fn: Callable[[np.ndarray], OCRResult] | None = None,
                    words: list[dict] | None = None
@@ -126,7 +174,11 @@ def extract_fields(img: np.ndarray, zones: list[dict], lang: str = "eng",
         x1 = max(x0 + 1, min(x0 + zw, w))
         y1 = max(y0 + 1, min(y0 + zh, h))
         strip = img[y0:y1, x0:x1]
-        if zone.get("comb"):
+        hand = (read_handwritten(strip, zone)
+                if (zone.get("hand") or zone.get("charset") == "email") and ocr_fn is None else None)
+        if hand is not None:
+            result = hand
+        elif zone.get("comb"):
             # one character per box (account no., NIC, date of birth)
             from ocr.comb import read_comb
             result = read_comb(strip, zone.get("charset") or "alnum")

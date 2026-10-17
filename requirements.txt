@@ -22,3 +22,5 @@ paramiko==5.0.0            # SFTP delivery (delivery/sftp_channel.py)
 # TWAIN scanner driver (scanning/twain_source.py): the Kodak S3060 feeds continuously and
 # delivers both sides through it; through WIA it is slow and loses backs.
 pytwain==2.3.0
+onnxruntime==1.31.0
+tokenizers==0.23.3

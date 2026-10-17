@@ -16,6 +16,9 @@ datas = [
     ("separation/rule_schema.json", "separation"),
     ("core/templates", "core/templates"),
     ("ocr/digit_model.npz", "ocr"),     # handwritten-digit model (ocr/digits.py)
+    ("ocr/digit_model28.npz", "ocr"),   # the MNIST-trained one it prefers
+    ("ocr/branches.txt", "ocr"),        # branch names the handwriting reader chooses from
+    ("ocr/names.txt", "ocr"),           # common names it snaps near-misses to
 ]
 binaries = []
 if os.path.isdir("tessdata"):
@@ -39,7 +42,7 @@ a = Analysis(
     # reportlab loads its barcode symbologies by name at run time, which
     # PyInstaller cannot see: without these, "Print cover sheets" fails with
     # "No module named reportlab.graphics.barcode.code93" in the built exe.
-    hiddenimports=["pytesseract", "pyzbar.pyzbar", "imagehash", "qrcode",
+    hiddenimports=["onnxruntime", "tokenizers", "pytesseract", "pyzbar.pyzbar", "imagehash", "qrcode",
                   "qrcode.image.pil", "pythoncom", "pywintypes",
                   "win32gui", "win32con", "twain"]
                  + collect_submodules("reportlab.graphics.barcode"),

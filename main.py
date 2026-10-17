@@ -99,6 +99,17 @@ def selftest() -> int:
         glyph[5:55, 17:23] = 255                      # a plain vertical stroke
         return "reads " + digits.read_digit(glyph)[0]
 
+    def handwriting_model():
+        import numpy as np
+        from ocr import handwriting
+        if not handwriting.available():
+            return "model files not installed: handwriting is read the older, weaker way"
+        line = np.full((70, 360, 3), 255, np.uint8)
+        import cv2
+        cv2.putText(line, "Jaffna", (20, 52), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (0, 0, 0), 3)
+        text, confidence = handwriting.read_line(line, tries=False)
+        return f"reads {text!r} ({confidence:.2f})"
+
     def sftp_library():
         import paramiko
         return "paramiko " + paramiko.__version__
@@ -159,6 +170,7 @@ def selftest() -> int:
     for name, work in (("modules", modules), ("cover sheet PDF", cover_sheet),
                        ("barcode round trip", barcode_roundtrip),
                        ("OCR engine", ocr), ("digit model", digit_model),
+                       ("handwriting model", handwriting_model),
                        ("scanners", scanner), ("TWAIN driver", twain_driver),
                        ("SFTP library", sftp_library),
                        ("searchable PDF", searchable_pdf),

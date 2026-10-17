@@ -44,7 +44,7 @@ def test_the_back_of_the_nic_has_no_type_of_its_own():
 
 
 def test_loan_application_form():
-    assert read("PERSONAL LOAN APPLICATION FORM Application No: APP-55001 "
+    assert read("LOAN APPLICATION FORM Application No: APP-55001 "
                 "Applicant Name: Nimal Perera Product: Personal Loan "
                 "Requested Amount: LKR 500,000 Application Date: 14 Oct 2026") == (
         "Application", {"application_number": "APP-55001",
@@ -80,10 +80,10 @@ def test_field_names_are_unique_within_each_type_and_shared_names_mean_the_same_
     for doc_type in OCR["document_types"]:
         names = [z["name"] for z in doc_type["zones"]]
         assert len(names) == len(set(names)), doc_type["name"]
-    # the three application types (education loan, home loan, generic) all fill
-    # applicant_name: one index field
+    # the five application types (credit card, personal loan, education loan, home loan,
+    # generic) all fill applicant_name: one index field
     shared = [z["name"] for t in OCR["document_types"] for z in t["zones"]]
-    assert shared.count("applicant_name") == 3
+    assert shared.count("applicant_name") == 5
     assert [z["name"] for z in all_zones(OCR)].count("applicant_name") == 1
 
 
@@ -107,8 +107,8 @@ def test_the_template_is_seeded_and_builds_a_valid_project(tmp_path, db):
         "Bank - Customer file", config=cfg)       # validates against the schema
     assert created["separation"]["barcode_role"] == "auto"
     assert [t["name"] for t in created["ocr"]["document_types"]] == [
-        "Education loan application", "Home loan application", "Application", "NIC",
-        "Letter"]
+        "Credit card application", "Personal loan application", "Education loan application",
+        "Home loan application", "Application", "NIC", "Letter"]
     assert created["export"]["filename_template"] == "{barcode}_{counter:04d}"
     assert created["export"]["output_path"].endswith("output")
 

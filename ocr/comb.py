@@ -21,6 +21,9 @@ CHARSETS = {
     "alnum": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
     "nic": "0123456789VvXx",
 }
+EXTRA_CHARSETS = {      # not offered in the zone dialog: read as a handwritten line, not cell by cell
+    "email": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@._-",
+}
 MIN_CELLS = 3          # fewer dividers than this: not a comb, read as a line
 INK_MIN = 0.012        # a cell with less ink than this is empty
 FIND_CUT = 150         # loose level used only to locate the box borders
@@ -74,7 +77,21 @@ def find_cells(binary: np.ndarray) -> list[tuple[int, int]]:
         return []
     widths = sorted(b - a for a, b in spans)
     typical = widths[len(widths) // 2]
+    dividers = _fill_gaps(dividers, typical)
+    spans = list(zip(dividers, dividers[1:]))
     return [(a, b) for a, b in spans if 0.6 * typical <= b - a <= 1.5 * typical]
+
+
+def _fill_gaps(dividers: list[int], typical: int) -> list[int]:
+    """Boxes are equally wide: where two dividers are about 2-3 boxes apart, the ones
+    between were hidden (a pen stroke touching the line) and are put back."""
+    out = [dividers[0]]
+    for a, b in zip(dividers, dividers[1:]):
+        k = round((b - a) / typical)
+        if k >= 2 and abs((b - a) - k * typical) <= 0.25 * typical:
+            out += [round(a + (b - a) * i / k) for i in range(1, k)]
+        out.append(b)
+    return out
 
 
 DARK_BORDER = 80       # borders this dark: a black-and-white or black-ink form
@@ -146,6 +163,7 @@ def _variants(cell: np.ndarray):
 
 CONFIDENT = 0.50       # a Tesseract reading at least this sure is trusted (measured: its
                        # wrong digits were all at 0.45 or below, its right ones 0.54+)
+MODEL_SURE = 0.92      # at least this sure, the digit model overrules the engine
 MODEL_MIN = 0.50       # the digit model must be at least this sure to be used
 DIGIT_BOXES = set("0123456789VvXx")
 
@@ -162,12 +180,16 @@ def _read_char(cell: np.ndarray, whitelist: str) -> tuple[str, float]:
     char, conf = _tesseract_char(cell, whitelist)
     if not set(whitelist) <= DIGIT_BOXES:
         return char, conf                            # letters: engine only
-    if char and conf >= CONFIDENT:
-        return char, conf
     if char in ("V", "v", "X", "x") and conf >= 0.5:
         return char, conf                            # the letter of an old NIC
     from ocr.digits import read_digit
     digit, probability = read_digit(cell)
+    if digit and probability >= MODEL_SURE and digit in whitelist and digit != char:
+        return digit, probability * 0.95             # handwriting: the digit model knows pens better
+    if char and conf >= CONFIDENT:
+        return char, conf
+    if char in ("V", "v", "X", "x") and conf >= 0.5:
+        return char, conf                            # the letter of an old NIC
     if digit and probability >= MODEL_MIN and digit in whitelist:
         return digit, probability * 0.9
     return char, conf
@@ -211,7 +233,11 @@ def _clean_cell(cell: np.ndarray) -> np.ndarray:
     for i in range(1, count):
         w, h, area = (stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT],
                       stats[i, cv2.CC_STAT_AREA])
-        fragment = h <= max(3, 0.1 * height) and w >= 0.3 * width
+        top = stats[i, cv2.CC_STAT_TOP]
+        # what is left of a box line lies against the cell's top or bottom edge; the bar of
+        # a handwritten 5, 7 or 3 does not
+        at_edge = top <= 0.1 * height or top + h >= 0.9 * height
+        fragment = h <= max(3, 0.1 * height) and w >= 0.3 * width and at_edge
         speck = area < 0.008 * height * width
         if fragment or speck:
             out[labels == i] = 0
@@ -233,7 +259,24 @@ def _boxes_at(gray: np.ndarray, cut: int):
     top, bottom = rows.min(), rows.max() + 1
     left, right = cols.min(), cols.max() + 1
     gray, loose = gray[top:bottom, left:right], loose[top:bottom, left:right]
-    return gray, loose, find_cells(loose)
+    return gray, loose, find_cells(loose), (top, bottom, left, right)
+
+
+BLUE_MIN = 28          # how much bluer than red a pixel is for it to count as blue pen
+PEN_MIN_FRACTION = 0.004   # a strip needs this much blue before it is read by colour
+
+
+def _pen_ink(color: np.ndarray, gray: np.ndarray) -> np.ndarray | None:
+    """Mask (255 = ink) of the writing when it is in blue (or other coloured) pen on a black
+    form. Colour separates pen from printed box lines even where they overlap, which a
+    grey-level cut cannot (the top bar of a 5 lying on the box line). None when the strip has
+    no coloured writing, so black-pen forms use the grey-level way."""
+    import cv2
+    b, g, r = (color[..., i].astype(np.int16) for i in range(3))
+    mask = (((b - r) > BLUE_MIN) & (gray < 200)).astype(np.uint8) * 255
+    if np.count_nonzero(mask) < PEN_MIN_FRACTION * mask.size:
+        return None
+    return cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((2, 2), np.uint8))
 
 
 def split_cells(strip: np.ndarray) -> list[np.ndarray]:
@@ -249,10 +292,11 @@ def split_cells(strip: np.ndarray) -> list[np.ndarray]:
             best = found
     if best is None:
         return []
-    gray, loose, cells = best
+    gray, loose, cells, (top, bottom, left, right) = best
     if len(cells) < MIN_CELLS:
         return []
-    ink = _strip_lines(_dark(gray, ink_level(gray, loose)))
+    pen = _pen_ink(strip[top:bottom, left:right], gray) if strip.ndim == 3 else None
+    ink = pen if pen is not None else _strip_lines(_dark(gray, ink_level(gray, loose)))
     height = ink.shape[0]
     margin = max(2, int(height * 0.06))
     inked = []
@@ -267,7 +311,7 @@ def split_cells(strip: np.ndarray) -> list[np.ndarray]:
 
 def read_comb(strip: np.ndarray, charset: str = "alnum") -> OCRResult:
     """The characters written in a strip of boxes, left to right."""
-    whitelist = CHARSETS.get(charset, charset or CHARSETS["alnum"])
+    whitelist = CHARSETS.get(charset) or EXTRA_CHARSETS.get(charset) or charset or CHARSETS["alnum"]
     inked = split_cells(strip)
     # each reading runs the OCR engine as a separate process: do several at once
     allowed = [whitelist] * len(inked)
@@ -276,7 +320,9 @@ def read_comb(strip: np.ndarray, charset: str = "alnum") -> OCRResult:
         # earlier box is a digit, and a 12-box number has no letter at all
         digits = CHARSETS["digits"]
         allowed = [digits] * len(inked)
-        if len(inked) < 12:
+        if len(inked) == 10:
+            allowed[-1] = "VX"              # nine digits and the letter of an old NIC
+        elif len(inked) < 12:
             allowed[-1] = whitelist
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         readings = list(pool.map(lambda pair: _read_char(*pair), zip(inked, allowed)))

@@ -37,6 +37,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; \
 
 [Files]
 Source: "..\dist\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\models\trocr\*"; DestDir: "{app}\models\trocr"; Flags: ignoreversion recursesubdirs skipifsourcedoesntexist
 ; Release bundle extras (present when built with OCR/barcode components):
 Source: "..\dist\tesseract\*"; DestDir: "{app}\tesseract"; \
     Flags: ignoreversion recursesubdirs skipifsourcedoesntexist

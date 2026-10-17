@@ -13,6 +13,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import bank_forms  # noqa: E402
 import home_loan_form  # noqa: E402
 import loan_form  # noqa: E402
 
@@ -21,6 +22,8 @@ NAME = r"([A-Za-z.]+(?: [A-Za-z.]+){0,4}?)"
 
 DOCUMENT_TYPES = [
     # a specific form first: types are tried in order and the first match wins
+    bank_forms.credit_document_type(),   # the credit card form also mentions a "supplementary limit"
+    bank_forms.personal_document_type(),
     loan_form.document_type(),
     home_loan_form.document_type(),      # before the generic Application: its title matches that too
     {"name": "Application",

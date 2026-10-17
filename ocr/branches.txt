@@ -1,0 +1,136 @@
+# Branch names the handwriting reader chooses from (one per line). The bank's own list can
+# replace this file: set the DOK_BRANCHES environment variable to its path.
+Colombo Fort
+Colombo Main Street
+Pettah
+Maradana
+Borella
+Bambalapitiya
+Wellawatte
+Dehiwala
+Mount Lavinia
+Moratuwa
+Panadura
+Kalutara
+Beruwala
+Aluthgama
+Horana
+Kottawa
+Maharagama
+Nugegoda
+Kohuwala
+Piliyandala
+Boralesgamuwa
+Homagama
+Avissawella
+Kaduwela
+Malabe
+Battaramulla
+Rajagiriya
+Nawala
+Kirulapone
+Havelock Town
+Thimbirigasyaya
+Kollupitiya
+Union Place
+Slave Island
+Dematagoda
+Kotahena
+Mutwal
+Wattala
+Ja-Ela
+Ragama
+Kandana
+Negombo
+Katunayake
+Minuwangoda
+Gampaha
+Veyangoda
+Nittambuwa
+Kiribathgoda
+Kadawatha
+Kelaniya
+Peliyagoda
+Biyagama
+Mawanella
+Kegalle
+Rambukkana
+Warakapola
+Kandy
+Peradeniya
+Katugastota
+Gampola
+Nawalapitiya
+Kundasale
+Matale
+Dambulla
+Sigiriya
+Nuwara Eliya
+Hatton
+Talawakelle
+Bandarawela
+Badulla
+Haputale
+Welimada
+Monaragala
+Wellawaya
+Ratnapura
+Embilipitiya
+Balangoda
+Galle
+Hikkaduwa
+Ambalangoda
+Elpitiya
+Baddegama
+Matara
+Weligama
+Akuressa
+Deniyaya
+Hambantota
+Tangalle
+Tissamaharama
+Ambalantota
+Kurunegala
+Kuliyapitiya
+Wariyapola
+Narammala
+Pannala
+Nikaweratiya
+Puttalam
+Chilaw
+Marawila
+Wennappuwa
+Anamaduwa
+Anuradhapura
+Kekirawa
+Medawachchiya
+Polonnaruwa
+Hingurakgoda
+Trincomalee
+Kinniya
+Batticaloa
+Kalmunai
+Akkaraipattu
+Ampara
+Kattankudy
+Jaffna
+Chunnakam
+Point Pedro
+Kilinochchi
+Mullaitivu
+Vavuniya
+Mannar
+Nelliady
+Kotte
+Pelawatta
+Ratmalana
+Kesbewa
+Ingiriya
+Bandaragama
+Mirigama
+Dankotuwa
+Kochchikade
+Kandy City Centre
+Colombo World Trade Centre
+Hulftsdorp
+Galle Face
