@@ -118,7 +118,7 @@ def fix_nic(text: str) -> tuple[str, float]:
 def _domain_split(t: str) -> tuple[str, str] | None:
     """(local part, domain) found by matching the end of the text to the known mail domains."""
     t = t.replace("-", ".")
-    best = (0.0, None, None)
+    best: tuple[float, str, str] = (0.0, "", "")
     for domain in DOMAINS:
         n = len(domain)
         for width in range(max(4, n - 2), n + 3):

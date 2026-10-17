@@ -34,7 +34,10 @@ def _config(engine) -> Config:
 
 
 def head_revision() -> str:
-    return ScriptDirectory.from_config(_config(None)).get_current_head()
+    head = ScriptDirectory.from_config(_config(None)).get_current_head()
+    if head is None:
+        raise RuntimeError("no migrations found")
+    return head
 
 
 def current_revision(engine) -> str | None:
