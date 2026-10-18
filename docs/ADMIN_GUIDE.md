@@ -153,6 +153,23 @@ counts of documents, pages, batches and errors. **Never any document content.**
 | Fleet | one row per station: online, offline, access revoked or not enrolled; its program version (*older* when others run a newer one); **Settings** (*Up to date*, *Behind* with the version the station has and the one assigned, *Not reported*); today's counts. Stations that need attention are listed first; the list refreshes itself every 30 seconds |
 | Activity | documents, pages, batches or errors per day for 7, 14, 30 or 90 days, and a table per station |
 
+**Finding documents (Search).** Once stations are enrolled, each reports every finished document's index fields
+(NIC, account number, name, branch...) and the PDF's details (file name, size, SHA-256, where it went). Open **Search**,
+type an identifier (spaces and dashes do not matter, it must match exactly) and/or choose project, station, status or
+dates; *Open* shows the fields, the PDF's details and every revision. **The PDF itself is not copied to central**: it
+stays in the station's delivered folder, so do not delete delivered PDFs. A correction made on a station arrives as a
+new revision. What is stored is encrypted with the server's data key (`CENTRAL_DATA_KEY`; without it the server refuses
+documents and the stations simply keep them queued). *Who searched for or opened documents* (under the search) lists
+every search and opened document.
+
+To let someone search without seeing anything else, create an account with the role **searcher** (Admins, *Add admin...*)
+and choose its projects with *Projects...*; an auditor sees all projects, read-only.
+
+On each PC, Admin > Central says how many documents are waiting to be reported, how long the oldest has waited and the last
+problem. A server outage only makes the queue grow: scanning continues and everything is sent, once, when the server
+returns. *Send existing documents* reports what was scanned before the PC was enrolled; *Retry refused* appears when the
+server refused documents (for example the project is not assigned to that PC).
+
 **One station.** Click a station's name (in Fleet or in the alert list) for its page: whether it is online and what
 program it runs, for each project the last published versions against the one it runs, 30 days of activity as a chart,
 its own alerts and its recent events (enrolled, renamed, settings assigned, access revoked). Renaming, new codes,

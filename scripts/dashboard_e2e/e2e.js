@@ -92,12 +92,42 @@ const b = [...scope.querySelectorAll("button,a")].find((x) => name(x) === l && x
   await check("the activity measure can be switched", await page.evaluate(() => document.querySelector(".seg button.on:last-child, .seg button.on") !== null));
   await shot("05e-activity");
 
+  // documents: a station reports one, an administrator finds it by its NIC and opens it
+  const PCS_NIC = "553216789V";
+  const reg = await (await fetch(BASE + "/pcs/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code }) })).json();
+  const projectId = (await page.evaluate(() => fetch("/admin/projects").then((r) => r.json())))[0].id;
+  const send = (part, body) => fetch(BASE + "/pcs/" + reg.pc_id + "/documents/doc-e2e-1/" + part,
+    { method: "PUT", headers: { "content-type": "application/json", authorization: "Bearer " + reg.api_key }, body: JSON.stringify(body) });
+  const sent = [await send("meta", { project_id: projectId, batch_id: "batch-1", page_count: 3, created_at: new Date().toISOString(),
+      validation_status: "approved", file_name: "kamal.pdf", size: 2048, sha256: "a".repeat(64), delivered_to: ["local_folder"], delivery_status: "delivered_local" }),
+    await send("index", { fields: { nic: PCS_NIC, full_name: "Kamal Perera", branch: "Galle" }, validation_status: "approved" })];
+  await check("a station reported a document", sent.every((r) => r.status === 200));
+  await click("Search"); await sleep(600);
+  await check("search page opens", (await text()).includes("Search documents") && (await text()).includes("Kamal Perera"));
+  await page.type(".searchform input[type=search]", "553 216-789v");
+  await page.evaluate(() => document.querySelector(".searchform button[type=submit]").click()); await sleep(700);
+  await check("found by NIC however it is typed", (await text()).includes("1 document found") && (await text()).includes("full_name: Kamal Perera"));
+  await shot("05f-search");
+  await click("Open"); await sleep(600);
+  await check("the document opens with its fields, PDF details and history",
+    (await text()).includes("Index fields") && (await text()).includes(PCS_NIC) && (await text()).includes("stays on") && (await text()).includes("Revision 1"));
+  await shot("05g-document");
+
   await click("Templates"); await sleep(500); await shot("06-templates");
   await click("Admins"); await click("Add admin...");
   const inputs = await page.$$("dialog input"); await inputs[0].type("auditor"); await inputs[1].type("a very long passphrase");
   await page.evaluate(() => { const i = document.querySelectorAll("dialog input")[2]; i.value = "auditor"; });
   await click("Create"); await sleep(700);
   await check("auditor account created", (await text()).includes("auditor (read-only)"));
+  await click("Add admin...");
+  const more = await page.$$("dialog input"); await more[0].type("finder"); await more[1].type("a very long passphrase");
+  await page.evaluate(() => { document.querySelectorAll("dialog input")[2].value = "searcher"; });
+  await click("Create"); await sleep(700);
+  await check("searcher account created, with no projects yet", (await text()).includes("searcher: no projects"));
+  await click("Projects..."); await sleep(400);
+  await page.evaluate(() => { for (const box of document.querySelectorAll("dialog input[type=checkbox]")) box.checked = true; });
+  await click("Save"); await sleep(700);
+  await check("the searcher was given the project", (await text()).includes("searcher: 1 project"));
   await shot("07-admins");
   await click("Audit log"); await sleep(700);
   await check("audit shows the actions", (await text()).includes("pc_created") && (await text()).includes("admin_user_created"));
@@ -143,6 +173,18 @@ const b = [...scope.querySelectorAll("button,a")].find((x) => name(x) === l && x
   await click("Admins"); await sleep(500);
   await check("auditor sees admins but no Disable / Reset password", (await text()).includes("root") && !(await text()).includes("Reset password") && !(await text()).includes("Add admin..."));
   await shot("10-auditor");
+  await click("Sign out"); await sleep(600);
+
+  // the searcher: finds documents of the given project, is shown nothing else
+  await page.evaluate(() => { document.getElementById("login-user").value = ""; });
+  await page.type("#login-user", "finder"); await page.type("#login-pass", "a very long passphrase");
+  await click("Sign in"); await sleep(800);
+  await check("searcher lands on the search page and is marked search only", (await text()).includes("Search documents") && (await text()).includes("search only"));
+  await check("the searcher's menu has only Search", await page.evaluate(() => [...document.querySelectorAll("#nav a")].filter((a) => !a.hidden).length === 1));
+  await check("the searcher sees the document", (await text()).includes("Kamal Perera"));
+  await page.evaluate(() => { location.hash = "#/fleet"; }); await sleep(600);
+  await check("a typed-in address for another page shows the search instead", (await text()).includes("Search documents") && !(await text()).includes("Back to the fleet"));
+  await shot("11-searcher");
   await click("Sign out"); await sleep(600);
   await browser.close();
   if (receiver) receiver.close();

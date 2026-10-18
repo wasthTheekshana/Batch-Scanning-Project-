@@ -177,7 +177,7 @@
   // A button that changes something: an auditor's account is read-only, so
   // they are not shown it (the server refuses the change anyway).
   function wbutton(label, onclick, kind) {
-    return role === "auditor" ? null : button(label, onclick, kind);
+    return role !== "admin" ? null : button(label, onclick, kind);
   }
 
   const badge = (text, kind) => h("span", { class: "badge " + (kind || "") }, text);
@@ -528,7 +528,7 @@
           const v = await ask("Add admin", [
             { name: "username", label: "Username", hint: "3-100 letters, digits . _ @ -" },
             { name: "password", label: "Password", type: "password", hint: "At least 12 characters." },
-            { name: "role", label: "Role", value: "admin", hint: "admin (can change settings) or auditor (read-only)." }], "Create");
+            { name: "role", label: "Role", value: "admin", hint: "admin (changes settings), auditor (read-only) or searcher (finds documents of chosen projects only)." }], "Create");
           if (v) act(() => api("POST", "/admin/users", { username: v.username.trim(), password: v.password,
             role: (v.role || "admin").trim().toLowerCase() }), reload, "Account created.");
         }, "primary"),
@@ -537,7 +537,7 @@
             act(() => api("POST", "/admin/users/revoke-all-sessions"), () => showLogin(), "All sessions revoked.");
         }, "danger")),
       table(["Username", "Role", "Status", "Failed logins", ""], list.map((u) => [
-        u.username, badge(u.role === "auditor" ? "auditor (read-only)" : "admin"), badge(u.status + (u.locked_until ? " until " + when(u.locked_until) : ""), tone[u.status]), u.failed_count,
+        u.username, badge(u.role === "auditor" ? "auditor (read-only)" : u.role === "searcher" ? "searcher: " + (u.projects.length ? u.projects.length + " " + plural(u.projects.length, "project", "projects") : "no projects") : "admin"), badge(u.status + (u.locked_until ? " until " + when(u.locked_until) : ""), tone[u.status]), u.failed_count,
         actions(
           u.status === "disabled"
             ? wbutton("Enable", () => act(() => api("POST", "/admin/users/" + u.id + "/enable"), reload, "Enabled."))
@@ -546,9 +546,17 @@
           u.status === "locked" ? wbutton("Unlock", () => act(() => api("POST", "/admin/users/" + u.id + "/unlock"), reload, "Unlocked.")) : null,
           wbutton("Change role", async () => {
             const v = await ask("Role of " + u.username, [
-              { name: "role", label: "Role", value: u.role, hint: "admin or auditor (read-only). They are signed out." }], "Change");
+              { name: "role", label: "Role", value: u.role, hint: "admin, auditor (read-only) or searcher. They are signed out." }], "Change");
             if (v) act(() => api("POST", "/admin/users/" + u.id + "/role", { role: v.role.trim().toLowerCase() }), reload, "Role changed.");
           }),
+          u.role === "searcher" ? wbutton("Projects...", async () => {
+            const all = await api("GET", "/admin/projects");
+            const boxes = all.map((p) => h("input", { type: "checkbox", checked: u.projects.includes(p.id) }));
+            const extra = h("div", { class: "checks" }, all.length ? all.map((p, i) => h("label", { class: "check" }, boxes[i], p.name))
+              : h("p", { class: "muted" }, "There are no projects yet."));
+            const v = await ask("Projects " + u.username + " may search", [], "Save", extra);
+            if (v) act(() => api("PUT", "/admin/users/" + u.id + "/projects", { project_ids: all.filter((p, i) => boxes[i].checked).map((p) => p.id) }), reload, "Saved.");
+          }) : null,
           wbutton("Reset password", async () => {
             const v = await ask("Reset password for " + u.username, [
               { name: "password", label: "New password", type: "password", hint: "At least 12 characters. They are signed out." }], "Reset");
@@ -743,6 +751,7 @@
 
   // The nav badge: how many things need attention, without opening the Overview.
   async function updateAlertBadge() {
+    if (role === "searcher") return;                  // alerts are not theirs to see
     try {
       const a = await api("GET", "/admin/alerts");
       const urgent = a.counts.critical + a.counts.warn;
@@ -762,6 +771,130 @@
       [...tr.children].forEach((td, i) => { if (headers[i]) td.dataset.label = headers[i]; });
     }
     return tbl;
+  }
+
+
+  // ---- documents: find one by an identifier, open it
+  const searchState = { q: "", project: "", pc: "", status: "", date_from: "", date_to: "", offset: 0 };
+  const SEARCH_PAGE = 25;
+  const REVISION_SOURCE = { pc: "reported by the station", central: "corrected here" };
+
+  function bytesText(n) {
+    if (n < 1024) return n + " bytes";
+    if (n < 1048576) return (n / 1024).toFixed(0) + " KB";
+    return (n / 1048576).toFixed(1) + " MB";
+  }
+
+  function fieldsPreview(fields) {
+    if (fields === null) return h("span", { class: "muted" }, "cannot be read with the server's current data key");
+    const entries = Object.entries(fields).filter(([, v]) => v);
+    if (!entries.length) return h("span", { class: "muted" }, "no index fields");
+    return h("ul", { class: "projects" }, entries.slice(0, 4).map(([k, v]) => h("li", {}, k + ": " + v)));
+  }
+
+  async function search() {
+    const f = await api("GET", "/admin/documents/filters");
+    const s = searchState;
+    const pick = (label, key, options, any) => {
+      const el = h("select", {}, h("option", { value: "" }, any),
+        options.map(([value, text]) => h("option", { value, selected: s[key] === value }, text)));
+      el.addEventListener("change", () => { s[key] = el.value; s.offset = 0; });
+      return h("label", {}, label, el);
+    };
+    const typed = (label, key, type, placeholder) => {
+      const el = h("input", { type, value: s[key], placeholder, maxlength: 100 });
+      el.addEventListener("input", () => { s[key] = el.value; s.offset = 0; });
+      return h("label", {}, label, el);
+    };
+    const go = (event) => { if (event) event.preventDefault(); render(); };
+    const form = h("form", { class: "searchform", onsubmit: go },
+      typed("Identifier", "q", "search", "NIC, account number, customer ID..."),
+      pick("Project", "project", f.projects.map((p) => [p.id, p.name]), "All projects"),
+      pick("Station", "pc", f.stations.map((p) => [p.id, p.name]), "All stations"),
+      pick("Status", "status", f.statuses.map((v) => [v, v]), "Any status"),
+      typed("Scanned from", "date_from", "date"), typed("Scanned to", "date_to", "date"),
+      h("div", { class: "buttons" },
+        h("button", { type: "submit", class: "primary" }, "Search"),
+        button("Clear", () => { Object.assign(s, { q: "", project: "", pc: "", status: "", date_from: "", date_to: "", offset: 0 }); render(); })));
+    const query = new URLSearchParams({ limit: String(SEARCH_PAGE), offset: String(s.offset) });
+    for (const key of ["q", "project", "pc", "status", "date_from", "date_to"]) if (s[key].trim()) query.set(key, s[key].trim());
+    let found = null;
+    let problem = null;
+    try { found = await api("GET", "/admin/documents?" + query); }
+    catch (e) { if (e.status === 401) throw e; problem = e.message; }
+    const headers = ["Scanned", "Project", "Station", "Index", "Status", ""];
+    const results = problem
+      ? h("p", { class: "error" }, problem)
+      : !found.total
+        ? h("p", { class: "empty" }, s.q || s.project || s.pc || s.status || s.date_from || s.date_to
+            ? "No document matches. An identifier must match exactly (spaces and dashes are ignored)."
+            : "No documents have been reported yet. Stations report each document's index fields once they are enrolled.")
+        : h("div", {},
+            h("p", { class: "sub" }, count(found.total) + " " + plural(found.total, "document", "documents") + " found"
+              + (found.total > SEARCH_PAGE ? ", showing " + (found.offset + 1) + " to " + (found.offset + found.items.length) : "") + "."),
+            h("div", { class: "scroll" }, stack(table(headers, found.items.map((d) => [
+              when(d.created_at), d.project_name, d.pc_name, fieldsPreview(d.fields),
+              d.validation_status ? badge(d.validation_status.replace(/_/g, " ")) : "",
+              h("a", { href: "#/documents/" + encodeURIComponent(d.id) }, "Open")]), ""), headers)),
+            found.total > SEARCH_PAGE
+              ? h("div", { class: "toolbar" },
+                  button("Previous", () => { s.offset = Math.max(0, s.offset - SEARCH_PAGE); render(); }, ""),
+                  button("Next", () => { s.offset += SEARCH_PAGE; render(); }, ""))
+              : null);
+    if (found && found.total && s.offset >= found.total) { s.offset = 0; }
+    return h("div", {},
+      h("h1", {}, "Search documents"),
+      h("p", { class: "sub" }, "Index data and PDF details reported by the stations. The PDF files themselves stay on the stations."),
+      form, results,
+      role === "searcher" ? null : h("p", { class: "sub" }, h("a", { href: "#/access" }, "Who searched for or opened documents")));
+  }
+
+  async function documentDetail(id) {
+    const d = await api("GET", "/admin/documents/" + encodeURIComponent(id));
+    const file = d.files.find((x) => x.is_current) || d.files[0];
+    const entries = Object.entries(d.fields || {});
+    return h("div", {},
+      h("p", {}, h("a", { href: "#/search" }, "Back to the search")),
+      h("h1", {}, d.project_name),
+      h("p", { class: "lead" }, "Scanned on ", h("strong", {}, d.pc_name), " " + when(d.created_at) + ", "
+        + d.page_count + " " + plural(d.page_count, "page", "pages") + ", batch " + d.batch_id + "."),
+      d.validation_status ? h("p", {}, badge(d.validation_status.replace(/_/g, " "))) : null,
+      h("h2", {}, "Index fields"),
+      d.fields_unreadable
+        ? h("p", { class: "error" }, "These fields cannot be read with the server's current data key.")
+        : entries.length
+          ? stack(table(["Field", "Value"], entries.map(([k, v]) => [k, v]), ""), ["Field", "Value"])
+          : h("p", { class: "empty" }, "No index fields were reported."),
+      h("h2", {}, "The PDF"),
+      file
+        ? h("div", {},
+            h("p", {}, h("strong", {}, file.file_name || "(no name)"), " " + bytesText(file.size) + ". "
+              + (file.delivery_status ? "Delivery: " + file.delivery_status.replace(/_/g, " ") + ". " : "")
+              + (file.delivered_to.length ? "Where: " + file.delivered_to.join(", ") + "." : "")),
+            h("p", { class: "sub" }, "The file stays on " + d.pc_name + "; this server holds its details only. SHA-256 "
+              + file.sha256 + (d.files.length > 1 ? ". The PDF was re-exported " + (d.files.length - 1) + " "
+                + plural(d.files.length - 1, "time", "times") + " after a correction." : ".")))
+        : h("p", { class: "empty" }, "No PDF was reported for this document."),
+      h("h2", {}, "History"),
+      h("ul", { class: "history" }, d.history.map((r) => h("li", {},
+        h("strong", {}, "Revision " + r.revision), " " + when(r.received_at) + ", " + (REVISION_SOURCE[r.source] || r.source)
+          + (r.is_current ? " (current)" : ""),
+        r.changes && r.changes.length
+          ? h("ul", { class: "projects" }, r.changes.map((c) => h("li", {},
+              c.field + ": " + (c.before === null || c.before === undefined ? "(empty)" : c.before)
+              + " -> " + (c.after === null || c.after === undefined ? "(empty)" : c.after))))
+          : null))),
+      h("p", { class: "sub" }, "Opening this document was recorded in the access log."));
+  }
+
+  async function accessLog() {
+    const r = await api("GET", "/admin/documents/access-log?limit=100");
+    return h("div", {},
+      h("h1", {}, "Document access"),
+      h("p", { class: "sub" }, "Who searched for or opened documents. The log records the kind of search, never what was typed."),
+      stack(table(["Time", "Who", "Action", "Details"], r.items.map((e) => [when(e.at), e.user, e.action,
+        h("span", { class: "muted" }, e.document_id ? short(e.document_id) : detailText(e.detail))]), "Nobody has searched yet."),
+        ["Time", "Who", "Action", "Details"]));
   }
 
   let fleetFilter = "all";
@@ -981,7 +1114,8 @@
 
   // ----------------------------------------------------------------- router
   const routes = {
-    overview, fleet, activity, pcs, admins, audit, settings,
+    overview, fleet, activity, pcs, admins, audit, settings, search, access: accessLog,
+    documents: (id) => (id ? documentDetail(id) : search()),
     projects: (id) => (id ? projectViews.detail(id) : projectViews.list()),
     templates: (id) => (id ? templateViews.detail(id) : templateViews.list()),
   };
@@ -990,10 +1124,11 @@
     const myRender = ++renderId;
     clearInterval(refreshTimer);
     refreshTimer = null;
-    const [name, id] = (location.hash.replace(/^#\//, "") || "overview").split("/");
-    const route = routes[name] || overview;
+    const [name, id] = (location.hash.replace(/^#\//, "") || (role === "searcher" ? "search" : "overview")).split("/");
+    const allowed = role !== "searcher" || ["search", "documents"].includes(name);
+    const route = (allowed && routes[name]) || (role === "searcher" ? search : overview);
     for (const a of document.querySelectorAll("#nav a")) {
-      a.classList.toggle("active", a.dataset.view === (routes[name] ? name : "overview"));
+      a.classList.toggle("active", a.dataset.view === (name === "documents" ? "search" : name === "access" ? "audit" : (routes[name] ? name : "overview")));
     }
     try {
       const content = await route(id);
@@ -1025,7 +1160,8 @@
     csrf = me.csrf_token || "";
     role = me.role || "admin";
     document.getElementById("who-name").textContent =
-      me.username + (role === "auditor" ? " (read-only)" : "");
+      me.username + (role === "auditor" ? " (read-only)" : role === "searcher" ? " (search only)" : "");
+    for (const a of document.querySelectorAll("#nav a")) a.hidden = role === "searcher" && a.dataset.view !== "search";
     document.getElementById("login").hidden = true;
     document.getElementById("top").hidden = false;
     view.hidden = false;

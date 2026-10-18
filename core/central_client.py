@@ -41,6 +41,14 @@ class CentralAuthError(CentralError):
         self.status = status
 
 
+class CentralRejected(CentralError):
+    """The server will not accept this document as sent (a 4xx other than 401): retrying the same body is useless."""
+
+    def __init__(self, message: str, status: int):
+        super().__init__(message)
+        self.status = status
+
+
 class CentralRegistrationError(CentralError):
     """Enrollment code was invalid, used or expired."""
 
@@ -171,6 +179,22 @@ class CentralClient:
             raise CentralAuthError(status)
         if status != 204:
             raise CentralUnavailable(f"heartbeat failed (HTTP {status})")
+
+    def put_document(self, pc_id: str, api_key: str, document_id: str, part: str, body: dict) -> None:
+        """Report one document's `meta` (details) or `index` (fields). Idempotent on the server. Raises
+        CentralAuthError (key refused), CentralRejected (the server will never accept this body: 4xx) or
+        CentralUnavailable (try again later: network, 5xx, or 409 when the details have not arrived yet)."""
+        status, _data = self._transport(
+            "PUT", f"{self.base}/pcs/{quote(pc_id, safe='')}/documents/{quote(document_id, safe='')}/{part}",
+            {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "Accept": "application/json"},
+            json.dumps(body).encode("utf-8"), self._timeout)
+        if status in (401, 403):
+            raise CentralAuthError(status)
+        if status == 200:
+            return
+        if status in (400, 413, 422):
+            raise CentralRejected(f"central refused the document (HTTP {status})", status)
+        raise CentralUnavailable(f"sending the document failed (HTTP {status})")
 
     def pull_config(self, pc_id: str, api_key: str,
                     operator_id: str = "") -> PullResult:

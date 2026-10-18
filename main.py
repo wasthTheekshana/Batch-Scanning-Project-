@@ -14,7 +14,7 @@ from pathlib import Path
 from PyQt6.QtWidgets import QApplication
 
 from core.central_sync import (build_central, choose_pipeline_profile,
-                               shutdown_central, startup_sync)
+                               shutdown_central, start_document_sync, startup_sync)
 from core.event_bus import EventBus
 from core.hot_folder import HotFolderService
 from core.job_queue import Pipeline
@@ -290,6 +290,7 @@ def main() -> int:
     pipeline.recover()
     if sync_worker is not None:     # the startup sync already ran above
         sync_worker.start(initial_sync=False, first_result=startup_result)
+    start_document_sync(sync_service)
 
     window = MainWindow(db, pm, bus, pipeline=pipeline, audit=audit,
                         staging_dir=root / "staging",
@@ -307,7 +308,7 @@ def main() -> int:
     hot_folders.start()
     code = app.exec()
 
-    shutdown_central(sync_worker)
+    shutdown_central(sync_worker, sync_service)
     backup_service.stop()
     hot_folders.stop()
     pipeline.shutdown(wait=False)

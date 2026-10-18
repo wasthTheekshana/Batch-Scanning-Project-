@@ -161,9 +161,9 @@ def test_a_station_cannot_file_documents_under_a_project_it_was_not_given(world)
     with world.app.state.session_factory() as db:
         db.add(Project(id="secret", name="secret", config_json="{}", current_version=1))
         db.commit()
-    assert world.meta(project="secret").status_code == 403
+    assert world.meta(project="secret").status_code == 422
     world.meta()                                                       # filed under its own project
-    assert world.meta(project="secret").status_code == 403             # nor moved into another one later
+    assert world.meta(project="secret").status_code == 422             # nor moved into another one later
     assert search(world.admin_client, project="secret")["total"] == 0
 
 

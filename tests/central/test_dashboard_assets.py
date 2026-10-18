@@ -21,7 +21,7 @@ def test_other_files_are_still_not_served(client):
 
 def test_the_dashboard_hides_write_controls_from_an_auditor():
     js = (DASHBOARD / "app.js").read_text(encoding="utf-8")
-    assert 'role === "auditor" ? null' in js and "(read-only)" in js
+    assert 'role !== "admin" ? null' in js and "(read-only)" in js
     plain = js.replace("wbutton(", "WRITE(")
     for label in ("Add PC", "Delete", "Revoke key", "Assign", "Add admin...", "Save",
                   "Reset password", "Change role", "Disable", "Enable"):
@@ -82,6 +82,15 @@ def test_the_fleet_and_activity_screens_are_read_only():
     for source in (fleet, activity):
         assert 'api("POST"' not in source and 'api("PUT"' not in source and 'api("DELETE"' not in source
         assert "wbutton(" not in source and 'api("PATCH"' not in source
+
+
+def test_documents_can_be_searched_and_opened_and_a_searcher_sees_nothing_else():
+    js = _js()
+    assert "async function search()" in js and "async function documentDetail(id)" in js
+    assert 'api("GET", "/admin/documents' in js and "#/documents/" in js
+    assert 'role === "searcher"' in js and 'a.hidden = role === "searcher"' in js
+    for source in (js[js.index("async function search()"):js.index("async function accessLog()")],):
+        assert 'api("POST"' not in source and 'api("PUT"' not in source and 'api("DELETE"' not in source
 
 
 def test_a_station_has_its_own_page_reached_from_the_fleet_and_the_alerts():

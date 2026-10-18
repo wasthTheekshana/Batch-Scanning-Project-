@@ -12,7 +12,9 @@ import logging
 import threading
 from typing import Callable
 
-from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot
+from datetime import datetime, timezone
+
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import (QFormLayout, QHBoxLayout, QHeaderView, QLabel,
                              QLineEdit, QMessageBox, QPushButton, QTableWidget,
                              QTableWidgetItem, QVBoxLayout, QWidget)
@@ -33,6 +35,39 @@ def _safe(value, limit: int = MAX_TEXT) -> str:
     """Untrusted text for display: printable characters only, bounded."""
     text = "".join(c if c.isprintable() else " " for c in str(value)[:limit * 2])
     return text if len(text) <= limit else text[:limit] + "…"
+
+
+def age_text(stamp: str | None, now: datetime | None = None) -> str:
+    """"5 minutes", "3 hours" ... how long ago an ISO time was."""
+    try:
+        then = datetime.fromisoformat(stamp or "")
+    except ValueError:
+        return "an unknown time"
+    seconds = max(0, int(((now or datetime.now(timezone.utc)) - then).total_seconds()))
+    for unit, size in (("day", 86400), ("hour", 3600), ("minute", 60)):
+        if seconds >= size:
+            n = seconds // size
+            return f"{n} {unit}{'s' if n != 1 else ''}"
+    return "under a minute"
+
+
+def documents_text(stats: dict, now: datetime | None = None) -> str:
+    """What the document reporting is doing, in a sentence or two (counts and times only)."""
+    lines = []
+    if stats["waiting"]:
+        lines.append(f"{stats['waiting']} document(s) waiting to be reported to central "
+                     f"(the oldest for {age_text(stats['oldest'], now)}). Scanning is not affected.")
+        if stats["last_error"]:
+            lines.append(f"Last problem: {_safe(stats['last_error'], 120)}. It will try again by itself.")
+    elif not stats["failed"]:
+        lines.append("All documents have been reported to central."
+                     if stats["last_sent_at"] else "No documents have been reported to central yet.")
+    if stats["failed"]:
+        lines.append(f"{stats['failed']} document(s) were refused by central (for example, a project that is not "
+                     "assigned to this PC). Use Retry refused once that is fixed.")
+    if stats["last_sent_at"] and stats["waiting"]:
+        lines.append(f"Last report {age_text(stats['last_sent_at'], now)} ago.")
+    return "\n".join(lines)
 
 
 class CentralTab(QWidget):
@@ -70,6 +105,25 @@ class CentralTab(QWidget):
         for b in (self.register_btn, self.sync_btn, self.disconnect_btn):
             row.addWidget(b)
         layout.addLayout(row)
+
+        self.docs_label = QLabel()
+        self.docs_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.docs_label.setWordWrap(True)
+        layout.addWidget(self.docs_label)
+        docs_row = QHBoxLayout()
+        self.send_old_btn = QPushButton("Send existing documents")
+        self.send_old_btn.setToolTip("Report the documents already on this PC (the index fields and PDF "
+                                     "details, never the PDF itself).")
+        self.send_old_btn.clicked.connect(self.send_existing)
+        self.retry_btn = QPushButton("Retry refused")
+        self.retry_btn.clicked.connect(self.retry_refused)
+        docs_row.addWidget(self.send_old_btn)
+        docs_row.addWidget(self.retry_btn)
+        docs_row.addStretch(1)
+        layout.addLayout(docs_row)
+        self._docs_timer = QTimer(self)
+        self._docs_timer.timeout.connect(self.refresh_documents)
+        self._docs_timer.start(15000)
 
         self.status_label = QLabel()
         self.status_label.setTextFormat(Qt.TextFormat.PlainText)
@@ -137,6 +191,43 @@ class CentralTab(QWidget):
                                  and not self.state.settings.auth_failed)
         self.disconnect_btn.setEnabled(idle and registered)
         self._fill_projects()
+        self.refresh_documents()
+
+    def refresh_documents(self) -> None:
+        stats = self.db.outbox_stats() if self.db is not None and hasattr(self.db, "outbox_stats") else None
+        registered = self.state.is_registered()
+        shown = registered and stats is not None
+        self.docs_label.setVisible(shown)
+        self.send_old_btn.setVisible(shown)
+        self.retry_btn.setVisible(shown and bool(stats and stats["failed"]))
+        if shown and stats is not None:
+            self.docs_label.setText(documents_text(stats))
+            self.send_old_btn.setEnabled(self._can)
+            self.retry_btn.setEnabled(self._can)
+
+    def send_existing(self) -> None:
+        if not self._can or self.db is None:
+            return
+        answer = QMessageBox.question(
+            self, "Send existing documents",
+            "Report every document already on this PC to central? Only the index fields and the PDF details "
+            "are sent, never the PDF. Documents scanned from now on are reported by themselves.")
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.db.outbox_enqueue_existing()
+        self._wake_documents()
+        self.refresh_documents()
+
+    def retry_refused(self) -> None:
+        if self._can and self.db is not None:
+            self.db.outbox_retry_failed()
+            self._wake_documents()
+            self.refresh_documents()
+
+    def _wake_documents(self) -> None:
+        sender = getattr(self.service, "document_worker", None)
+        if sender is not None:
+            sender.push_now()
 
     def _fill_projects(self) -> None:
         rows = []

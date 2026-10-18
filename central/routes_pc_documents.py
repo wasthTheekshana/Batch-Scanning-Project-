@@ -127,7 +127,7 @@ def put_meta(document_id: str, body: MetaIn, request: Request, pc: Pc = Depends(
     # a station files documents only under projects it was given: otherwise one station could put records into
     # another project's results (and in front of the people scoped to that project)
     if db.get(PcAssignment, (pc.id, body.project_id)) is None:
-        raise HTTPException(403, "this project is not assigned to this station")
+        raise HTTPException(422, "this project is not assigned to this station")
     doc = _document(db, pc, document_id)
     new = doc is None
     if doc is None:

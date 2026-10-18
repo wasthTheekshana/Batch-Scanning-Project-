@@ -8,6 +8,13 @@ All notable changes to DOK Scanner. The newest release is first. The version num
 Changes since 1.0.0. At release time this heading becomes the new version number and date.
 
 ### Central web center
+- **Index sync.** Each station reports every finished document's index fields and the PDF's details (name, size,
+  SHA-256, where it went), never the PDF. A queue on the PC (saved in the same transaction as the document) is sent
+  in the background, retried after an outage and never twice. Central stores the fields encrypted and finds documents
+  by exact identifier (NIC, account number, any field) through a blind index; every revision is kept. New **Search**
+  and document pages, a `searcher` role limited to chosen projects, and an access log (`GET /admin/documents`,
+  `/admin/documents/{id}`, `/admin/documents/access-log`; stations use `PUT /pcs/{id}/documents/{doc}/meta|index`).
+  Admin > Central on the PC shows what is waiting and offers *Send existing documents*. Needs `CENTRAL_DATA_KEY`.
 - **Station page.** Click a station for its settings history against what it runs, 30 days of activity, its alerts
   and recent events (`GET /admin/fleet/{pc_id}`).
 - **Webhook safety.** The address is re-checked at every send and the connection goes to the vetted address, so a

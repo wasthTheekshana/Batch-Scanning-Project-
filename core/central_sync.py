@@ -433,13 +433,35 @@ def build_central(db, pm: ProfileManager, root, audit, bus,
                                      operator_fn=operator_fn)
         worker = SyncWorker(service, state,
                             on_result=bus.central_synced.emit)
+        _attach_document_sync(db, state, service)
         return state, service, worker
     except Exception:
         logging.exception("central sync disabled this session")
         return None, None, None
 
 
-def shutdown_central(worker: SyncWorker | None) -> None:
-    """Exit path: stop the sync thread if there is one."""
+def _attach_document_sync(db, state: CentralState, service: CentralSyncService) -> None:
+    """Documents are queued for reporting only while this PC is enrolled; the sender hangs off the service as
+    `document_worker` (started by start_document_sync). Failing to set it up never stops the application."""
+    try:
+        from core.central_documents import DocumentPusher, DocumentSyncWorker
+        db.outbox_gate = state.is_registered
+        service.document_worker = DocumentSyncWorker(DocumentPusher(db, state))
+    except Exception:
+        logging.exception("document reporting disabled this session")
+        service.document_worker = None
+
+
+def start_document_sync(service: CentralSyncService | None) -> None:
+    worker = getattr(service, "document_worker", None)
+    if worker is not None:
+        worker.start()
+
+
+def shutdown_central(worker: SyncWorker | None, service: CentralSyncService | None = None) -> None:
+    """Exit path: stop the sync threads if there are any."""
+    docs = getattr(service, "document_worker", None)
+    if docs is not None:
+        docs.stop()
     if worker is not None:
         worker.stop()

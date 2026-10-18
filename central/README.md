@@ -179,6 +179,32 @@ private networks too; redirects are not followed, the answer is ignored, the tim
 other than 2xx counts as a failure. The audit log records that a message was sent or failed and the host, never the
 address or secret. The address is checked again at every send and the connection goes to exactly the address that passed (so a name re-pointed at the server after saving is refused). Endpoints: `GET/PUT /admin/webhook`, `POST /admin/webhook/test` (an auditor can read the status, not change it).
 
+### Index sync
+
+A station reports each finished document in two idempotent calls, details first:
+
+    PUT /pcs/{pc_id}/documents/{document_id}/meta    project_id, batch_id, page_count, created_at, validation_status,
+                                                     file_name, size, sha256, delivered_to[], delivery_status
+    PUT /pcs/{pc_id}/documents/{document_id}/index   fields{name: text}, validation_status, project_version, edited_at
+
+Rules the server enforces: the PC's own key (a key for another PC is refused); the project must be **assigned to
+that station**; field names `[A-Za-z0-9_.-]{1,64}`, at most 100 fields of 2000 characters; a date not in the future;
+a server without `CENTRAL_DATA_KEY` answers 503 (the PC keeps the document queued and retries). The same details or
+the same fields again change nothing; different fields become the next revision (all revisions are kept); a PDF
+re-exported after a correction (different SHA-256) becomes the current file record and the old one is kept.
+The PDF bytes are never sent or stored (`file_state` is `metadata_only`).
+
+At rest: the fields, the file name and where it was delivered are AES-256-GCM encrypted (bound to their row, so a
+value moved to another row will not decrypt). Search uses a **blind index**: an HMAC of each field's normalised value
+(upper-case letters and digits only, 3 to 64 characters) with a key derived from the data key, so "553 216-789v" finds
+"553216789V" without a plain-text column. Matching is exact; there is no prefix or free-text search. A person with the
+database but not the key sees neither values nor can test guesses; they could still see *which documents share a value*
+(for example the same branch). The access log records who searched or opened what (the kind of filter, never the value).
+
+Roles: `admin` and `auditor` (read-only) see every project; `searcher` sees only the projects given with
+`PUT /admin/users/{id}/projects`, reaches no other part of the service, and a document outside their projects looks
+like one that does not exist. Create one with `python -m central.manage create-admin NAME --role searcher`.
+
 ### Admin API added for the dashboard
 
 | Endpoint | Purpose |
@@ -193,6 +219,8 @@ address or secret. The address is checked again at every send and the connection
 | `GET /admin/audit/actions`, `GET /admin/overview` | filter list, dashboard summary |
 | `GET /admin/fleet` | every PC with its status, program version, settings rollout and today's counts, and a summary (read-only: an auditor may call it) |
 | `GET /admin/fleet/{pc_id}` | one station: facts, each project's last five published versions against what it runs, 30 days of activity, its own alerts and 25 recent events (poll noise left out); 404 if unknown; read-only |
+| `GET /admin/documents`, `/admin/documents/{id}`, `/admin/documents/filters`, `/admin/documents/access-log` | search and open reported documents, the search form's choices, who looked (see "Index sync") |
+| `PUT /admin/users/{id}/projects` | the projects a `searcher` may see (replaces the list) |
 | `GET /admin/alerts` | what needs attention now, most serious first, with counts per level (read-only; computed on request, so an alert exists exactly while its condition does) |
 | `GET /admin/stats?days=14` | per-day totals (1 to 90 days, quiet days included as zeros) and each PC's total, busiest first |
 | `GET /admin/project-defaults` | a complete starting configuration for a new project |

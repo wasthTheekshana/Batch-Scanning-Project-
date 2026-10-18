@@ -128,8 +128,11 @@ and open its PDF.
 - STARTED 2026-10-18 (owner decision: a fuller dashboard): fleet monitoring. Stations report their program
   version, applied project versions and daily counts; new Fleet and Activity screens, an Overview led by the
   fleet's state, a phone layout, and alerts (quiet station, settings not applied, errors) on the Overview and as
-  a count in the menu, and delivered by webhook (2026-10-18). Next in this track: a per-station detail page, and
-  (needs the approved document-sync design) central search.
+  a count in the menu, and delivered by webhook, a per-station page (2026-10-18). Index sync built (design phases 1
+  and 2, 2026-10-18; owner chose index data, no PDF files): stations report each document's index fields and PDF
+  details through a queue that survives outages, central keeps them encrypted and searches by exact identifier, with
+  a searcher role scoped to projects and an access log. Not built: corrections made centrally and sent back to the
+  stations (phase 3), keeping the PDF bytes (paused), retention, key rotation tool, a backlog alert.
 
 ### 8. Needs a business decision, not code
 Bank document-system field mapping (plan 3.5), incident and insurance workflow

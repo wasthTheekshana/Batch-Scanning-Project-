@@ -16,6 +16,7 @@ import shutil
 import sqlite3
 import threading
 from datetime import datetime, timezone
+from typing import Callable
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -173,7 +174,7 @@ CREATE INDEX IF NOT EXISTS idx_custody_bundle ON custody_events(bundle_id);
 # SCHEMA_VERSION to that number. Each migration runs in one transaction with its
 # version stamp; a failure rolls everything back, and a copy of the database
 # is kept first as <name>.before-v<N>.bak.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 _MIGRATIONS: list[tuple[int, str]] = [
     # 2: which documents were scanned under which custody bundle's QR label
     (2, """
@@ -193,6 +194,20 @@ CREATE INDEX IF NOT EXISTS idx_bundle_documents_bundle ON bundle_documents(bundl
 ALTER TABLE users ADD COLUMN failed_logins INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN locked_until TEXT;
 """),
+    # 5: documents waiting to be reported to the central service (one row per document; seq counts its changes)
+    (5, """
+CREATE TABLE IF NOT EXISTS sync_outbox (
+    document_id  TEXT PRIMARY KEY,
+    seq          INTEGER NOT NULL DEFAULT 1,
+    sent_seq     INTEGER NOT NULL DEFAULT 0,
+    attempts     INTEGER NOT NULL DEFAULT 0,
+    next_try_at  TEXT,
+    last_error   TEXT,
+    failed       INTEGER NOT NULL DEFAULT 0,
+    enqueued_at  TEXT NOT NULL,
+    last_sent_at TEXT
+);
+"""),
 ]
 
 
@@ -205,6 +220,14 @@ class DatabaseTooNew(Exception):
 
 
 _DOC_JSON_FIELDS = {"extracted_fields", "qc_detail", "delivery_detail", "audit_trail"}
+# a change to one of these is something central should hear about (audit_trail and qc_detail change too often to matter)
+_SYNC_COLUMNS = {"page_range", "extracted_fields", "validation_status", "storage_path", "delivery_status",
+                 "delivery_detail"}
+_TOUCH_OUTBOX = (
+    "INSERT INTO sync_outbox (document_id, enqueued_at) VALUES (?, ?) "
+    "ON CONFLICT(document_id) DO UPDATE SET "
+    "enqueued_at = CASE WHEN seq = sent_seq THEN excluded.enqueued_at ELSE enqueued_at END, "
+    "seq = seq + 1, failed = 0, attempts = 0, next_try_at = NULL, last_error = NULL")
 _DOC_COLUMNS = {
     "page_range", "enhancement_profile", "extracted_fields",
     "validation_status", "qc_score", "qc_detail", "storage_path",
@@ -238,6 +261,8 @@ class Database:
                                         check_same_thread=False)
             self.conn.row_factory = sqlite3.Row
         self._lock = threading.RLock()
+        # Set by the central wiring: true while this PC is enrolled, so documents are queued for reporting only then.
+        self.outbox_gate: Callable[[], bool] | None = None
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.init_schema()
@@ -433,6 +458,7 @@ class Database:
             self.conn.execute(
                 f"INSERT INTO documents ({cols}) VALUES ({marks})",
                 tuple(base.values()))
+            self._touch_outbox(document_id)
 
     def update_document(self, document_id: str, **fields) -> None:
         sets, vals = [], []
@@ -447,6 +473,80 @@ class Database:
             self.conn.execute(
                 f"UPDATE documents SET {', '.join(sets)} WHERE document_id=?",
                 tuple(vals))
+            if _SYNC_COLUMNS.intersection(fields):
+                self._touch_outbox(document_id)
+
+    # -- the outbox: documents central has not yet been told about ------------------------------------
+    def _wants_outbox(self) -> bool:
+        gate = self.outbox_gate
+        try:
+            return bool(gate and gate())
+        except Exception:
+            return False
+
+    def _touch_outbox(self, document_id: str) -> None:
+        """Runs inside the caller's transaction, so a document and its queue entry are saved together or not at all."""
+        if self._wants_outbox():
+            self.conn.execute(_TOUCH_OUTBOX, (document_id, _now()))
+
+    def outbox_enqueue_existing(self) -> int:
+        """Queue every document already on this PC (for the first connection to a server). Returns how many."""
+        with self._lock, self.conn:
+            self.conn.execute(
+                "INSERT INTO sync_outbox (document_id, enqueued_at) SELECT document_id, ? FROM documents WHERE true "
+                "ON CONFLICT(document_id) DO UPDATE SET "
+                "enqueued_at = CASE WHEN seq = sent_seq THEN excluded.enqueued_at ELSE enqueued_at END, "
+                "seq = seq + 1, failed = 0, attempts = 0, next_try_at = NULL, last_error = NULL", (_now(),))
+            return int(self.conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0])
+
+    def outbox_due(self, limit: int, now: str | None = None) -> list[sqlite3.Row]:
+        with self._lock:
+            return self.conn.execute(
+                "SELECT document_id, seq, attempts FROM sync_outbox WHERE seq > sent_seq AND failed = 0 "
+                "AND (next_try_at IS NULL OR next_try_at <= ?) ORDER BY enqueued_at, document_id LIMIT ?",
+                (now or _now(), limit)).fetchall()
+
+    def outbox_done(self, document_id: str, seq: int) -> None:
+        """Reported. If the document changed meanwhile (seq moved on) it stays queued for the newer state."""
+        with self._lock, self.conn:
+            self.conn.execute(
+                "UPDATE sync_outbox SET sent_seq = MAX(sent_seq, ?), attempts = 0, next_try_at = NULL, "
+                "last_error = NULL, last_sent_at = ? WHERE document_id = ?", (seq, _now(), document_id))
+
+    def outbox_retry(self, document_id: str, error: str, next_try_at: str) -> None:
+        with self._lock, self.conn:
+            self.conn.execute(
+                "UPDATE sync_outbox SET attempts = attempts + 1, next_try_at = ?, last_error = ? WHERE document_id = ?",
+                (next_try_at, error, document_id))
+
+    def outbox_fail(self, document_id: str, error: str) -> None:
+        """The server refused this document for good; it waits for the next change or an explicit retry."""
+        with self._lock, self.conn:
+            self.conn.execute("UPDATE sync_outbox SET failed = 1, last_error = ? WHERE document_id = ?",
+                              (error, document_id))
+
+    def outbox_drop(self, document_id: str) -> None:
+        with self._lock, self.conn:
+            self.conn.execute("DELETE FROM sync_outbox WHERE document_id = ?", (document_id,))
+
+    def outbox_retry_failed(self) -> int:
+        with self._lock, self.conn:
+            return self.conn.execute(
+                "UPDATE sync_outbox SET failed = 0, attempts = 0, next_try_at = NULL WHERE failed = 1").rowcount
+
+    def outbox_stats(self) -> dict:
+        """waiting (queued, will be tried), failed (refused for good), the oldest waiting item's time, the last
+        successful report and the last error. Counts and times only."""
+        with self._lock:
+            waiting, oldest = self.conn.execute(
+                "SELECT COUNT(*), MIN(enqueued_at) FROM sync_outbox WHERE seq > sent_seq AND failed = 0").fetchone()
+            failed = self.conn.execute("SELECT COUNT(*) FROM sync_outbox WHERE failed = 1").fetchone()[0]
+            last_sent = self.conn.execute("SELECT MAX(last_sent_at) FROM sync_outbox").fetchone()[0]
+            error = self.conn.execute(
+                "SELECT last_error FROM sync_outbox WHERE last_error IS NOT NULL "
+                "ORDER BY COALESCE(next_try_at, '') DESC LIMIT 1").fetchone()
+        return {"waiting": int(waiting), "failed": int(failed), "oldest": oldest, "last_sent_at": last_sent,
+                "last_error": error[0] if error else None}
 
     def get_document(self, document_id: str) -> sqlite3.Row | None:
         with self._lock:
