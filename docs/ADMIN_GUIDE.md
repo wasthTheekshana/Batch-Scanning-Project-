@@ -192,6 +192,13 @@ server's data key (`CENTRAL_DATA_KEY`, see `central/deploy/DEPLOY.md`); without 
 a message fails, the card shows why (could not connect, timed out, or the receiver's answer code). Messages are
 not sent while the webhook is switched off.
 
+**Is documents' reporting healthy?** Fleet and the station page show, under a station, how many documents it has
+waiting to be sent and the oldest wait, and how many the server refused. Waiting 4 hours or more raises a *backlog* alert
+(the usual cause is a server or network outage: the documents are safe on the PC and go when it returns). A *refused* alert
+almost always means the project is not assigned to that station: assign it, and the station retries by itself at its next
+sync. If the Overview says the server has no data key, set `CENTRAL_DATA_KEY` and restart it: until then every document
+is refused and stays queued on the PCs. In Search, *Download as a spreadsheet* saves what the search shows (up to 5,000 rows).
+
 Reading it: *Behind* means you published a newer version of a project and the station has not applied it
 yet (it applies at its next sync; offline stations catch up when they return). *Not reported* is a station
 with an older program that does not send these details. An *error* is a document that was rejected or

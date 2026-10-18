@@ -68,7 +68,18 @@ def test_the_report_has_the_version_the_applied_projects_and_todays_counts(db):
     db.set_central_project("proj-local", 2, managed=False)             # not managed: not central's business
     report = build_report(db, NOW)
     assert report == {"app_version": __version__, "applied": {"proj-central": 4},
-                      "stats": {"day": "2026-10-18", "documents": 1, "pages": 9, "batches": 1, "errors": 0}}
+                      "stats": {"day": "2026-10-18", "documents": 1, "pages": 9, "batches": 1, "errors": 0},
+                      "documents": {"waiting": 0, "refused": 0, "oldest_at": None}}
+
+
+def test_the_report_says_how_many_documents_wait_and_since_when(db):
+    db.outbox_gate = lambda: True
+    db.insert_batch("bq", "p1", "kamal")
+    db.insert_document("q1", "bq", "p1", extracted_fields={"nic": "1"})
+    db.insert_document("q2", "bq", "p1", extracted_fields={"nic": "2"})
+    db.outbox_fail("q2", "refused")
+    docs = build_report(db, NOW)["documents"]
+    assert (docs["waiting"], docs["refused"]) == (1, 1) and docs["oldest_at"]
 
 
 def test_the_report_carries_nothing_about_a_documents_content(db):

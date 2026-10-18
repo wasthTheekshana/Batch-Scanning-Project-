@@ -42,6 +42,7 @@ never the value that was sent. The service has no interactive docs page (`/docs`
 | GET | `/admin/templates/{template_id}/versions/{version}` | admin session + CSRF header on changes |
 | GET | `/admin/documents` | ? |
 | GET | `/admin/documents/access-log` | ? |
+| GET | `/admin/documents/export.csv` | ? |
 | GET | `/admin/documents/filters` | ? |
 | GET | `/admin/documents/{document_id}` | ? |
 | GET | `/admin/alerts` | admin session + CSRF header on changes |
@@ -195,13 +196,19 @@ A complete, valid starting configuration for a new project (the
 ### GET `/admin/documents`
 
 - **Who:** ?
-- **Parameters:** `q` (query); `field` (query); `value` (query); `project` (query); `pc` (query); `batch` (query); `status` (query); `date_from` (query); `date_to` (query); `limit` (query); `offset` (query)
+- **Parameters:** `limit` (query); `offset` (query); `q` (query); `field` (query); `value` (query); `project` (query); `pc` (query); `batch` (query); `status` (query); `date_from` (query); `date_to` (query)
 - **Replies:** 200, 422
 
 ### GET `/admin/documents/access-log`
 
 - **Who:** ?
 - **Parameters:** `limit` (query); `before_id` (query)
+- **Replies:** 200, 422
+
+### GET `/admin/documents/export.csv`
+
+- **Who:** ?
+- **Parameters:** `q` (query); `field` (query); `value` (query); `project` (query); `pc` (query); `batch` (query); `status` (query); `date_from` (query); `date_to` (query)
 - **Replies:** 200, 422
 
 ### GET `/admin/documents/filters`

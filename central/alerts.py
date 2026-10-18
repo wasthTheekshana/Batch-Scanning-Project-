@@ -12,6 +12,8 @@ not an incident.
 | errors        | errors reported today                                  | info, warn from ERRORS_WARN    |
 | revoked       | the station's key was revoked                          | info                           |
 | not_enrolled  | added but never connected for NEVER_CONNECTED_AFTER    | info                           |
+| backlog       | documents waiting to be reported for BACKLOG_AFTER     | warn, critical after a day     |
+| refused       | the server refused documents the station reported      | warn                           |
 """
 from datetime import datetime, timedelta
 
@@ -24,6 +26,7 @@ from central.models import (ConfigVersion, Pc, PcAppliedProject, PcAssignment, P
 CRITICAL_AFTER = timedelta(hours=24)
 NEVER_CONNECTED_AFTER = timedelta(days=7)
 ERRORS_WARN = 5
+BACKLOG_AFTER = timedelta(hours=4)
 ORDER = {"critical": 0, "warn": 1, "info": 2}
 
 
@@ -81,6 +84,14 @@ def compute_alerts(db: Session, window: timedelta) -> list[dict]:
                 note = "not applied yet" if version is None else f"it runs v{version}"
                 add("behind", _severity(age or CRITICAL_AFTER), pc,
                     f"Has not applied {project.name} v{project.current_version} ({note})", since, project.id)
+        if pc.docs_waiting and pc.docs_oldest_at and now - pc.docs_oldest_at >= BACKLOG_AFTER:
+            add("backlog", _severity(now - pc.docs_oldest_at), pc,
+                f"{pc.docs_waiting} {'document is' if pc.docs_waiting == 1 else 'documents are'} waiting to reach "
+                "the server", pc.docs_oldest_at)
+        if pc.docs_refused:
+            add("refused", "warn", pc,
+                f"{pc.docs_refused} {'document was' if pc.docs_refused == 1 else 'documents were'} refused by the "
+                "server (check that the project is assigned to this station)", None)
         n = errors.get(pc.id, 0)
         if n:
             add("errors", "warn" if n >= ERRORS_WARN else "info", pc,

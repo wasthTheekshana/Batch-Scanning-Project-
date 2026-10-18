@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from central.deps import get_db, require_admin, require_csrf
-from central.models import (AdminUser, AuditEvent, Pc, Project, Template,
+from central.models import (AdminUser, AuditEvent, Document, Pc, Project, Template,
                             utcnow)
 from central.routes_admin_users import DISABLED_UNTIL
 from central.settings_store import get_poll_interval
@@ -78,7 +78,8 @@ def overview(request: Request, db: Session = Depends(get_db)):
     registered = [p for p in pcs if p.api_key_hash is not None]
     online = [p for p in registered if is_online(p, window)]
     admins = list(db.scalars(select(AdminUser)))
-    recent = db.scalars(select(AuditEvent).order_by(AuditEvent.id.desc()).limit(10))
+    recent = db.scalars(select(AuditEvent).where(AuditEvent.action != "config_pull")        # not the routine polls
+                        .order_by(AuditEvent.id.desc()).limit(10))
     return {
         "pcs": {"total": len(pcs), "registered": len(registered),
                 "online": len(online),
@@ -94,4 +95,6 @@ def overview(request: Request, db: Session = Depends(get_db)):
         "poll_interval_seconds": get_poll_interval(
             db, request.app.state.settings.default_poll_interval_seconds),
         "recent_audit": [_event(e) for e in recent],
+        "server": {"data_key": request.app.state.settings.data_key is not None,
+                   "documents": db.scalar(select(func.count()).select_from(Document)) or 0},
     }

@@ -112,6 +112,11 @@ const b = [...scope.querySelectorAll("button,a")].find((x) => name(x) === l && x
   await check("the document opens with its fields, PDF details and history",
     (await text()).includes("Index fields") && (await text()).includes(PCS_NIC) && (await text()).includes("stays on") && (await text()).includes("Revision 1"));
   await shot("05g-document");
+  const csv = await page.evaluate(() => fetch("/admin/documents/export.csv?q=553216789V").then((r) => r.text()));
+  await check("the search can be exported as a spreadsheet", csv.startsWith("scanned_at,station,project") && csv.includes("Kamal Perera"));
+  await click("Fleet"); await sleep(500);
+  await page.evaluate(() => [...document.querySelectorAll(".station a")].find((a) => a.textContent === "Scan-Desk-1-A").click()); await sleep(600);
+  await check("the station page lists the documents it sent", (await text()).includes("Documents sent to the server") && (await text()).includes("1 document reported by this station"));
 
   await click("Templates"); await sleep(500); await shot("06-templates");
   await click("Admins"); await click("Add admin...");

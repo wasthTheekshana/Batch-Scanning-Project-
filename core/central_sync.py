@@ -237,6 +237,8 @@ class CentralSyncService:
             self.db.unmanage_central_project(pid)
             result.unassigned.append(pid)
             self._audit("central_project_unassigned", project_id=_clean(pid))
+        if result.applied and hasattr(self.db, "outbox_retry_failed"):
+            self.db.outbox_retry_failed()      # a project was just assigned: documents refused for lack of it can go now
         status = "ok" if not result.errors else \
             f"ok with {len(result.errors)} skipped"
         if not self.state.update_if(

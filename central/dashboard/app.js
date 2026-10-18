@@ -189,13 +189,19 @@
     const minutes = Math.round(o.poll_interval_seconds / 60);
     return h("div", {},
       h("h1", {}, "Overview"),
+      o.server && !o.server.data_key && fl.summary.total
+        ? h("p", { class: "banner", role: "alert" }, "This server has no data key, so it refuses the documents stations report "
+            + "(they stay queued on the PCs). Set CENTRAL_DATA_KEY and restart the server; see the deployment guide.")
+        : null,
       fleetHeader(fl.summary),
       h("p", { class: "sub" },
         "The server holds " + o.projects + " " + plural(o.projects, "project", "projects") + " and "
         + o.templates + " " + plural(o.templates, "template", "templates") + ", has "
         + o.admins.active + " active " + plural(o.admins.active, "administrator", "administrators")
         + ", and asks stations to check in every "
-        + (minutes >= 1 ? minutes + " " + plural(minutes, "minute", "minutes") : o.poll_interval_seconds + " seconds") + "."),
+        + (minutes >= 1 ? minutes + " " + plural(minutes, "minute", "minutes") : o.poll_interval_seconds + " seconds") + "."
+        + (o.server && o.server.documents ? " It holds the index data of " + count(o.server.documents) + " "
+          + plural(o.server.documents, "document", "documents") + "." : "")),
       h("h2", {}, "Needs a look"),
       al.alerts.length
         ? stack(table(["Level", "Station", "What", "Since"], al.alerts.map((x) => [
@@ -779,6 +785,16 @@
   const SEARCH_PAGE = 25;
   const REVISION_SOURCE = { pc: "reported by the station", central: "corrected here" };
 
+  // What a station says about documents it has not yet been able to send here (null when nothing to say).
+  function queueText(q) {
+    if (!q || (!q.waiting && !q.refused)) return null;
+    const parts = [];
+    if (q.waiting) parts.push(count(q.waiting) + " " + plural(q.waiting, "document", "documents") + " waiting to be sent"
+      + (q.oldest_at ? " (the oldest " + ago(q.oldest_at) + ")" : ""));
+    if (q.refused) parts.push(count(q.refused) + " refused by the server");
+    return parts.join("; ");
+  }
+
   function bytesText(n) {
     if (n < 1024) return n + " bytes";
     if (n < 1048576) return (n / 1024).toFixed(0) + " KB";
@@ -790,6 +806,24 @@
     const entries = Object.entries(fields).filter(([, v]) => v);
     if (!entries.length) return h("span", { class: "muted" }, "no index fields");
     return h("ul", { class: "projects" }, entries.slice(0, 4).map(([k, v]) => h("li", {}, k + ": " + v)));
+  }
+
+  // The same filters as a CSV file. The session cookie authorises the request; the file is built in the browser.
+  async function downloadCsv(query) {
+    const q = new URLSearchParams(query);
+    q.delete("limit"); q.delete("offset");
+    try {
+      const response = await fetch("/admin/documents/export.csv?" + q, { credentials: "same-origin" });
+      if (!response.ok) throw new Error("The export failed (" + response.status + ").");
+      const blob = await response.blob();
+      const link = h("a", { href: URL.createObjectURL(blob), download: "documents.csv" });
+      document.body.append(link);
+      link.click();
+      link.remove();
+      const rows = Number(response.headers.get("X-Rows")), matched = Number(response.headers.get("X-Matched"));
+      toast(matched > rows ? "Downloaded the first " + count(rows) + " of " + count(matched) + ". Narrow the search for the rest."
+        : "Downloaded " + count(rows) + " " + plural(rows, "document", "documents") + ".", matched > rows);
+    } catch (e) { toast(e.message, true); }
   }
 
   async function search() {
@@ -830,8 +864,10 @@
             ? "No document matches. An identifier must match exactly (spaces and dashes are ignored)."
             : "No documents have been reported yet. Stations report each document's index fields once they are enrolled.")
         : h("div", {},
-            h("p", { class: "sub" }, count(found.total) + " " + plural(found.total, "document", "documents") + " found"
-              + (found.total > SEARCH_PAGE ? ", showing " + (found.offset + 1) + " to " + (found.offset + found.items.length) : "") + "."),
+            h("div", { class: "toolbar" },
+              h("p", { class: "sub" }, count(found.total) + " " + plural(found.total, "document", "documents") + " found"
+                + (found.total > SEARCH_PAGE ? ", showing " + (found.offset + 1) + " to " + (found.offset + found.items.length) : "") + "."),
+              button("Download as a spreadsheet", () => downloadCsv(query))),
             h("div", { class: "scroll" }, stack(table(headers, found.items.map((d) => [
               when(d.created_at), d.project_name, d.pc_name, fieldsPreview(d.fields),
               d.validation_status ? badge(d.validation_status.replace(/_/g, " ")) : "",
@@ -948,6 +984,7 @@
       h("h1", {}, d.pc.display_name),
       h("p", { class: "lead" }, stationSentence(d.pc)),
       d.today ? h("p", { class: "sub" }, todayLine(d.today)) : h("p", { class: "sub" }, "Nothing reported yet today."),
+      queueText(d.queue) ? h("p", { class: "err" }, "Documents: " + queueText(d.queue) + ".") : null,
       h("h2", {}, "Needs a look"), alerts,
       h("h2", {}, "Settings"), projects,
       h("h2", {}, "Activity in the last 30 days"),
@@ -955,6 +992,16 @@
         + " pages in " + count(t.batches) + " batches" + (t.errors ? "; " + count(t.errors) + " had errors." : ".")),
       h("div", { class: "toolbar" }, metric),
       barChart(d.days, stationMetric, metricLabel),
+      h("h2", {}, "Documents sent to the server"),
+      d.documents.held
+        ? h("div", {},
+            h("p", { class: "sub" }, count(d.documents.held) + " " + plural(d.documents.held, "document", "documents")
+              + " reported by this station; the newest:"),
+            stack(table(["Scanned", "Batch", "Pages", "Status", ""], d.documents.recent.map((x) => [
+              when(x.created_at), x.batch_id, x.page_count, x.validation_status ? x.validation_status.replace(/_/g, " ") : "",
+              h("a", { href: "#/documents/" + encodeURIComponent(x.id) }, "Open")]), ""),
+              ["Scanned", "Batch", "Pages", "Status", ""]))
+        : h("p", { class: "empty" }, "This station has not reported any documents yet."),
       h("h2", {}, "Recent events"),
       d.events.length
         ? stack(table(["Time", "Event", "Details"], d.events.map((e) => [when(e.at), EVENT_TEXT[e.action] || e.action,
@@ -985,7 +1032,8 @@
       const older = p.app_version && latest && isNewer(latest, p.app_version);
       return [
         h("div", {}, h("div", { class: "station" }, h("a", { href: "#/fleet/" + encodeURIComponent(p.id) }, p.display_name)),
-          h("div", { class: "sub" }, p.last_seen_at ? "Last seen " + ago(p.last_seen_at) : "Never seen")),
+          h("div", { class: "sub" }, p.last_seen_at ? "Last seen " + ago(p.last_seen_at) : "Never seen"),
+          queueText(p.documents) ? h("div", { class: "err" }, queueText(p.documents)) : null),
         badge(STATUS_TEXT[p.status], STATUS_KIND[p.status]),
         p.app_version
           ? h("span", {}, h("span", { class: "mono" }, p.app_version), older ? " " : null, older ? badge("older", "warn") : null)

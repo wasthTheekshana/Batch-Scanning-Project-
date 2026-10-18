@@ -94,13 +94,21 @@ def access_log(limit: int = Query(50, ge=1, le=PAGE_MAX), before_id: Optional[in
                        "ip": r.ip} for r in db.scalars(q)]}
 
 
-@router.get("")
-def search(request: Request, q: str = Query("", max_length=100), field: str = Query("", max_length=64),
-           value: str = Query("", max_length=100), project: str = Query("", max_length=64),
-           pc: str = Query("", max_length=36), batch: str = Query("", max_length=64),
-           status: str = Query("", max_length=30), date_from: str = "", date_to: str = "",
-           limit: int = Query(25, ge=1, le=PAGE_MAX), offset: int = Query(0, ge=0, le=100_000),
-           user: AdminUser = Depends(require_admin), db: Session = Depends(get_db)):
+class Filters:
+    """The search form's choices, as query parameters (shared by the search and the CSV export)."""
+
+    def __init__(self, q: str = Query("", max_length=100), field: str = Query("", max_length=64),
+                 value: str = Query("", max_length=100), project: str = Query("", max_length=64),
+                 pc: str = Query("", max_length=36), batch: str = Query("", max_length=64),
+                 status: str = Query("", max_length=30), date_from: str = "", date_to: str = ""):
+        self.q, self.field, self.value, self.project, self.pc = q, field, value, project, pc
+        self.batch, self.status, self.date_from, self.date_to = batch, status, date_from, date_to
+
+
+def build_query(f: Filters, request: Request, user: AdminUser, db: Session):
+    """The documents a person may see that match the form, and the kinds of filter used (never their values)."""
+    q, field, value, project, pc, batch, status = f.q, f.field, f.value, f.project, f.pc, f.batch, f.status
+    date_from, date_to = f.date_from, f.date_to
     scope = scope_of(db, user)
     query = select(Document)
     used: list[str] = []
@@ -142,6 +150,14 @@ def search(request: Request, q: str = Query("", max_length=100), field: str = Qu
     if end:
         query = query.where(Document.created_at < datetime.combine(end + timedelta(days=1), datetime.min.time()))
         used.append("date_to")
+    return query, used
+
+
+@router.get("")
+def search(request: Request, f: Filters = Depends(),
+           limit: int = Query(25, ge=1, le=PAGE_MAX), offset: int = Query(0, ge=0, le=100_000),
+           user: AdminUser = Depends(require_admin), db: Session = Depends(get_db)):
+    query, used = build_query(f, request, user, db)
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     rows = list(db.scalars(query.order_by(Document.created_at.desc(), Document.id).limit(limit).offset(offset)))
     key = request.app.state.settings.data_key
@@ -160,6 +176,48 @@ def search(request: Request, q: str = Query("", max_length=100), field: str = Qu
     _log(db, request, user, "search", None, {"filters": used, "found": total})
     db.commit()
     return {"total": total, "limit": limit, "offset": offset, "items": items}
+
+
+EXPORT_MAX = 5000
+FORMULA_STARTS = ("=", "+", "-", "@", chr(9), chr(13))
+
+
+def _cell(value) -> str:
+    """A spreadsheet runs text that starts with = + - @ as a formula; a leading quote stops that."""
+    text = "" if value is None else str(value)
+    return "'" + text if text[:1] in FORMULA_STARTS else text
+
+
+@router.get("/export.csv")
+def export(request: Request, f: Filters = Depends(), user: AdminUser = Depends(require_admin),
+           db: Session = Depends(get_db)):
+    """The documents the search form selects, as a spreadsheet (at most 5,000 rows). Recorded in the access log."""
+    import csv
+    import io
+
+    from fastapi.responses import Response
+    key = _key(request)
+    query, used = build_query(f, request, user, db)
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    rows = list(db.scalars(query.order_by(Document.created_at.desc(), Document.id).limit(EXPORT_MAX)))
+    revisions = {r.document_id: r for r in db.scalars(select(IndexRevision).where(
+        IndexRevision.document_id.in_([d.id for d in rows] or [""]), IndexRevision.is_current.is_(True)))}
+    pcs, names = {p.id: p.display_name for p in db.scalars(select(Pc))}, _project_names(db)
+    parsed = {d.id: (_fields(key, revisions[d.id]) if d.id in revisions else {}) or {} for d in rows}
+    columns = sorted({name for fields in parsed.values() for name in fields})
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["scanned_at", "station", "project", "batch", "status", "pages", "revision", "document_id", *columns])
+    for d in rows:
+        writer.writerow([_cell(x) for x in (d.created_at.isoformat(timespec="seconds") + "Z", pcs.get(d.pc_id, ""),
+                                            names.get(d.project_id, d.project_id), d.batch_id, d.validation_status,
+                                            d.page_count, d.current_revision, d.id,
+                                            *(parsed[d.id].get(c, "") for c in columns))])
+    _log(db, request, user, "export", None, {"filters": used, "rows": len(rows), "matched": total})
+    db.commit()
+    return Response(out.getvalue(), media_type="text/csv; charset=utf-8", headers={
+        "Content-Disposition": 'attachment; filename="documents.csv"',
+        "X-Rows": str(len(rows)), "X-Matched": str(total)})
 
 
 @router.get("/{document_id}")

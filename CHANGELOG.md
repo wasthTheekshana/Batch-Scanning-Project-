@@ -8,6 +8,12 @@ All notable changes to DOK Scanner. The newest release is first. The version num
 Changes since 1.0.0. At release time this heading becomes the new version number and date.
 
 ### Central web center
+- **Running it for real.** A station reports how many documents it has not been able to send (a count and a time),
+  and the server raises *backlog* (waiting 4 hours or more, critical after a day) and *refused* alerts; Fleet and the
+  station page show the queue, and the station page lists the documents it sent. The Overview warns when the server has
+  no data key, no longer fills with routine polls, and poll records older than 14 days are dropped. Search results
+  download as a spreadsheet (at most 5,000 rows, formulas neutralised, logged). Documents a PC had refused for lack of a
+  project are retried automatically once that project is assigned.
 - **Index sync.** Each station reports every finished document's index fields and the PDF's details (name, size,
   SHA-256, where it went), never the PDF. A queue on the PC (saved in the same transaction as the document) is sent
   in the background, retried after an outage and never twice. Central stores the fields encrypted and finds documents

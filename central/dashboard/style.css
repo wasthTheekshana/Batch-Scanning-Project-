@@ -197,3 +197,5 @@ label.inline input[type=checkbox] { width: auto; flex: none; margin: 0; }
 .checks { display: grid; gap: 6px; margin: 10px 0; max-height: 40vh; overflow: auto; }
 label.check { display: flex; gap: 8px; align-items: center; color: var(--ink); font-size: 14px; }
 label.check input { width: auto; }
+
+.banner { padding: 10px 14px; border-radius: 8px; border: 1px solid #c0392b; background: color-mix(in srgb, #c0392b 12%, var(--card)); max-width: 52em; }

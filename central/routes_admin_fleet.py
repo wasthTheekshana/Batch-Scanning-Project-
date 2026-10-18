@@ -5,11 +5,11 @@ from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from central.deps import get_db, require_admin, require_csrf
-from central.models import (ConfigVersion, Pc, PcAppliedProject, PcAssignment, PcDailyStat,
+from central.models import (ConfigVersion, Document, Pc, PcAppliedProject, PcAssignment, PcDailyStat,
                             Project, utcnow)
 from central.routes_admin_overview import _iso, is_online, online_window
 
@@ -25,6 +25,13 @@ def _status(pc: Pc, window: timedelta) -> str:
     if pc.api_key_hash is None:
         return "key_revoked" if pc.registered_at else "not_registered"
     return "online" if is_online(pc, window) else "offline"
+
+
+def _queue(pc: Pc) -> dict | None:
+    """The station's own report of documents it has not yet been able to send here; None = it never said."""
+    if pc.docs_waiting is None:
+        return None
+    return {"waiting": pc.docs_waiting, "refused": pc.docs_refused or 0, "oldest_at": _iso(pc.docs_oldest_at)}
 
 
 def _zero() -> dict[str, int]:
@@ -93,7 +100,7 @@ def fleet(request: Request, db: Session = Depends(get_db)):
         out.append({"id": pc.id, "display_name": pc.display_name, "status": status,
                     "last_seen_at": _iso(pc.last_seen_at), "reported_at": _iso(pc.reported_at),
                     "app_version": pc.app_version, "rollout": rollout, "projects": project_rows,
-                    "today": _counts(row) if row is not None else None})
+                    "documents": _queue(pc), "today": _counts(row) if row is not None else None})
     summary["today"] = summary_today
     return {"summary": summary, "pcs": out}
 
@@ -173,6 +180,11 @@ def station(pc_id: str, request: Request, db: Session = Depends(get_db)):
             totals[k] += v
     today = per_day[wanted[-1]]
 
+    held = db.scalar(select(func.count()).select_from(Document).where(Document.pc_id == pc.id)) or 0
+    recent = [{"id": d.id, "created_at": _iso(d.created_at), "project_id": d.project_id, "batch_id": d.batch_id,
+               "validation_status": d.validation_status, "page_count": d.page_count}
+              for d in db.scalars(select(Document).where(Document.pc_id == pc.id)
+                                  .order_by(Document.created_at.desc()).limit(8))]
     events = db.scalars(select(AuditEvent).where(or_(
         (AuditEvent.actor == f"pc:{pc.id}") & (AuditEvent.action != "config_pull"),
         AuditEvent.detail.contains(pc.id))).order_by(AuditEvent.id.desc()).limit(25))
@@ -180,7 +192,8 @@ def station(pc_id: str, request: Request, db: Session = Depends(get_db)):
         "pc": {"id": pc.id, "display_name": pc.display_name, "status": _status(pc, window),
                "app_version": pc.app_version, "last_seen_at": _iso(pc.last_seen_at), "reported_at": _iso(pc.reported_at),
                "registered_at": _iso(pc.registered_at), "created_at": _iso(pc.created_at)},
-        "rollout": rollout, "projects": rows,
+        "rollout": rollout, "projects": rows, "queue": _queue(pc),
+        "documents": {"held": held, "recent": recent},
         "days": [{"day": d, **per_day[d]} for d in wanted], "totals": totals,
         "today": today if any(today.values()) else None,
         "alerts": [a for a in compute_alerts(db, window) if a["pc_id"] == pc.id],

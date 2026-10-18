@@ -88,8 +88,8 @@ rules those files implement.
   disable/enable/unlock, "revoke all sessions", PC deletion and the audit-log read API.
 - Audit text can contain user-supplied characters: any UI that shows it MUST
   render it as plain text (never HTML).
-- `audit_events` grows by one row per PC poll (default every 10 minutes);
-  plan retention before large fleets.
+- `audit_events` gets one `config_pull` row per PC poll (default every 10 minutes); those are deleted after 14 days
+  (now and then, as polls arrive). Every other audit record is kept: plan retention for them before large fleets.
 - A project pushed to "all PCs" reaches only PCs that exist at that moment.
 
 
@@ -124,7 +124,7 @@ batches and errors (a document that was rejected, or whose delivery was reported
 else: no document text, index values, names, file names or paths. The server validates every field
 (a version pattern, at most 200 projects, counts up to 10,000,000, a day within two days of now), keeps one
 row per PC and day (a later report replaces the earlier one, it does not add to it), and deletes daily rows
-older than 400 days. Heartbeats are not written to the audit log (one row per poll would bury it).
+older than 400 days. The heartbeat also carries `documents`: how many documents the PC has queued, how many the server refused, and when the oldest started waiting (counts and a time only). Heartbeats are not written to the audit log (one row per poll would bury it).
 
 A PC that never reports (an older program) is shown as "not reported", never as behind. Rollout is
 **current** when the PC runs the version assigned here, **behind** when it runs an older one or none,
@@ -143,6 +143,8 @@ is not an incident.
 | `behind` | a settings version was published longer ago than the grace window and the station has not applied it (one alert per project; not raised for an offline station, and never for one that does not report) | warning; critical after 24 hours |
 | `errors` | the station reports errors today | note for 1 to 4; warning from 5 |
 | `revoked` | the station's access key was revoked | note |
+| `backlog` | the station reports documents waiting to be sent for 4 hours or more | warning; critical after 24 hours |
+| `refused` | the station reports documents the server refused (usually a project not assigned to it) | warning |
 | `not_enrolled` | added more than 7 days ago and never connected | note |
 
 Each alert has a stable `id` (for example `behind:<pc>:<project>`), the station, a plain message, and `since`
@@ -221,6 +223,7 @@ like one that does not exist. Create one with `python -m central.manage create-a
 | `GET /admin/fleet/{pc_id}` | one station: facts, each project's last five published versions against what it runs, 30 days of activity, its own alerts and 25 recent events (poll noise left out); 404 if unknown; read-only |
 | `GET /admin/documents`, `/admin/documents/{id}`, `/admin/documents/filters`, `/admin/documents/access-log` | search and open reported documents, the search form's choices, who looked (see "Index sync") |
 | `PUT /admin/users/{id}/projects` | the projects a `searcher` may see (replaces the list) |
+| `GET /admin/documents/export.csv` | the search as a spreadsheet: same filters, at most 5,000 rows, text that would run as a formula is prefixed with a quote, logged as `export` |
 | `GET /admin/alerts` | what needs attention now, most serious first, with counts per level (read-only; computed on request, so an alert exists exactly while its condition does) |
 | `GET /admin/stats?days=14` | per-day totals (1 to 90 days, quiet days included as zeros) and each PC's total, busiest first |
 | `GET /admin/project-defaults` | a complete starting configuration for a new project |

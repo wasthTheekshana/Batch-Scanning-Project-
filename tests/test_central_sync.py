@@ -771,3 +771,19 @@ def test_failing_file_write_for_one_project_is_reported_others_apply(env, monkey
     assert env.pm.load(PID2)["name"] == "Good"
     assert not env.pm._path(PID).exists()
     assert list(env.pm.projects_dir.glob("*.tmp")) == []
+
+
+def test_documents_refused_for_a_missing_project_are_retried_when_a_project_arrives(env):
+    register(env)
+    env.db.outbox_gate = lambda: True
+    env.db.insert_project("p-local", "Local", {})
+    env.db.insert_batch("b-1", "p-local", "kamal")
+    env.db.insert_document("d-1", "b-1", "p-local", extracted_fields={"nic": "1"})
+    env.db.outbox_fail("d-1", "refused")
+    assert env.db.outbox_stats()["failed"] == 1
+    pull(env)                                           # nothing new: still refused
+    env.svc.sync_once()
+    assert env.db.outbox_stats()["failed"] == 1
+    pull(env, project_entry())                          # a project is assigned
+    env.svc.sync_once()
+    assert env.db.outbox_stats()["failed"] == 0 and env.db.outbox_stats()["waiting"] == 1

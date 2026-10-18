@@ -2,7 +2,7 @@
 
     python scripts/central_demo.py            # http://127.0.0.1:8000/dashboard
     python scripts/central_demo.py --no-browser
-    python scripts/central_demo.py --empty    # no sample data
+    python scripts/central_demo.py --sample-data    # also fill it with made-up stations and documents
 
 Sign in as  admin / demo-admin-passphrase. Data lives in demo_kit/central_demo.db
 (delete the file for a fresh start). Local only: plain HTTP on 127.0.0.1.
@@ -53,7 +53,7 @@ def main() -> int:
     if not have_admin:
         create_admin(factory, USER, PASSWORD)
 
-    if "--empty" not in sys.argv:
+    if "--sample-data" in sys.argv:
         from scripts.central_demo_data import AUDITOR, SEARCHER, seed
         if seed(app):
             print(f"Sample data added. Also: {SEARCHER[0]} / {SEARCHER[1]} (search only), "

@@ -27,6 +27,10 @@ class Pc(Base):
     # what the PC last reported about itself (fleet monitoring); counts and versions only
     app_version: Mapped[Optional[str]] = mapped_column(String(32))
     reported_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    # what it says about its queue of documents not yet reported here (counts and a time only)
+    docs_waiting: Mapped[Optional[int]] = mapped_column(Integer)
+    docs_refused: Mapped[Optional[int]] = mapped_column(Integer)
+    docs_oldest_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
 
 class EnrollmentCode(Base):

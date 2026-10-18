@@ -1,7 +1,8 @@
 """PC-facing endpoints: registration, heartbeat, config pull."""
 import json
 import re
-from datetime import date, timedelta
+import random
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
@@ -11,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from central.audit import record
 from central.deps import get_db, require_pc
-from central.models import (EnrollmentCode, Pc, PcAppliedProject, PcAssignment, PcDailyStat,
+from central.models import (AuditEvent, EnrollmentCode, Pc, PcAppliedProject, PcAssignment, PcDailyStat,
                             Project, utcnow)
 from central.security import hash_secret, new_api_key, sanitize_log_value
 from central.settings_store import get_poll_interval
@@ -56,6 +57,7 @@ def register(body: RegisterIn, request: Request,
 
 MAX_COUNT = 10_000_000          # a day's documents or pages on one PC: far above any real figure
 MAX_APPLIED = 200               # projects a PC can report
+POLL_LOG_DAYS = 14             # config_pull audit records (one per poll) are kept this long
 KEEP_DAYS = 400                 # daily rows older than this are deleted
 VERSION = re.compile(r"^[0-9A-Za-z.+-]{1,32}$")
 PROJECT_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -82,8 +84,27 @@ class StatsIn(BaseModel):
         return value
 
 
+class QueueIn(BaseModel):
+    """How many documents the PC has not yet been able to report here, and since when the oldest has waited."""
+    waiting: int = Field(ge=0, le=MAX_COUNT)
+    refused: int = Field(ge=0, le=MAX_COUNT)
+    oldest_at: Optional[str] = Field(default=None, max_length=40)
+
+    @field_validator("oldest_at")
+    @classmethod
+    def _oldest(cls, value):
+        if value is None:
+            return None
+        try:
+            d = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            raise ValueError("not a date") from None
+        return d.astimezone(timezone.utc).replace(tzinfo=None).isoformat() if d.tzinfo else d.isoformat()
+
+
 class HeartbeatIn(BaseModel):
     app_version: Optional[str] = Field(default=None, max_length=32)
+    documents: Optional[QueueIn] = None
     applied: Optional[dict[str, int]] = None          # project id -> the settings version it runs
     stats: Optional[StatsIn] = None
 
@@ -123,6 +144,9 @@ def heartbeat(body: Optional[HeartbeatIn] = None, pc: Pc = Depends(require_pc),
             db.execute(delete(PcAppliedProject).where(PcAppliedProject.pc_id == pc.id))
             db.add_all(PcAppliedProject(pc_id=pc.id, project_id=pid, version=v, reported_at=now)
                        for pid, v in body.applied.items())
+        if body.documents is not None:
+            pc.docs_waiting, pc.docs_refused = body.documents.waiting, body.documents.refused
+            pc.docs_oldest_at = datetime.fromisoformat(body.documents.oldest_at) if body.documents.oldest_at else None
         if body.stats is not None:
             row = db.get(PcDailyStat, (pc.id, body.stats.day))
             if row is None:
@@ -147,6 +171,9 @@ def get_config(request: Request, pc: Pc = Depends(require_pc),
                              PcAssignment.project_id == Project.id)
         .where(PcAssignment.pc_id == pc.id).order_by(Project.name, Project.id)))
     pc.last_seen_at = utcnow()
+    if random.random() < 0.02:                         # now and then, drop poll records nobody will read
+        db.execute(delete(AuditEvent).where(AuditEvent.action == "config_pull",
+                                            AuditEvent.at < utcnow() - timedelta(days=POLL_LOG_DAYS)))
     record(db, f"pc:{pc.id}", "config_pull",
            {"operator": sanitize_log_value(x_operator_id),
             "projects": {p.id: p.current_version for p in projects}})
