@@ -1,7 +1,13 @@
 """Shared synthetic-image helpers for the test suite."""
-import cv2
-import numpy as np
+from __future__ import annotations
+
 import pytest
+
+try:                                    # the image libraries: absent on a server-only machine, where
+    import cv2                          # only tests/central runs (CI's central job); the helpers
+    import numpy as np                  # below are then never called
+except ImportError:                     # pragma: no cover
+    cv2 = np = None
 
 
 def make_text_page(w=800, h=1000, lines=12, color=False) -> np.ndarray:

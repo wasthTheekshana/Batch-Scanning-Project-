@@ -60,14 +60,14 @@ class IndexEditor(QWidget):
         self.filter_combo.currentIndexChanged.connect(lambda _: self.refresh())
         ll.addWidget(self.filter_combo)
         self.doc_list = QListWidget()
-        tidy_list(self.doc_list, 220)
+        tidy_list(self.doc_list, 190)
         self.doc_list.currentItemChanged.connect(self._on_select)
         ll.addWidget(self.doc_list)
         splitter.addWidget(left)
 
         # -- right: page + fields ----------------------------------------------
         self.page_view = ImageView()
-        self.page_view.setMinimumSize(260, 260)
+        self.page_view.setMinimumSize(220, 260)
 
         form_body = QWidget()
         form_col = QVBoxLayout(form_body)
@@ -108,7 +108,7 @@ class IndexEditor(QWidget):
         side = QWidget()
         side_layout = QVBoxLayout(side)
         side_layout.setContentsMargins(0, 0, 0, 0)
-        side_layout.addWidget(scroll_column(form_body, 280), stretch=1)
+        side_layout.addWidget(scroll_column(form_body, 250), stretch=1)
         buttons = QVBoxLayout()
         buttons.addWidget(self.extract_btn)
         buttons.addWidget(self.save_button)

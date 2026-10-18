@@ -85,3 +85,14 @@ def test_a_filled_form_keeps_readable_fields_and_the_tables_keep_their_rows(admi
     admin_window.tabs.setCurrentWidget(panel)
     panel.views.setCurrentIndex(0)
     assert panel.recon_table.height() >= 140
+
+
+def test_the_window_still_fits_when_the_fonts_are_wider_than_ours(admin_window):
+    """CI's Windows machine has wider fonts than the development PC and came out 39 px too wide:
+    leave real margin, not a hair under the limit. Pages may use at most 85% of the room left for them."""
+    from ui.sidebar import RAIL_COMPACT
+    room = SMALL_W - RAIL_COMPACT - 28
+    widest = {admin_window.tabs.tabText(i): admin_window.tabs.widget(i).minimumSizeHint().width()
+              for i in range(admin_window.tabs.count())}
+    too_wide = {n: w for n, w in widest.items() if w > 0.85 * room}
+    assert not too_wide, too_wide
