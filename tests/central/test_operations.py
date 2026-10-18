@@ -131,3 +131,10 @@ def test_a_searcher_exports_only_their_projects_and_a_bad_filter_is_refused(worl
     searcher = login(world.app, "finder", "a long passphrase here")
     assert [r["nic"] for r in rows_of(searcher.get("/admin/documents/export.csv"))] == ["111111111V"]
     assert searcher.get("/admin/documents/export.csv", params={"q": "ab"}).status_code == 422
+
+
+def test_a_field_name_cannot_start_like_a_formula(world):
+    world.meta()
+    assert world.index(fields={"-2+3": "x"}).status_code == 422
+    assert world.index(fields={".hidden": "x"}).status_code == 422
+    assert world.index(fields={"nic-2": "x1234"}).status_code == 200

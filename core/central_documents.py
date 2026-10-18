@@ -93,7 +93,7 @@ def build_payload(db, document_id: str) -> tuple[dict, dict] | None:
     for name, value in (raw.items() if isinstance(raw, dict) else ()):
         text = _text(value)
         if text is not None and len(fields) < MAX_FIELDS:
-            fields[_FIELD_NAME.sub("_", str(name))[:64] or "field"] = text
+            fields[_FIELD_NAME.sub("_", str(name)).lstrip("-.")[:64] or "field"] = text
     try:
         delivery = json.loads(row["delivery_detail"] or "{}")
     except ValueError:

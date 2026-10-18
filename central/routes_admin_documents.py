@@ -207,7 +207,7 @@ def export(request: Request, f: Filters = Depends(), user: AdminUser = Depends(r
     columns = sorted({name for fields in parsed.values() for name in fields})
     out = io.StringIO()
     writer = csv.writer(out)
-    writer.writerow(["scanned_at", "station", "project", "batch", "status", "pages", "revision", "document_id", *columns])
+    writer.writerow([_cell(h) for h in ("scanned_at", "station", "project", "batch", "status", "pages", "revision", "document_id", *columns)])
     for d in rows:
         writer.writerow([_cell(x) for x in (d.created_at.isoformat(timespec="seconds") + "Z", pcs.get(d.pc_id, ""),
                                             names.get(d.project_id, d.project_id), d.batch_id, d.validation_status,
