@@ -24,6 +24,9 @@ class Pc(Base):
     registered_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    # what the PC last reported about itself (fleet monitoring); counts and versions only
+    app_version: Mapped[Optional[str]] = mapped_column(String(32))
+    reported_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
 
 class EnrollmentCode(Base):
@@ -84,6 +87,27 @@ class PcAssignment(Base):
                                        primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"),
                                             primary_key=True)
+
+
+class PcAppliedProject(Base):
+    """The settings version of a project a PC says it is running (from its heartbeat). Not a
+    foreign key to projects: a PC may still report a project that was deleted here."""
+    __tablename__ = "pc_applied"
+    pc_id: Mapped[str] = mapped_column(ForeignKey("pcs.id"), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer)
+    reported_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class PcDailyStat(Base):
+    """One PC's running totals for one UTC day: how much it processed. Counts only."""
+    __tablename__ = "pc_daily_stats"
+    pc_id: Mapped[str] = mapped_column(ForeignKey("pcs.id"), primary_key=True)
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)     # YYYY-MM-DD
+    documents: Mapped[int] = mapped_column(Integer, default=0)
+    pages: Mapped[int] = mapped_column(Integer, default=0)
+    batches: Mapped[int] = mapped_column(Integer, default=0)
+    errors: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class Setting(Base):

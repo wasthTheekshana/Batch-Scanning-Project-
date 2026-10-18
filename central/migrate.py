@@ -49,7 +49,10 @@ def upgrade(engine) -> None:
     cfg = _config(engine)
     tables = set(inspect(engine).get_table_names())
     if tables and "alembic_version" not in tables:
-        command.stamp(cfg, BASELINE)          # made by create_all(): it is the baseline
+        # made by the earlier create_all(): record which schema it already has. An install from
+        # before migrations existed has the baseline (and gets the later migrations); one made by
+        # the newest models already matches the head and must not have them applied again.
+        command.stamp(cfg, head_revision() if not differences(engine) else BASELINE)
     command.upgrade(cfg, "head")
 
 
@@ -63,5 +66,7 @@ def differences(engine) -> list:
 def new_migration(engine, message: str) -> str:
     """Write a migration for the difference between the models and `engine`'s database."""
     cfg = _config(engine)
-    command.revision(cfg, message=message, autogenerate=True)
+    head = head_revision()
+    next_id = f"{int(head) + 1:04d}" if head.isdigit() else None
+    command.revision(cfg, message=message, autogenerate=True, rev_id=next_id)
     return head_revision()

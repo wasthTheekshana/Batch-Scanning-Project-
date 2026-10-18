@@ -73,12 +73,13 @@ def create_app(settings: Settings) -> FastAPI:
         )
 
     from central import (routes_admin_auth, routes_admin_config,
-                         routes_admin_overview, routes_admin_pcs,
-                         routes_admin_users, routes_dashboard,
-                         routes_pcs)
+                         routes_admin_fleet, routes_admin_overview,
+                         routes_admin_pcs, routes_admin_users,
+                         routes_dashboard, routes_pcs)
     app.include_router(routes_admin_auth.router)
     app.include_router(routes_admin_users.router)
     app.include_router(routes_admin_overview.router)
+    app.include_router(routes_admin_fleet.router)
     app.include_router(routes_admin_pcs.router)
     app.include_router(routes_admin_config.router)
     app.include_router(routes_pcs.router)

@@ -40,6 +40,8 @@ never the value that was sent. The service has no interactive docs page (`/docs`
 | PUT | `/admin/templates/{template_id}` | admin session + CSRF header on changes |
 | GET | `/admin/templates/{template_id}/versions` | admin session + CSRF header on changes |
 | GET | `/admin/templates/{template_id}/versions/{version}` | admin session + CSRF header on changes |
+| GET | `/admin/fleet` | admin session + CSRF header on changes |
+| GET | `/admin/stats` | admin session + CSRF header on changes |
 | GET | `/admin/audit` | admin session + CSRF header on changes |
 | GET | `/admin/audit/actions` | admin session + CSRF header on changes |
 | GET | `/admin/overview` | admin session + CSRF header on changes |
@@ -174,6 +176,22 @@ A complete, valid starting configuration for a new project (the
 
 - **Who:** admin session + CSRF header on changes
 - **Parameters:** `version` (path, required); `template_id` (path, required)
+- **Replies:** 200, 422
+
+## admin-fleet
+
+### GET `/admin/fleet`
+
+- **Who:** admin session + CSRF header on changes
+- **Replies:** 200
+
+### GET `/admin/stats`
+
+Documents, pages, batches and errors per day for the last `days` days (today included),
+    every day present (zeros when quiet), plus each PC's total over the window, busiest first.
+
+- **Who:** admin session + CSRF header on changes
+- **Parameters:** `days` (query)
 - **Replies:** 200, 422
 
 ## admin-overview
@@ -320,7 +338,9 @@ The sync client polls this. X-Operator-Id is audit-only: the operator
 
 ### POST `/pcs/{pc_id}/heartbeat`
 
-Phase 1 stub: only refreshes last_seen_at (richer payload is Phase 2).
+Refreshes last_seen_at. A PC that sends a body also reports its app version, which
+    project settings versions it runs, and its running totals for the day (the Fleet and
+    Activity views). It is not written to the audit log: one row per PC poll would bury it.
 
 - **Who:** PC API key (Bearer)
 - **Parameters:** `pc_id` (path, required)

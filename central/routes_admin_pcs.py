@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session
 
 from central.audit import record
 from central.deps import get_db, require_admin, require_csrf
-from central.models import (AdminUser, EnrollmentCode, Pc, PcAssignment,
-                            utcnow)
+from central.models import (AdminUser, EnrollmentCode, Pc, PcAppliedProject,
+                            PcAssignment, PcDailyStat, utcnow)
 from central.security import hash_secret, new_enrollment_code
 from central.textsafe import SafeStr
 
@@ -138,6 +138,8 @@ def delete_pc(pc_id: str, admin: AdminUser = Depends(require_admin),
     name = pc.display_name
     db.execute(delete(EnrollmentCode).where(EnrollmentCode.pc_id == pc.id))
     db.execute(delete(PcAssignment).where(PcAssignment.pc_id == pc.id))
+    db.execute(delete(PcAppliedProject).where(PcAppliedProject.pc_id == pc.id))
+    db.execute(delete(PcDailyStat).where(PcDailyStat.pc_id == pc.id))
     db.delete(pc)
     record(db, f"admin:{admin.username}", "pc_deleted",
            {"pc_id": pc_id, "display_name": name})
