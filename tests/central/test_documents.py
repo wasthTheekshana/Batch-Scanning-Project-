@@ -9,6 +9,7 @@ from sqlalchemy import text
 from central.app import create_app
 from central.crypto import generate_key
 from central.manage import create_admin
+from central.models import PcAssignment, Project
 from central.settings import Settings
 
 NIC = "553216789V"
@@ -39,6 +40,12 @@ def world(keyed_app):
     pc = TestClient(keyed_app)
     key = pc.post("/pcs/register", json={"code": made["enrollment_code"]}).json()["api_key"]
     pc.headers["Authorization"] = f"Bearer {key}"
+    with keyed_app.state.session_factory() as db:
+        for project in ("bank", "loans"):
+            db.add(Project(id=project, name=project, config_json="{}", current_version=1))
+        db.commit()
+        db.add_all(PcAssignment(pc_id=made["pc_id"], project_id=p) for p in ("bank", "loans"))
+        db.commit()
 
     class World:
         app, pc_id, admin_client, pc_client = keyed_app, made["pc_id"], admin, pc
@@ -148,6 +155,16 @@ def test_bad_fields_are_refused(world):
     assert world.index(fields={"bad name!": "x"}).status_code == 422
     assert world.index(fields={"nic": "x" * 2001}).status_code == 422
     assert world.pc_client.put(f"/pcs/{world.pc_id}/documents/..%2Fx/meta", json={}).status_code in (404, 422)
+
+
+def test_a_station_cannot_file_documents_under_a_project_it_was_not_given(world):
+    with world.app.state.session_factory() as db:
+        db.add(Project(id="secret", name="secret", config_json="{}", current_version=1))
+        db.commit()
+    assert world.meta(project="secret").status_code == 403
+    world.meta()                                                       # filed under its own project
+    assert world.meta(project="secret").status_code == 403             # nor moved into another one later
+    assert search(world.admin_client, project="secret")["total"] == 0
 
 
 # -- encryption at rest ----------------------------------------------------------------------------------------------
