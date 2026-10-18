@@ -1,17 +1,18 @@
 """Admin: manage the admin accounts of the central service."""
+import re
 import threading
 from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from central.audit import record
 from central.deps import get_db, require_admin, require_csrf
-from central.models import AdminUser, utcnow
+from central.models import AdminUser, SearcherScope, utcnow
 from central.security import hash_password, verify_password
 
 router = APIRouter(prefix="/admin", tags=["admin-users"],
@@ -43,7 +44,7 @@ class UserIn(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=False)
     username: str = Field(pattern=r"^[A-Za-z0-9._@-]{3,100}$")
     password: str = Field(max_length=200)
-    role: Literal["admin", "auditor"] = "admin"
+    role: Literal["admin", "auditor", "searcher"] = "admin"
 
     @field_validator("password")
     @classmethod
@@ -59,7 +60,18 @@ class UserIn(BaseModel):
 
 
 class RoleIn(BaseModel):
-    role: Literal["admin", "auditor"]
+    role: Literal["admin", "auditor", "searcher"]
+
+
+class ProjectsIn(BaseModel):
+    project_ids: list[str] = Field(max_length=200)
+
+    @field_validator("project_ids")
+    @classmethod
+    def _ids(cls, value):
+        if any(not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", v) for v in value):
+            raise ValueError("a project id is not valid")
+        return sorted(set(value))
 
 
 class PasswordIn(BaseModel):
@@ -91,11 +103,14 @@ def status_of(user: AdminUser) -> str:
     return "active"
 
 
-def _view(user: AdminUser) -> dict:
+def _view(user: AdminUser, projects: list[str] | None = None) -> dict:
     locked = user.locked_until and status_of(user) == "locked"
-    return {"id": user.id, "username": user.username, "role": user.role,
+    view = {"id": user.id, "username": user.username, "role": user.role,
             "status": status_of(user), "failed_count": user.failed_count,
             "locked_until": user.locked_until.isoformat() + "Z" if locked else None}
+    if user.role == "searcher" and projects is not None:
+        view["projects"] = projects
+    return view
 
 
 def active_admin_count(db: Session, excluding_id: int | None = None) -> int:
@@ -128,8 +143,27 @@ def _bump(user: AdminUser) -> None:
 
 @router.get("/users")
 def list_users(db: Session = Depends(get_db)):
-    return [_view(u) for u in db.scalars(
+    scopes: dict[int, list[str]] = {}
+    for admin_id, project_id in db.execute(select(SearcherScope.admin_id, SearcherScope.project_id)
+                                           .order_by(SearcherScope.project_id)):
+        scopes.setdefault(admin_id, []).append(project_id)
+    return [_view(u, scopes.get(u.id, [])) for u in db.scalars(
         select(AdminUser).order_by(AdminUser.username))]
+
+
+@router.put("/users/{user_id}/projects")
+def set_projects(user_id: int, body: ProjectsIn, admin: AdminUser = Depends(require_admin),
+                 db: Session = Depends(get_db)):
+    """Which projects a searcher may see documents of (replaces the list). Only a searcher has one."""
+    user = _get(db, user_id)
+    if user.role != "searcher":
+        raise HTTPException(409, "only a searcher has a list of projects")
+    db.execute(delete(SearcherScope).where(SearcherScope.admin_id == user.id))
+    db.add_all(SearcherScope(admin_id=user.id, project_id=p) for p in body.project_ids)
+    record(db, _actor(admin), "searcher_projects_set", {"username": user.username, "id": user.id,
+                                                         "count": len(body.project_ids)})
+    db.commit()
+    return _view(user, body.project_ids)
 
 
 @router.post("/users", status_code=201)
@@ -198,6 +232,7 @@ def change_role(user_id: int, body: RoleIn, admin: AdminUser = Depends(require_a
             raise HTTPException(409, "at least one admin must stay enabled")
         if user.role != body.role:
             user.role = body.role
+            db.execute(delete(SearcherScope).where(SearcherScope.admin_id == user.id))
             _bump(user)                       # their open sessions pick up the new rights
             record(db, _actor(admin), "admin_role_changed",
                    {"username": user.username, "id": user.id, "role": body.role})

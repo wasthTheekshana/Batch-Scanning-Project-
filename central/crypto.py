@@ -116,6 +116,11 @@ class DataKey:
         key = self._versions[version or self.current].search
         return hmac.new(key, f"{field}\x00{norm}".encode("utf-8"), hashlib.sha256).hexdigest()
 
+    def fingerprint(self, purpose: str, text: str) -> str:
+        """Keyed hash of exact text (not normalised): recognises the same content again without storing it."""
+        key = self._versions[self.current].search
+        return hmac.new(key, f"{purpose}\x00{text}".encode("utf-8"), hashlib.sha256).hexdigest()
+
     def blind_all(self, field: str, value: str) -> list[str]:
         """The blind hash under every key version we hold (a lookup during or after a key rotation)."""
         return [h for h in (self.blind(field, value, v) for v in self._versions) if h]

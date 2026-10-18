@@ -15,7 +15,9 @@ SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 # An auditor may read everything an admin can, and change nothing: the only
 # writes allowed are those on their own account (sign out, own password).
-READ_ONLY_ROLES = {"auditor"}
+READ_ONLY_ROLES = {"auditor", "searcher"}
+# A searcher reaches the documents they were given and nothing else of the service.
+SEARCHER_PATHS = ("/admin/documents", "/admin/me", "/admin/logout")
 OWN_ACCOUNT_WRITES = {"/admin/logout", "/admin/me/password"}
 
 
@@ -34,6 +36,8 @@ def require_admin(request: Request,
     if (user.role in READ_ONLY_ROLES and request.method not in SAFE_METHODS
             and request.url.path not in OWN_ACCOUNT_WRITES):
         raise HTTPException(403, "this account is read-only")
+    if user.role == "searcher" and not request.url.path.startswith(SEARCHER_PATHS):
+        raise HTTPException(403, "this account can search documents only")
     return user
 
 

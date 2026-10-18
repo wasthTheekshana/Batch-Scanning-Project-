@@ -40,6 +40,10 @@ never the value that was sent. The service has no interactive docs page (`/docs`
 | PUT | `/admin/templates/{template_id}` | admin session + CSRF header on changes |
 | GET | `/admin/templates/{template_id}/versions` | admin session + CSRF header on changes |
 | GET | `/admin/templates/{template_id}/versions/{version}` | admin session + CSRF header on changes |
+| GET | `/admin/documents` | ? |
+| GET | `/admin/documents/access-log` | ? |
+| GET | `/admin/documents/filters` | ? |
+| GET | `/admin/documents/{document_id}` | ? |
 | GET | `/admin/alerts` | admin session + CSRF header on changes |
 | GET | `/admin/fleet` | admin session + CSRF header on changes |
 | GET | `/admin/fleet/{pc_id}` | admin session + CSRF header on changes |
@@ -60,6 +64,7 @@ never the value that was sent. The service has no interactive docs page (`/docs`
 | POST | `/admin/users/{user_id}/disable` | admin session + CSRF header on changes |
 | POST | `/admin/users/{user_id}/enable` | admin session + CSRF header on changes |
 | POST | `/admin/users/{user_id}/password` | admin session + CSRF header on changes |
+| PUT | `/admin/users/{user_id}/projects` | admin session + CSRF header on changes |
 | POST | `/admin/users/{user_id}/revoke-sessions` | admin session + CSRF header on changes |
 | POST | `/admin/users/{user_id}/role` | admin session + CSRF header on changes |
 | POST | `/admin/users/{user_id}/unlock` | admin session + CSRF header on changes |
@@ -67,6 +72,8 @@ never the value that was sent. The service has no interactive docs page (`/docs`
 | PUT | `/admin/webhook` | admin session + CSRF header on changes |
 | POST | `/admin/webhook/test` | admin session + CSRF header on changes |
 | GET | `/healthz` | anyone (a liveness check; it reveals nothing) |
+| PUT | `/pcs/{pc_id}/documents/{document_id}/index` | ? |
+| PUT | `/pcs/{pc_id}/documents/{document_id}/meta` | ? |
 | POST | `/pcs/register` | nobody yet: the one-time enrolment code in the body is the credential |
 | GET | `/pcs/{pc_id}/config` | PC API key (Bearer) |
 | POST | `/pcs/{pc_id}/heartbeat` | PC API key (Bearer) |
@@ -181,6 +188,31 @@ A complete, valid starting configuration for a new project (the
 
 - **Who:** admin session + CSRF header on changes
 - **Parameters:** `version` (path, required); `template_id` (path, required)
+- **Replies:** 200, 422
+
+## admin-documents
+
+### GET `/admin/documents`
+
+- **Who:** ?
+- **Parameters:** `q` (query); `field` (query); `value` (query); `project` (query); `pc` (query); `batch` (query); `status` (query); `date_from` (query); `date_to` (query); `limit` (query); `offset` (query)
+- **Replies:** 200, 422
+
+### GET `/admin/documents/access-log`
+
+- **Who:** ?
+- **Parameters:** `limit` (query); `before_id` (query)
+- **Replies:** 200, 422
+
+### GET `/admin/documents/filters`
+
+- **Who:** ?
+- **Replies:** 200
+
+### GET `/admin/documents/{document_id}`
+
+- **Who:** ?
+- **Parameters:** `document_id` (path, required)
 - **Replies:** 200, 422
 
 ## admin-fleet
@@ -315,6 +347,15 @@ Documents, pages, batches and errors per day for the last `days` days (today inc
 - **JSON body:** `password` (string, required; maxLength 200)
 - **Replies:** 204, 422
 
+### PUT `/admin/users/{user_id}/projects`
+
+Which projects a searcher may see documents of (replaces the list). Only a searcher has one.
+
+- **Who:** admin session + CSRF header on changes
+- **Parameters:** `user_id` (path, required)
+- **JSON body:** `project_ids` (array, required)
+- **Replies:** 200, 422
+
 ### POST `/admin/users/{user_id}/revoke-sessions`
 
 - **Who:** admin session + CSRF header on changes
@@ -358,6 +399,22 @@ Documents, pages, batches and errors per day for the last `days` days (today inc
 
 - **Who:** anyone (a liveness check; it reveals nothing)
 - **Replies:** 200
+
+## pc-documents
+
+### PUT `/pcs/{pc_id}/documents/{document_id}/index`
+
+- **Who:** ?
+- **Parameters:** `document_id` (path, required); `pc_id` (path, required)
+- **JSON body:** `fields` (object, required); `validation_status` (string; maxLength 30); `project_version` (one of integer/null); `edited_at` (one of string/null)
+- **Replies:** 200, 422
+
+### PUT `/pcs/{pc_id}/documents/{document_id}/meta`
+
+- **Who:** ?
+- **Parameters:** `document_id` (path, required); `pc_id` (path, required)
+- **JSON body:** `project_id` (string, required); `batch_id` (string, required); `page_count` (integer, required; minimum 0.0, maximum 100000.0); `created_at` (string, required; maxLength 40); `validation_status` (string; maxLength 30); `file_name` (one of string/null); `size` (one of integer/null); `sha256` (one of string/null); `delivered_to` (array); `delivery_status` (string; maxLength 30)
+- **Replies:** 200, 422
 
 ## pcs
 

@@ -136,3 +136,80 @@ class AuditEvent(Base):
     actor: Mapped[str] = mapped_column(String(150))
     action: Mapped[str] = mapped_column(String(100))
     detail: Mapped[str] = mapped_column(Text, default="{}")
+
+
+class Document(Base):
+    """A document a PC finished, as central knows it: facts about it, not its PDF. The index fields live in
+    IndexRevision (encrypted). One row per (PC, the PC's own document id)."""
+    __tablename__ = "documents"
+    __table_args__ = (UniqueConstraint("pc_id", "source_document_id"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    pc_id: Mapped[str] = mapped_column(ForeignKey("pcs.id"), index=True)
+    source_document_id: Mapped[str] = mapped_column(String(64))
+    project_id: Mapped[str] = mapped_column(String(64), index=True)
+    batch_id: Mapped[str] = mapped_column(String(64), index=True)
+    page_count: Mapped[int] = mapped_column(Integer, default=0)
+    validation_status: Mapped[str] = mapped_column(String(30), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)       # when the PC made it
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    current_revision: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class DocumentFile(Base):
+    """The PDF's details. The bytes are not kept centrally (file_state "metadata_only"); the file name and
+    where it was delivered can carry customer data, so they are stored encrypted."""
+    __tablename__ = "document_files"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"), index=True)
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    sha256: Mapped[str] = mapped_column(String(64), default="")
+    delivery_status: Mapped[str] = mapped_column(String(30), default="")
+    details_enc: Mapped[str] = mapped_column(Text, default="")                # {file_name, delivered_to}
+    file_state: Mapped[str] = mapped_column(String(20), default="metadata_only")
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class IndexRevision(Base):
+    """Append-only: every different set of index fields a PC reports becomes the next revision."""
+    __tablename__ = "index_revisions"
+    __table_args__ = (UniqueConstraint("document_id", "revision"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"), index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    fields_enc: Mapped[str] = mapped_column(Text)
+    fields_hash: Mapped[str] = mapped_column(String(64))                      # keyed, so equal content is recognised
+    validation_status: Mapped[str] = mapped_column(String(30), default="")
+    project_version: Mapped[Optional[int]] = mapped_column(Integer)
+    edited_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    source: Mapped[str] = mapped_column(String(10), default="pc")
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class IndexLookup(Base):
+    """The blind index of the current revision's fields: an exact-match search without a plain-text column."""
+    __tablename__ = "index_lookup"
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"), primary_key=True)
+    field_name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    blind_hash: Mapped[str] = mapped_column(String(64), index=True)
+
+
+class DocumentAccessLog(Base):
+    """Who searched for or opened which document. Records the kind of filter used, never the value."""
+    __tablename__ = "document_access_log"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    username: Mapped[str] = mapped_column(String(100))
+    document_id: Mapped[Optional[str]] = mapped_column(String(36))
+    action: Mapped[str] = mapped_column(String(20))                           # search | view | history
+    detail: Mapped[str] = mapped_column(Text, default="{}")
+    ip: Mapped[str] = mapped_column(String(64), default="")
+
+
+class SearcherScope(Base):
+    """The projects a `searcher` may see documents of. No rows: none."""
+    __tablename__ = "searcher_scope"
+    admin_id: Mapped[int] = mapped_column(ForeignKey("admin_users.id"), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(64), primary_key=True)

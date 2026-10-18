@@ -1,6 +1,6 @@
 """Operator CLI.
 
-    python -m central.manage create-admin USERNAME [--role admin|auditor]
+    python -m central.manage create-admin USERNAME [--role admin|auditor|searcher]
     python -m central.manage migrate          bring the database to the latest schema
     python -m central.manage db-status        show the schema version and any drift from the models
     python -m central.manage new-migration "message"   write a migration for a model change
@@ -73,8 +73,8 @@ def main(argv: list[str] | None = None) -> int:
     role = "admin"
     if len(argv) == 4 and argv[2] == "--role":
         role, argv = argv[3], argv[:2]
-    if len(argv) != 2 or argv[0] != "create-admin" or role not in ("admin", "auditor"):
-        print("usage: python -m central.manage create-admin USERNAME [--role admin|auditor]",
+    if len(argv) != 2 or argv[0] != "create-admin" or role not in ("admin", "auditor", "searcher"):
+        print("usage: python -m central.manage create-admin USERNAME [--role admin|auditor|searcher]",
               file=sys.stderr)
         return 2
     factory = make_session_factory(
