@@ -7,6 +7,8 @@
   const view = document.getElementById("view");
   let csrf = "";
   let role = "admin";
+  let renderId = 0;          // a newer render makes an older, slower one discard its result
+  let refreshTimer = null;   // views that keep themselves current (the fleet) set it
 
   // ---------------------------------------------------------------- helpers
   function h(tag, attrs, ...kids) {
@@ -183,24 +185,27 @@
 
   // ------------------------------------------------------------------ views
   async function overview() {
-    const o = await api("GET", "/admin/overview");
-    const stat = (n, label) => h("div", { class: "card stat" }, h("div", { class: "n" }, n), h("div", { class: "l" }, label));
+    const [o, fl] = await Promise.all([api("GET", "/admin/overview"), api("GET", "/admin/fleet")]);
+    const minutes = Math.round(o.poll_interval_seconds / 60);
+    const looks = fl.pcs.filter(needsAttention);
     return h("div", {},
       h("h1", {}, "Overview"),
-      h("div", { class: "cards" },
-        stat(o.pcs.online + " / " + o.pcs.registered, "PCs online / registered"),
-        stat(o.pcs.total, "PCs in total"),
-        stat(o.projects, "Projects"),
-        stat(o.templates, "Templates"),
-        stat(o.admins.active + " / " + o.admins.total, "Admins active / total"),
-        stat(o.poll_interval_seconds + " s", "PC poll interval")),
-      o.pcs.offline.length
-        ? h("div", {}, h("h2", {}, "PCs that have stopped checking in"),
-            h("p", {}, o.pcs.offline.map((n) => badge(n, "bad")),
-              h("span", { class: "muted" }, " (silent for over " + Math.round(o.pcs.online_window_seconds / 60) + " minutes)")))
-        : h("p", { class: "muted" }, "Every registered PC is checking in."),
+      fleetHeader(fl.summary),
+      h("p", { class: "sub" },
+        "The server holds " + o.projects + " " + plural(o.projects, "project", "projects") + " and "
+        + o.templates + " " + plural(o.templates, "template", "templates") + ", has "
+        + o.admins.active + " active " + plural(o.admins.active, "administrator", "administrators")
+        + ", and asks stations to check in every "
+        + (minutes >= 1 ? minutes + " " + plural(minutes, "minute", "minutes") : o.poll_interval_seconds + " seconds") + "."),
+      h("h2", {}, "Needs a look"),
+      looks.length
+        ? stack(table(["Station", "Why"], looks.map((p) => [
+            h("a", { href: "#/fleet" }, p.display_name),
+            h("ul", { class: "projects why" }, reasons(p).map((r) => h("li", {}, r)))]),
+          ""), ["Station", "Why"])
+        : h("p", { class: "empty" }, fl.summary.total ? "Nothing right now: every station is online and up to date." : "Add a PC to start monitoring."),
       h("h2", {}, "Recent activity"),
-      auditTable(o.recent_audit),
+      stack(auditTable(o.recent_audit), ["Time", "Who", "Action", "Details"]),
       h("p", {}, h("a", { href: "#/audit" }, "Open the full audit log")));
   }
 
@@ -599,14 +604,273 @@
         }, "primary"))));
   }
 
+  // ------------------------------------------------------- fleet and activity
+  // Read-only views of what the PCs report: are they up, running the current settings, and
+  // how much they process. The charts are SVG built from attributes (the page's content
+  // policy allows no inline styles).
+  const count = (v) => Number(v || 0).toLocaleString();
+  const plural = (v, one, many) => (v === 1 ? one : many);
+  const SVGNS = "http://www.w3.org/2000/svg";
+
+  function svg(tag, attrs, ...kids) {
+    const el = document.createElementNS(SVGNS, tag);
+    for (const [key, value] of Object.entries(attrs || {})) {
+      if (value !== null && value !== undefined) el.setAttribute(key, String(value));
+    }
+    for (const kid of kids.flat(Infinity)) {
+      if (kid === null || kid === undefined || kid === false) continue;
+      el.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+    }
+    return el;
+  }
+
+  const STATUS_TEXT = { online: "Online", offline: "Offline", key_revoked: "Access revoked", not_registered: "Not enrolled yet" };
+  const STATUS_KIND = { online: "ok", offline: "bad", key_revoked: "warn", not_registered: "warn" };
+  const STATUS_LEGEND = { online: "online", offline: "offline", key_revoked: "access revoked", not_registered: "not enrolled" };
+  const STATUS_ORDER = ["online", "offline", "key_revoked", "not_registered"];
+  const ROLLOUT_TEXT = { current: "Up to date", behind: "Behind", unknown: "Not reported", none: "No projects" };
+
+  function isNewer(a, b) {
+    const x = String(a).split(/[.+-]/).map((p) => parseInt(p, 10) || 0);
+    const y = String(b).split(/[.+-]/).map((p) => parseInt(p, 10) || 0);
+    for (let i = 0; i < Math.max(x.length, y.length); i++) {
+      const d = (x[i] || 0) - (y[i] || 0);
+      if (d) return d > 0;
+    }
+    return false;
+  }
+
+  function needsAttention(p) {
+    return p.status === "offline" || p.status === "key_revoked" || p.rollout === "behind"
+      || !!(p.today && p.today.errors > 0);
+  }
+
+  function fleetSentence(s) {
+    const enrolled = s.online + s.offline + s.key_revoked;
+    if (!s.total) return ["No stations yet. Add a PC under ", h("a", { href: "#/pcs" }, "PCs"),
+      ", then type its code into DOK Scanner (Admin, Central)."];
+    if (!enrolled) return ["No station has connected yet. They appear here after their first sync."];
+    const out = [h("strong", {}, s.online + " of " + enrolled), " " + plural(enrolled, "station is", "stations are") + " online."];
+    if (s.offline) out.push(" ", h("strong", {}, String(s.offline)), " " + plural(s.offline, "has", "have") + " stopped checking in.");
+    if (s.behind) out.push(" ", h("strong", {}, String(s.behind)), " " + plural(s.behind, "is", "are") + " behind on settings.");
+    if (!s.offline && !s.behind) out.push(" Every project is up to date.");
+    return out;
+  }
+
+  function todayLine(t) {
+    if (!t.documents && !t.pages && !t.batches) return "Nothing processed yet today.";
+    return "Today: " + count(t.documents) + " " + plural(t.documents, "document", "documents") + ", "
+      + count(t.pages) + " " + plural(t.pages, "page", "pages") + " in "
+      + count(t.batches) + " " + plural(t.batches, "batch", "batches")
+      + (t.errors ? ", " + count(t.errors) + " " + plural(t.errors, "error", "errors") : "") + ".";
+  }
+
+  function statusBar(s) {
+    let x = 0;
+    const parts = STATUS_ORDER.filter((k) => s[k] > 0).map((k) => {
+      const width = (s[k] / s.total) * 100;
+      const rect = svg("rect", { class: k, x, y: 0, width, height: 1 });
+      x += width;
+      return rect;
+    });
+    return svg("svg", { class: "statusbar", viewBox: "0 0 100 1", preserveAspectRatio: "none", role: "img",
+      "aria-label": STATUS_ORDER.map((k) => s[k] + " " + STATUS_LEGEND[k]).join(", ") }, parts);
+  }
+
+  // The sentence, the status bar and its legend: the top of the Overview and of the Fleet.
+  function fleetHeader(s) {
+    return [
+      h("p", { class: "lead" }, fleetSentence(s)),
+      s.total ? statusBar(s) : null,
+      s.total ? h("div", { class: "legend" }, STATUS_ORDER.filter((k) => s[k] > 0).map((k) =>
+        h("span", {}, h("i", { class: k }), s[k] + " " + STATUS_LEGEND[k]))) : null,
+      h("p", { class: "sub" }, todayLine(s.today)),
+    ];
+  }
+
+  // Why a station is on the "needs a look" list, in words.
+  function reasons(p) {
+    const out = [];
+    if (p.status === "offline") out.push("No contact since " + ago(p.last_seen_at));
+    if (p.status === "key_revoked") out.push("Its access was revoked");
+    if (p.rollout === "behind" && p.status !== "key_revoked") {
+      const n = p.projects.filter((q) => q.state === "behind" || q.state === "not_applied").length;
+      out.push(n + " " + plural(n, "project is", "projects are") + " behind");
+    }
+    if (p.today && p.today.errors > 0) out.push(count(p.today.errors) + " " + plural(p.today.errors, "error", "errors") + " today");
+    return out;
+  }
+
+  // On a narrow screen a table row becomes a card: each cell is labelled with its column.
+  function stack(tbl, headers) {
+    if (!(tbl instanceof Element) || tbl.tagName !== "TABLE") return tbl;
+    tbl.classList.add("stack");
+    for (const tr of tbl.querySelectorAll("tbody tr")) {
+      [...tr.children].forEach((td, i) => { if (headers[i]) td.dataset.label = headers[i]; });
+    }
+    return tbl;
+  }
+
+  let fleetFilter = "all";
+  let fleetSearch = "";
+
+  async function fleet() {
+    const f = await api("GET", "/admin/fleet");
+    const s = f.summary;
+    const latest = f.pcs.map((p) => p.app_version).filter(Boolean).reduce((a, b) => (a && !isNewer(b, a) ? a : b), null);
+    const holder = h("div", { class: "scroll" });
+
+    function projectsList(p) {
+      if (!p.projects.length) return null;
+      return h("ul", { class: "projects" }, p.projects.map((q) => h("li", { class: q.state },
+        q.name + " v" + q.assigned_version +
+        (q.state === "behind" ? " (the PC has v" + q.applied_version + ")" : "") +
+        (q.state === "not_applied" ? " (not applied yet)" : ""))));
+    }
+
+    const offline = (p) => p.status === "key_revoked" || p.status === "not_registered";
+
+    function row(p) {
+      const older = p.app_version && latest && isNewer(latest, p.app_version);
+      return [
+        h("div", {}, h("div", { class: "station" }, p.display_name),
+          h("div", { class: "sub" }, p.last_seen_at ? "Last seen " + ago(p.last_seen_at) : "Never seen")),
+        badge(STATUS_TEXT[p.status], STATUS_KIND[p.status]),
+        p.app_version
+          ? h("span", {}, h("span", { class: "mono" }, p.app_version), older ? " " : null, older ? badge("older", "warn") : null)
+          : h("span", { class: "muted" }, "Not reported"),
+        h("div", {}, offline(p) ? h("span", { class: "pill none" }, "Not receiving settings")
+          : h("span", { class: "pill " + p.rollout }, ROLLOUT_TEXT[p.rollout]), projectsList(p)),
+        p.today
+          ? h("div", {}, count(p.today.documents) + " docs, " + count(p.today.pages) + " pages",
+              p.today.errors ? h("div", { class: "err" }, count(p.today.errors) + " " + plural(p.today.errors, "error", "errors")) : null)
+          : h("span", { class: "muted" }, "-"),
+      ];
+    }
+
+    function show() {
+      const term = fleetSearch.trim().toLowerCase();
+      const rows = f.pcs.filter((p) => (fleetFilter === "all" || needsAttention(p))
+        && (!term || p.display_name.toLowerCase().includes(term)))
+        .sort((a, b) => Number(needsAttention(b)) - Number(needsAttention(a)));   // stable: names stay in order
+      clear(holder);
+      if (!rows.length) {
+        holder.append(h("p", { class: "empty" }, !f.pcs.length ? "No stations yet."
+          : fleetFilter === "attention" && !term ? "Nothing needs attention: every station is online and up to date."
+          : "No station matches."));
+        return;
+      }
+      const headers = ["Station", "Status", "Program", "Settings", "Today"];
+      holder.append(stack(table(headers, rows.map(row)), headers));
+    }
+
+    const attention = f.pcs.filter(needsAttention).length;
+    const seg = h("div", { class: "seg", role: "group", "aria-label": "Show" });
+    const choice = (key, label) => {
+      const b = h("button", { type: "button", class: fleetFilter === key ? "on" : "", onclick: () => {
+        fleetFilter = key;
+        for (const other of seg.children) other.classList.toggle("on", other === b);
+        show();
+      } }, label);
+      return b;
+    };
+    seg.append(choice("all", "All " + f.pcs.length), choice("attention", "Needs attention " + attention));
+    const search = h("input", { type: "search", placeholder: "Find a station", value: fleetSearch, maxlength: 100,
+      "aria-label": "Find a station" });
+    search.addEventListener("input", () => { fleetSearch = search.value; show(); });
+    show();
+    return h("div", {},
+      h("h1", {}, "Fleet"),
+      fleetHeader(s),
+      h("div", { class: "toolbar" }, seg, search),
+      holder);
+  }
+  fleet.refresh = 30000;
+
+  // ---- activity
+  let activityDays = 14;
+  let activityMetric = "documents";
+  const METRICS = [["documents", "Documents"], ["pages", "Pages"], ["batches", "Batches"], ["errors", "Errors"]];
+
+  function niceMax(v) {
+    const magnitude = Math.pow(10, Math.floor(Math.log10(v)));
+    for (const step of [1, 2, 5, 10]) if (step * magnitude >= v) return step * magnitude;
+    return 10 * magnitude;
+  }
+
+  function barChart(days, metric, label) {
+    const W = 720, H = 250, L = 46, R = 12, T = 14, B = 30;
+    const max = niceMax(Math.max(1, ...days.map((d) => d[metric])));
+    const iw = W - L - R, ih = H - T - B, slot = iw / days.length, bw = Math.max(2, slot * 0.68);
+    const chart = svg("svg", { class: "chart", viewBox: "0 0 " + W + " " + H, role: "img",
+      "aria-label": label + " per day, last " + days.length + " days" });
+    for (const fraction of [0, 0.5, 1]) {
+      const y = T + ih - ih * fraction;
+      chart.append(svg("line", { class: "grid", x1: L, x2: W - R, y1: y, y2: y }),
+        svg("text", { class: "end", x: L - 6, y: y + 4 }, count(max * fraction)));
+    }
+    days.forEach((d, i) => {
+      const v = d[metric];
+      const height = v ? Math.max(1.5, (ih * v) / max) : 1.5;
+      const cls = "bar" + (metric === "errors" ? " errors" : "") + (v ? "" : " zero");
+      chart.append(svg("rect", { class: cls, x: L + i * slot + (slot - bw) / 2, y: T + ih - height,
+        width: bw, height, rx: 1.5 }, svg("title", {}, d.day + ": " + count(v) + " " + label.toLowerCase())));
+    });
+    for (const i of new Set([0, Math.floor((days.length - 1) / 2), days.length - 1])) {
+      chart.append(svg("text", { class: "mid", x: L + i * slot + slot / 2, y: H - 8 }, days[i].day.slice(5)));
+    }
+    return chart;
+  }
+
+  function alignRight(tbl, columns) {
+    if (!(tbl instanceof Element) || tbl.tagName !== "TABLE") return tbl;
+    for (const tr of tbl.querySelectorAll("tr")) {
+      for (const i of columns) if (tr.children[i]) tr.children[i].classList.add("num");
+    }
+    return tbl;
+  }
+
+  async function activity() {
+    const a = await api("GET", "/admin/stats?days=" + activityDays);
+    const t = a.totals;
+    const label = METRICS.find(([k]) => k === activityMetric)[1];
+    const range = h("div", { class: "seg", role: "group", "aria-label": "Period" }, [7, 14, 30, 90].map((d) =>
+      h("button", { type: "button", class: d === activityDays ? "on" : "", onclick: () => { activityDays = d; render(); } }, d + " days")));
+    const metric = h("div", { class: "seg", role: "group", "aria-label": "Measure" }, METRICS.map(([k, text]) =>
+      h("button", { type: "button", class: k === activityMetric ? "on" : "", onclick: () => { activityMetric = k; render(); } }, text)));
+    const busiest = Math.max(1, ...a.per_pc.map((p) => p.documents));
+    const empty = !t.documents && !t.pages && !t.batches && !t.errors;
+    return h("div", {},
+      h("h1", {}, "Activity"),
+      h("p", { class: "lead" }, empty
+        ? "No activity reported in the last " + activityDays + " days."
+        : ["In the last " + activityDays + " days the stations processed ", h("strong", {}, count(t.documents) + " " + plural(t.documents, "document", "documents")),
+            " (" + count(t.pages) + " pages in " + count(t.batches) + " batches)" + (t.errors ? "; " + count(t.errors) + " had errors." : ".")]),
+      empty ? h("p", { class: "sub" }, "Stations report their totals with each sync, from program version 1.0.0. Nothing appears until a station has synced and scanned something.") : null,
+      h("div", { class: "toolbar" }, range, metric),
+      barChart(a.days, activityMetric, label),
+      h("h2", {}, "By station"),
+      stack(alignRight(table(["Station", "Documents", "Pages", "Batches", "Errors", ""], a.per_pc.map((p) => [
+        p.display_name, count(p.documents), count(p.pages), count(p.batches),
+        p.errors ? h("span", { class: "err" }, count(p.errors)) : "0",
+        svg("svg", { class: "rank", viewBox: "0 0 100 10", preserveAspectRatio: "none", role: "img",
+          "aria-label": count(p.documents) + " documents" },
+          svg("rect", { class: "track", x: 0, y: 0, width: 100, height: 10, rx: 3 }),
+          svg("rect", { class: "fill", x: 0, y: 0, width: Math.max(p.documents ? 2 : 0, (p.documents / busiest) * 100), height: 10, rx: 3 }))]),
+        "No station has reported activity in this period."), [1, 2, 3, 4]), ["Station", "Documents", "Pages", "Batches", "Errors", ""]));
+  }
+
   // ----------------------------------------------------------------- router
   const routes = {
-    overview, pcs, admins, audit, settings,
+    overview, fleet, activity, pcs, admins, audit, settings,
     projects: (id) => (id ? projectViews.detail(id) : projectViews.list()),
     templates: (id) => (id ? templateViews.detail(id) : templateViews.list()),
   };
 
   async function render() {
+    const myRender = ++renderId;
+    clearInterval(refreshTimer);
+    refreshTimer = null;
     const [name, id] = (location.hash.replace(/^#\//, "") || "overview").split("/");
     const route = routes[name] || overview;
     for (const a of document.querySelectorAll("#nav a")) {
@@ -614,8 +878,12 @@
     }
     try {
       const content = await route(id);
+      if (myRender !== renderId) return;       // the person moved on while this was loading
       clear(view);
       view.append(content);
+      if (route.refresh) {
+        refreshTimer = setInterval(() => { if (!document.hidden && !dialogEl.open) render(); }, route.refresh);
+      }
     } catch (e) {
       if (e.status === 401) return;
       clear(view);

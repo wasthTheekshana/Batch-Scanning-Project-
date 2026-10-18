@@ -141,6 +141,23 @@ Central lets an administrator publish projects once and have each PC pull them.
 4. A lost or stolen PC: revoke its key in the dashboard (`DELETE /admin/pcs/{id}/key`), then issue a new
    code. A PC whose key was revoked shows *Central: new enrollment code needed* in the status bar.
 
+### Watching the stations (web center: Overview, Fleet, Activity)
+
+Sign in to the central dashboard in a browser (`https://your-server/dashboard`). Each station reports, with
+every sync, its program version, which settings version of each assigned project it runs, and today's
+counts of documents, pages, batches and errors. **Never any document content.**
+
+| Screen | What it tells you |
+|---|---|
+| Overview | the state of the fleet in a sentence (how many stations are online, how many stopped checking in, how many are behind on settings), a status bar, and a short list of stations that need a look, with the reason |
+| Fleet | one row per station: online, offline, access revoked or not enrolled; its program version (*older* when others run a newer one); **Settings** (*Up to date*, *Behind* with the version the station has and the one assigned, *Not reported*); today's counts. Stations that need attention are listed first; the list refreshes itself every 30 seconds |
+| Activity | documents, pages, batches or errors per day for 7, 14, 30 or 90 days, and a table per station |
+
+Reading it: *Behind* means you published a newer version of a project and the station has not applied it
+yet (it applies at its next sync; offline stations catch up when they return). *Not reported* is a station
+with an older program that does not send these details. An *error* is a document that was rejected or
+whose delivery was reported unsuccessful. A read-only *auditor* can see all three screens.
+
 The central server's own users, roles (including the read-only *auditor*), lockout and audit log are described
 in `central/README.md`; its API is in `docs/CENTRAL_API.md`.
 

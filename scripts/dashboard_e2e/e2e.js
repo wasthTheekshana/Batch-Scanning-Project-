@@ -8,7 +8,7 @@ const CHROME = process.env.CHROME || "C:/Program Files/Google/Chrome/Application
 const problems = [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 (async () => {
-  const browser = await puppeteer.launch({ executablePath: CHROME, headless: "new", args: ["--no-sandbox"] });
+  const browser = await puppeteer.launch({ executablePath: CHROME, headless: "new", args: ["--no-sandbox", "--no-proxy-server"] });
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 860 });
   page.on("pageerror", (e) => problems.push("pageerror: " + e.message));
@@ -27,7 +27,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await check("wrong password message", (await text()).includes("Wrong username or password."));
   await page.$eval("#login-pass", (e) => (e.value = ""));
   await page.type("#login-pass", "correct horse battery"); await click("Sign in"); await sleep(600);
-  await check("signed in, overview shown", (await text()).includes("Overview") && (await text()).includes("PCs in total"));
+  await check("signed in, overview shown", (await text()).includes("Overview") && (await text()).includes("Needs a look"));
   await shot("02-overview");
 
   await click("PCs"); await page.type("#new-pc", "Scan-Desk-1"); await click("Add PC"); await sleep(600);
@@ -61,6 +61,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await click("Save"); await sleep(900);
   await check("new version saved from the form", (await text()).includes("v2") && (await text()).includes('"pass_score": 77'));
 
+  // the fleet and activity views: a station that has not enrolled yet, and no activity reported
+  await click("Fleet"); await sleep(600);
+  await check("fleet lists the new station as not enrolled",
+    (await text()).includes("Fleet") && (await text()).includes("Scan-Desk-1-A") && (await text()).includes("Not enrolled yet"));
+  await check("fleet says in words how the fleet is doing", await page.$eval(".lead", (e) => e.textContent.length > 20));
+  await shot("05d-fleet");
+  await click("Activity"); await sleep(600);
+  await check("activity explains that nothing has been reported yet",
+    (await text()).includes("No activity reported") && (await page.$("svg.chart")) !== null);
+  await click("Documents"); await click("Errors"); await sleep(300);
+  await check("the activity measure can be switched", await page.evaluate(() => document.querySelector(".seg button.on:last-child, .seg button.on") !== null));
+  await shot("05e-activity");
+
   await click("Templates"); await sleep(500); await shot("06-templates");
   await click("Admins"); await click("Add admin...");
   const inputs = await page.$$("dialog input"); await inputs[0].type("auditor"); await inputs[1].type("a very long passphrase");
@@ -84,6 +97,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await page.type("#login-user", "auditor"); await page.type("#login-pass", "a very long passphrase");
   await click("Sign in"); await sleep(700);
   await check("auditor signed in and marked read-only", (await text()).includes("auditor (read-only)") && (await text()).includes("Overview"));
+  await click("Fleet"); await sleep(500);
+  await check("auditor can read the fleet", (await text()).includes("Scan-Desk-1-A"));
   await click("Projects"); await sleep(500);
   await check("auditor sees projects but no New project button", (await text()).includes("Bank customer file") && !(await text()).includes("New project..."));
   await click("PCs"); await sleep(500);

@@ -6,7 +6,8 @@ A release is a tagged commit, built by script, with a checksum record. Nothing h
 
 1. **Decide the number** (MAJOR.MINOR.PATCH): a fix is PATCH, a new feature MINOR, a change that needs
    migration work on the customer's side MAJOR. Edit `version.py`.
-2. **Write the changelog**: add a `## [x.y.z] - date` entry at the top of `CHANGELOG.md`, listing what
+2. **Write the changelog**: while you work, add to the `## [Unreleased]` section at the top of `CHANGELOG.md`;
+   for the release, rename it `## [x.y.z] - date` (and start a fresh empty *Unreleased* above it). List what
    changed for the user, grouped (Capture, Image quality, Indexing, Security, ...).
 3. **Update the installer's number and check**: `python scripts\release.py --check`. It fails when
    `version.py`, `installer\setup.iss` and the newest `CHANGELOG.md` entry disagree. (A unit test and the

@@ -31,3 +31,66 @@ def test_the_dashboard_hides_write_controls_from_an_auditor():
 def test_the_project_form_exists_and_the_raw_json_is_one_tab_away():
     js = (DASHBOARD / "app.js").read_text(encoding="utf-8")
     assert "projectDialog" in js and "JSON (advanced)" in js and "window.DokForm" in js
+
+
+# -- the fleet and activity screens and the rules every dashboard file must keep -------------------------
+import re  # noqa: E402
+
+
+def _js() -> str:
+    return (DASHBOARD / "app.js").read_text(encoding="utf-8")
+
+
+def _routes(js: str) -> set[str]:
+    block = js[js.index("const routes = {"):js.index("async function render()")]
+    return set(re.findall(r"\b([a-z]+)(?=[,:])", block.split("{", 1)[1].split("};")[0]))
+
+
+def test_every_menu_link_has_a_screen_and_every_screen_a_link():
+    html = (DASHBOARD / "index.html").read_text(encoding="utf-8")
+    links = set(re.findall(r'data-view="([a-z]+)"', html))
+    assert {"overview", "fleet", "activity", "pcs", "projects", "templates", "admins", "audit",
+            "settings"} <= links
+    assert links <= _routes(_js())
+
+
+def test_values_from_the_server_are_never_put_in_the_page_as_markup():
+    js = _js() + (DASHBOARD / "form.js").read_text(encoding="utf-8")
+    for forbidden in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function"):
+        assert forbidden not in js, forbidden
+
+
+def test_nothing_in_the_dashboard_needs_an_inline_style_or_script_or_another_site():
+    """The page's content policy is script-src 'self'; style-src 'self': inline styles, inline
+    scripts and anything from another site would be blocked (and would be a hole if allowed)."""
+    html = (DASHBOARD / "index.html").read_text(encoding="utf-8")
+    assert not re.search(r"\sstyle=|\sonclick=|\sonload=|<script(?![^>]*\ssrc=)", html)
+    js = _js()
+    assert not re.search(r"""setAttribute\(\s*["']style["']""", js)
+    assert not re.search(r"""\bstyle\s*:\s*["'{]""", js)               # h("x", { style: ... })
+    for name in ("app.js", "form.js", "index.html", "style.css"):
+        text = (DASHBOARD / name).read_text(encoding="utf-8")
+        # the SVG namespace is an identifier, not an address anything is fetched from
+        text = text.replace("http://www.w3.org/2000/svg", "")
+        assert not re.search(r"https?://", text), name
+
+
+def test_the_fleet_and_activity_screens_are_read_only():
+    js = _js()
+    fleet = js[js.index("async function fleet()"):js.index("async function activity()")]
+    activity = js[js.index("async function activity()"):js.index("const routes = {")]
+    for source in (fleet, activity):
+        assert 'api("POST"' not in source and 'api("PUT"' not in source and 'api("DELETE"' not in source
+        assert "wbutton(" not in source and 'api("PATCH"' not in source
+
+
+def test_the_fleet_view_keeps_itself_current_and_a_stale_render_is_discarded():
+    js = _js()
+    assert "fleet.refresh = 30000" in js and "clearInterval(refreshTimer)" in js
+    assert "myRender !== renderId" in js
+
+
+def test_the_stylesheet_serves_and_has_a_phone_layout(client):
+    r = client.get("/dashboard/style.css")
+    assert r.status_code == 200 and "table.stack" in r.text and "max-width: 880px" in r.text
+    assert "prefers-color-scheme: dark" in r.text and ":focus-visible" in r.text

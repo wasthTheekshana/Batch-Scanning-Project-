@@ -3,6 +3,19 @@
 All notable changes to DOK Scanner. The newest release is first. The version number lives in
 `version.py` and must match the top entry here (a test checks it).
 
+## [Unreleased]
+
+Changes since 1.0.0. At release time this heading becomes the new version number and date.
+
+### Central web center
+- **Fleet monitoring.** Each station reports, with every sync, its program version, the settings version
+  of each project it runs, and today's counts of documents, pages, batches and errors (counts only, never
+  document content). New **Fleet** and **Activity** screens, and an Overview that leads with the state of the
+  fleet; the admin API has `GET /admin/fleet` and `GET /admin/stats`.
+- The dashboard has a new side-menu layout that works on a phone (tables become cards) and in dark mode.
+- Central migration 0002 adds the reporting tables; starting the service applies it.
+- A database made by the old `create_all()` is now adopted at the schema it actually has.
+
 ## [1.0.0] - 2026-10-17
 
 First release for the bank demo and pilot.

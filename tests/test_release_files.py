@@ -41,3 +41,10 @@ def test_the_selftest_and_the_window_title_show_the_version():
 def test_the_install_test_checks_the_model_and_the_clean_profile():
     text = (ROOT / "scripts" / "install_test.py").read_text(encoding="utf-8")
     assert "LOCALAPPDATA" in text and "models/trocr/encoder_model.onnx" in text and "/VERYSILENT" in text
+
+
+def test_an_unreleased_section_above_the_newest_release_does_not_break_the_check():
+    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert text.index("## [Unreleased]") < text.index(f"## [{release.version()}]")
+    assert release.changelog_version() == release.version()
+    assert release.consistency_problems() == []

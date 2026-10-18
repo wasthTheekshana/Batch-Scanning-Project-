@@ -79,5 +79,7 @@ def test_the_script_never_turns_data_into_markup_or_stores_the_token(banned):
 
 def test_the_script_only_talks_to_its_own_origin():
     js = (DASH / "app.js").read_text(encoding="utf-8")
-    assert not re.search(r"""https?://""", js)
+    # the SVG namespace is an identifier for the charts' elements, not an address anything is fetched from
+    js_without_namespace = js.replace("http://www.w3.org/2000/svg", "")
+    assert not re.search(r"""https?://""", js_without_namespace)
     assert "fetch(" in js and "X-CSRF-Token" in js

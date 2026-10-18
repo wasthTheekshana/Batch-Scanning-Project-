@@ -101,8 +101,12 @@ no build step and loads nothing from other sites; every response carries a stric
 Content-Security-Policy (`default-src 'none'`, scripts and styles from the
 service only), `X-Frame-Options: DENY`, `nosniff`, and admin pages are never cached.
 
-Pages: Overview (PC and admin counts, PCs that stopped checking in, recent
-activity), PCs (register, enrollment code, rename, revoke key, delete),
+Pages: Overview (how the fleet is doing in a sentence and a status bar, the
+stations that need a look and why, recent activity), **Fleet** (every station:
+online or not, program version, whether it runs the current settings of each
+assigned project, today's counts; stations needing attention first) and
+**Activity** (documents, pages, batches and errors per day and per station, for
+7 to 90 days), PCs (register, enrollment code, rename, revoke key, delete),
 Projects and Templates (versions, JSON view and edit, assign or unassign PCs),
 Admins (create, disable/enable, unlock, reset password, sign out, sign
 everyone out), Audit log (filter by action or user, paged) and Settings
@@ -110,6 +114,21 @@ everyone out), Audit log (filter by action or user, paged) and Settings
 
 Try it locally with sample data: `python scripts/central_demo.py` (sign in as
 `admin` / `demo-admin-passphrase`).
+
+### What a PC reports (fleet monitoring)
+
+With each sync a PC sends `POST /pcs/{id}/heartbeat` with: its **program version**, the **settings version
+of each centrally managed project** it runs, and its **running totals for today** (UTC): documents, pages,
+batches and errors (a document that was rejected, or whose delivery was reported unsuccessful). Nothing
+else: no document text, index values, names, file names or paths. The server validates every field
+(a version pattern, at most 200 projects, counts up to 10,000,000, a day within two days of now), keeps one
+row per PC and day (a later report replaces the earlier one, it does not add to it), and deletes daily rows
+older than 400 days. Heartbeats are not written to the audit log (one row per poll would bury it).
+
+A PC that never reports (an older program) is shown as "not reported", never as behind. Rollout is
+**current** when the PC runs the version assigned here, **behind** when it runs an older one or none,
+**unknown** when it has not reported, and the PC is not counted as behind while its access is revoked.
+A PC is **online** if it checked in within three polling intervals (at least five minutes).
 
 ### Admin API added for the dashboard
 
@@ -123,6 +142,8 @@ Try it locally with sample data: `python scripts/central_demo.py` (sign in as
 | `PATCH /admin/pcs/{id}`, `DELETE /admin/pcs/{id}` | rename / delete a PC (and its assignments and codes) |
 | `GET /admin/audit` | audit log, newest first, `limit`, `before_id`, `action`, `actor` |
 | `GET /admin/audit/actions`, `GET /admin/overview` | filter list, dashboard summary |
+| `GET /admin/fleet` | every PC with its status, program version, settings rollout and today's counts, and a summary (read-only: an auditor may call it) |
+| `GET /admin/stats?days=14` | per-day totals (1 to 90 days, quiet days included as zeros) and each PC's total, busiest first |
 | `GET /admin/project-defaults` | a complete starting configuration for a new project |
 
 A real-browser test of the dashboard is in `scripts/dashboard_e2e/`.

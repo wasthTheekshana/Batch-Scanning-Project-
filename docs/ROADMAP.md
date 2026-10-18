@@ -125,7 +125,10 @@ and open its PDF.
   restore into a fresh database brings both accounts and the audit log back.
   Not tried here: the TLS proxy on ports 80/443 and a certificate for a public
   name (needs the real domain).
-- Still open: decide whether the slim dashboard is enough or a fuller one is needed.
+- STARTED 2026-10-18 (owner decision: a fuller dashboard): fleet monitoring. Stations report their program
+  version, applied project versions and daily counts; new Fleet and Activity screens, an Overview led by the
+  fleet's state, a phone layout. Next in this track: alerts when a station goes quiet or fails to apply a
+  version, a per-station detail page, and (needs the approved document-sync design) central search.
 
 ### 8. Needs a business decision, not code
 Bank document-system field mapping (plan 3.5), incident and insurance workflow

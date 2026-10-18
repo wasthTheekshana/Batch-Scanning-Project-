@@ -38,7 +38,8 @@ def installer_version() -> str:
 
 
 def changelog_version() -> str | None:
-    m = re.search(r"^## \[([^\]]+)\]", (ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), re.M)
+    # the newest numbered release; an "[Unreleased]" section above it is work waiting for its number
+    m = re.search(r"^## \[(\d+\.\d+\.\d+)\]", (ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), re.M)
     return m.group(1) if m else None
 
 
