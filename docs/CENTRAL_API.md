@@ -42,6 +42,7 @@ never the value that was sent. The service has no interactive docs page (`/docs`
 | GET | `/admin/templates/{template_id}/versions/{version}` | admin session + CSRF header on changes |
 | GET | `/admin/alerts` | admin session + CSRF header on changes |
 | GET | `/admin/fleet` | admin session + CSRF header on changes |
+| GET | `/admin/fleet/{pc_id}` | admin session + CSRF header on changes |
 | GET | `/admin/stats` | admin session + CSRF header on changes |
 | GET | `/admin/audit` | admin session + CSRF header on changes |
 | GET | `/admin/audit/actions` | admin session + CSRF header on changes |
@@ -196,6 +197,15 @@ What needs attention right now, most serious first (see central/alerts.py for th
 
 - **Who:** admin session + CSRF header on changes
 - **Replies:** 200
+
+### GET `/admin/fleet/{pc_id}`
+
+Everything about one station: status, the settings history of each project it is assigned against what it
+    runs, 30 days of activity, its own alerts and its recent events (not the routine configuration polls).
+
+- **Who:** admin session + CSRF header on changes
+- **Parameters:** `pc_id` (path, required)
+- **Replies:** 200, 422
 
 ### GET `/admin/stats`
 

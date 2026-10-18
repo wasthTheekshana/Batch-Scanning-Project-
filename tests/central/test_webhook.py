@@ -412,3 +412,47 @@ def test_the_webhook_pages_need_a_session(client):
     assert client.get("/admin/webhook").status_code == 401
     assert client.put("/admin/webhook", json={}).status_code in (401, 403)
     assert client.post("/admin/webhook/test").status_code in (401, 403)
+
+
+# -- the address is checked again at send time, and the vetted address is the one connected to -------------------
+def _listener():
+    import http.server
+    import threading
+    seen = []
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            seen.append((self.headers.get("Host"), self.rfile.read(int(self.headers["Content-Length"]))))
+            self.send_response(204)
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, seen
+
+
+def test_a_name_that_was_re_pointed_after_saving_is_not_connected_to(monkeypatch):
+    server, seen = _listener()
+    try:
+        # saved while public, but at send time the name points at this machine (DNS rebinding)
+        monkeypatch.setattr(notify, "_resolve", lambda host, port: ["127.0.0.1"])
+        with pytest.raises(WebhookSendError, match="no longer acceptable"):
+            notify.http_post(f"https://hooks.example.com:{server.server_port}/x", b"{}", {})
+        assert seen == []
+    finally:
+        server.shutdown()
+
+
+def test_the_connection_goes_to_the_vetted_address_and_names_the_host(monkeypatch):
+    server, seen = _listener()
+    try:
+        answers = iter([["127.0.0.1"], ["198.51.100.7"]])           # a second look would get another address
+        monkeypatch.setattr(notify, "_resolve", lambda host, port: next(answers))
+        status = notify.http_post(f"http://hooks.example.com:{server.server_port}/x", b'{"a":1}',
+                                  {"Content-Type": "application/json"}, allow_http=True)
+        assert status == 204 and seen == [(f"hooks.example.com:{server.server_port}", b'{"a":1}')]
+    finally:
+        server.shutdown()

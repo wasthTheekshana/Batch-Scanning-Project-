@@ -21,15 +21,16 @@ address that resolves to this machine or a link-local address (cloud metadata) i
 """
 from __future__ import annotations
 
+import functools
 import hashlib
 import hmac
 import ipaddress
 import json
 import logging
+import http.client
 import socket
+import ssl
 import threading
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
@@ -75,8 +76,9 @@ def _resolve(host: str, port: int) -> list[str]:
         raise WebhookConfigError("the address does not resolve to a server") from e
 
 
-def check_url(url: str, allow_http: bool = False, block_private: bool = False) -> str:
-    """Accept a webhook address or explain why not. Returns the host name (the only part shown later)."""
+def vet(url: str, allow_http: bool = False, block_private: bool = False) -> tuple[str, int, str]:
+    """Accept a webhook address or explain why not. Returns (host name, port, the address to connect to).
+    Sending connects to that vetted address, so the name cannot be re-pointed between the check and the connection."""
     if not url or len(url) > MAX_URL or any(c in url for c in "\r\n\t "):
         raise WebhookConfigError("enter the address as one line, up to 2000 characters")
     parts = urlparse(url)
@@ -88,12 +90,20 @@ def check_url(url: str, allow_http: bool = False, block_private: bool = False) -
         port = parts.port or (443 if parts.scheme == "https" else 80)
     except ValueError as e:
         raise WebhookConfigError("the port in the address is not valid") from e
-    for text in _resolve(parts.hostname, port):
+    found = _resolve(parts.hostname, port)
+    for text in found:
         ip = ipaddress.ip_address(text)
         local = ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified or ip.is_reserved
         if (local and not allow_http) or (block_private and ip.is_private and not ip.is_loopback):
             raise WebhookConfigError("that address points inside this server's own network position, which is not allowed")
-    return parts.hostname
+    if not found:
+        raise WebhookConfigError("the address does not resolve to a server")
+    return parts.hostname, port, found[0]
+
+
+def check_url(url: str, allow_http: bool = False, block_private: bool = False) -> str:
+    """Accept a webhook address or explain why not. Returns the host name (the only part shown later)."""
+    return vet(url, allow_http, block_private)[0]
 
 
 # ---- the message -------------------------------------------------------------------------------------------
@@ -122,25 +132,48 @@ def sign(secret: str, timestamp: str, body: bytes) -> str:
                                 hashlib.sha256).hexdigest()
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args, **kwargs):
-        return None
+class _Pinned(http.client.HTTPConnection):
+    """Connects to one vetted address while the request still names the host (Host header, and for https the
+    certificate check and SNI use the host name)."""
+    pinned_ip = ""
+
+    def connect(self) -> None:
+        self.sock = socket.create_connection((self.pinned_ip, self.port), self.timeout)
 
 
-def http_post(url: str, body: bytes, headers: dict, timeout: float = TIMEOUT_SECONDS) -> int:
-    """POST and return the status code. Errors become WebhookSendError with a safe message."""
-    request = urllib.request.Request(url, data=body, method="POST", headers=headers)
+class _PinnedTLS(http.client.HTTPSConnection):
+    pinned_ip = ""
+
+    def connect(self) -> None:
+        raw = socket.create_connection((self.pinned_ip, self.port), self.timeout)
+        context = ssl.create_default_context()
+        self.sock = context.wrap_socket(raw, server_hostname=self.host)
+
+
+def http_post(url: str, body: bytes, headers: dict, timeout: float = TIMEOUT_SECONDS,
+              allow_http: bool = False, block_private: bool = False) -> int:
+    """Check the address again now, connect to exactly the address that passed, POST, return the status code.
+    Redirects are not followed. Errors become WebhookSendError with a safe message."""
     try:
-        with urllib.request.build_opener(_NoRedirect).open(request, timeout=timeout) as response:
-            response.read(1024)
-            return response.status
-    except urllib.error.HTTPError as e:
-        e.close()
-        return e.code
+        host, port, ip = vet(url, allow_http, block_private)
+    except WebhookConfigError as e:
+        raise WebhookSendError("the address is no longer acceptable") from e
+    parts = urlparse(url)
+    target = (parts.path or "/") + ("?" + parts.query if parts.query else "")
+    cls = _PinnedTLS if parts.scheme == "https" else _Pinned
+    conn = cls(host, port, timeout=timeout)
+    conn.pinned_ip = ip
+    try:
+        conn.request("POST", target, body=body, headers=headers)
+        response = conn.getresponse()
+        response.read(1024)
+        return response.status
     except (TimeoutError, socket.timeout) as e:
         raise WebhookSendError("timed out") from e
-    except (urllib.error.URLError, OSError, ValueError) as e:
+    except (OSError, ValueError, http.client.HTTPException) as e:
         raise WebhookSendError("could not connect") from e
+    finally:
+        conn.close()
 
 
 # ---- the stored settings ----------------------------------------------------------------------------------------
@@ -264,11 +297,13 @@ def plan(alerts: list[dict], state: dict[str, AlertState], min_level: str, now: 
 
 class Notifier:
     def __init__(self, session_factory, data_key: DataKey | None, *, allow_http=False, block_private=False,
-                 interval: float = 60.0, transport=http_post, default_poll: int = 600):
+                 interval: float = 60.0, transport=None, default_poll: int = 600):
         self.session_factory, self.data_key = session_factory, data_key
         self.default_poll = default_poll
         self.allow_http, self.block_private = allow_http, block_private
-        self.interval, self.transport = interval, transport
+        self.interval = interval
+        self.transport = transport or functools.partial(
+            http_post, allow_http=allow_http, block_private=block_private)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 

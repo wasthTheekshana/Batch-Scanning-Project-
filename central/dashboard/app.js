@@ -200,7 +200,7 @@
       al.alerts.length
         ? stack(table(["Level", "Station", "What", "Since"], al.alerts.map((x) => [
             badge(SEVERITY_TEXT[x.severity], SEVERITY_KIND[x.severity]),
-            h("a", { href: "#/fleet" }, x.pc_name), x.message, x.since ? ago(x.since) : "today"]), ""),
+            h("a", { href: "#/fleet/" + encodeURIComponent(x.pc_id) }, x.pc_name), x.message, x.since ? ago(x.since) : "today"]), ""),
           ["Level", "Station", "What", "Since"])
         : h("p", { class: "empty" }, fl.summary.total ? "Nothing right now: every station is online and up to date." : "Add a PC to start monitoring."),
       h("h2", {}, "Recent activity"),
@@ -767,7 +767,72 @@
   let fleetFilter = "all";
   let fleetSearch = "";
 
-  async function fleet() {
+  // ---- one station
+  let stationMetric = "documents";
+  const EVENT_TEXT = {
+    pc_created: "Added", pc_registered: "Enrolled", enrollment_code_issued: "New enrolment code issued",
+    pc_key_revoked: "Access revoked", pc_renamed: "Renamed", project_pushed: "Project assigned",
+    project_unassigned: "Project unassigned", pc_deleted: "Deleted",
+  };
+
+  function stationSentence(pc) {
+    const seen = pc.last_seen_at ? "It last checked in " + ago(pc.last_seen_at) + "." : "It has never checked in.";
+    const program = pc.app_version ? " It runs program " + pc.app_version + "." : " It has not reported its program version.";
+    const lead = {
+      online: " is online.", offline: " has stopped checking in.",
+      key_revoked: ": its access was revoked, so it no longer receives settings.",
+      not_registered: " has not been enrolled yet: type its code into DOK Scanner (Admin, Central).",
+    }[pc.status];
+    return [h("strong", {}, pc.display_name), lead + " " + (pc.status === "not_registered" ? "" : seen + program)];
+  }
+
+  async function stationDetail(id) {
+    const d = await api("GET", "/admin/fleet/" + encodeURIComponent(id));
+    const metricLabel = METRICS.find(([k]) => k === stationMetric)[1];
+    const metric = h("div", { class: "seg", role: "group", "aria-label": "Measure" }, METRICS.map(([k, text]) =>
+      h("button", { type: "button", class: k === stationMetric ? "on" : "", onclick: () => { stationMetric = k; render(); } }, text)));
+    const projects = d.projects.length
+      ? (() => {
+          const headers = ["Project", "Assigned", "The station runs", "Where it stands"];
+          return h("div", { class: "scroll" }, stack(table(headers, d.projects.map((p) => [
+            h("div", {}, h("div", { class: "station" }, p.name),
+              h("ul", { class: "projects" }, p.history.map((v) => h("li", {},
+                "v" + v.version + ", published " + ago(v.published_at) + (v.published_by ? " by " + v.published_by : ""))))),
+            "v" + p.assigned_version + (p.published_at ? ", published " + ago(p.published_at) : ""),
+            p.applied_version === null ? "nothing yet" : "v" + p.applied_version,
+            h("span", { class: "pill " + ({ current: "current", behind: "behind", not_applied: "behind", unknown: "unknown" }[p.state]) },
+              { current: "Up to date", behind: "Behind", not_applied: "Not applied yet", unknown: "Not reported" }[p.state])])), headers));
+        })()
+      : h("p", { class: "empty" }, "No project is assigned to this station.");
+    const alerts = d.alerts.length
+      ? stack(table(["Level", "What", "Since"], d.alerts.map((x) => [
+          badge(SEVERITY_TEXT[x.severity], SEVERITY_KIND[x.severity]), x.message, x.since ? ago(x.since) : "today"]), ""),
+        ["Level", "What", "Since"])
+      : h("p", { class: "empty" }, "Nothing needs attention for this station.");
+    const t = d.totals;
+    return h("div", {},
+      h("p", {}, h("a", { href: "#/fleet" }, "Back to the fleet")),
+      h("h1", {}, d.pc.display_name),
+      h("p", { class: "lead" }, stationSentence(d.pc)),
+      d.today ? h("p", { class: "sub" }, todayLine(d.today)) : h("p", { class: "sub" }, "Nothing reported yet today."),
+      h("h2", {}, "Needs a look"), alerts,
+      h("h2", {}, "Settings"), projects,
+      h("h2", {}, "Activity in the last 30 days"),
+      h("p", { class: "sub" }, count(t.documents) + " " + plural(t.documents, "document", "documents") + ", " + count(t.pages)
+        + " pages in " + count(t.batches) + " batches" + (t.errors ? "; " + count(t.errors) + " had errors." : ".")),
+      h("div", { class: "toolbar" }, metric),
+      barChart(d.days, stationMetric, metricLabel),
+      h("h2", {}, "Recent events"),
+      d.events.length
+        ? stack(table(["Time", "Event", "Details"], d.events.map((e) => [when(e.at), EVENT_TEXT[e.action] || e.action,
+            h("span", { class: "muted" }, detailText(e.detail))]), ""), ["Time", "Event", "Details"])
+        : h("p", { class: "empty" }, "No events yet."),
+      h("p", { class: "sub" }, "To rename this station, issue a new enrolment code, revoke its access or delete it, use ",
+        h("a", { href: "#/pcs" }, "PCs"), "."));
+  }
+
+  async function fleet(id) {
+    if (id) return stationDetail(id);
     const f = await api("GET", "/admin/fleet");
     const s = f.summary;
     const latest = f.pcs.map((p) => p.app_version).filter(Boolean).reduce((a, b) => (a && !isNewer(b, a) ? a : b), null);
@@ -786,7 +851,7 @@
     function row(p) {
       const older = p.app_version && latest && isNewer(latest, p.app_version);
       return [
-        h("div", {}, h("div", { class: "station" }, p.display_name),
+        h("div", {}, h("div", { class: "station" }, h("a", { href: "#/fleet/" + encodeURIComponent(p.id) }, p.display_name)),
           h("div", { class: "sub" }, p.last_seen_at ? "Last seen " + ago(p.last_seen_at) : "Never seen")),
         badge(STATUS_TEXT[p.status], STATUS_KIND[p.status]),
         p.app_version

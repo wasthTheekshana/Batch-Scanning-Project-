@@ -4,13 +4,13 @@ report with their heartbeat: versions and counts, never document content."""
 from datetime import timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from central.deps import get_db, require_admin, require_csrf
-from central.models import (Pc, PcAppliedProject, PcAssignment, PcDailyStat, Project,
-                            utcnow)
+from central.models import (ConfigVersion, Pc, PcAppliedProject, PcAssignment, PcDailyStat,
+                            Project, utcnow)
 from central.routes_admin_overview import _iso, is_online, online_window
 
 router = APIRouter(prefix="/admin", tags=["admin-fleet"],
@@ -18,6 +18,7 @@ router = APIRouter(prefix="/admin", tags=["admin-fleet"],
 
 COUNTS = ("documents", "pages", "batches", "errors")
 MAX_DAYS = 90
+STATION_DAYS = 30
 
 
 def _status(pc: Pc, window: timedelta) -> str:
@@ -132,3 +133,55 @@ def alerts(request: Request, db: Session = Depends(get_db)):
     for a in found:
         counts[a["severity"]] += 1
     return {"alerts": found, "counts": counts}
+
+
+@router.get("/fleet/{pc_id}")
+def station(pc_id: str, request: Request, db: Session = Depends(get_db)):
+    """Everything about one station: status, the settings history of each project it is assigned against what it
+    runs, 30 days of activity, its own alerts and its recent events (not the routine configuration polls)."""
+    from sqlalchemy import or_
+
+    from central.alerts import compute_alerts
+    from central.models import AuditEvent
+    from central.routes_admin_overview import _event
+    pc = db.get(Pc, pc_id)
+    if pc is None:
+        raise HTTPException(404, "unknown PC")
+    window = online_window(db, request)
+    assigned = list(db.scalars(select(Project).join(PcAssignment, PcAssignment.project_id == Project.id)
+                               .where(PcAssignment.pc_id == pc.id).order_by(Project.name, Project.id)))
+    have = {r.project_id: r.version for r in db.scalars(select(PcAppliedProject).where(PcAppliedProject.pc_id == pc.id))}
+    rollout, rows = _rollout(pc, assigned, have)
+    for row in rows:
+        versions = list(db.scalars(select(ConfigVersion).where(ConfigVersion.kind == "project",
+                                                               ConfigVersion.owner_id == row["project_id"])
+                                   .order_by(ConfigVersion.version.desc()).limit(5)))
+        row["history"] = [{"version": v.version, "published_at": _iso(v.created_at), "published_by": v.created_by}
+                          for v in versions]
+        row["published_at"] = next((h["published_at"] for h in row["history"]
+                                    if h["version"] == row["assigned_version"]), None)
+
+    end = utcnow().date()
+    wanted = [(end - timedelta(days=i)).isoformat() for i in range(STATION_DAYS - 1, -1, -1)]
+    per_day = {d: _zero() for d in wanted}
+    for r in db.scalars(select(PcDailyStat).where(PcDailyStat.pc_id == pc.id, PcDailyStat.day >= wanted[0])):
+        if r.day in per_day:
+            per_day[r.day] = _counts(r)
+    totals = _zero()
+    for counts in per_day.values():
+        for k, v in counts.items():
+            totals[k] += v
+    today = per_day[wanted[-1]]
+
+    events = db.scalars(select(AuditEvent).where(or_(
+        (AuditEvent.actor == f"pc:{pc.id}") & (AuditEvent.action != "config_pull"),
+        AuditEvent.detail.contains(pc.id))).order_by(AuditEvent.id.desc()).limit(25))
+    return {
+        "pc": {"id": pc.id, "display_name": pc.display_name, "status": _status(pc, window),
+               "app_version": pc.app_version, "last_seen_at": _iso(pc.last_seen_at), "reported_at": _iso(pc.reported_at),
+               "registered_at": _iso(pc.registered_at), "created_at": _iso(pc.created_at)},
+        "rollout": rollout, "projects": rows,
+        "days": [{"day": d, **per_day[d]} for d in wanted], "totals": totals,
+        "today": today if any(today.values()) else None,
+        "alerts": [a for a in compute_alerts(db, window) if a["pc_id"] == pc.id],
+        "events": [_event(e) for e in events]}

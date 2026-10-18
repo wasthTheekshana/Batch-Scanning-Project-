@@ -153,6 +153,11 @@ counts of documents, pages, batches and errors. **Never any document content.**
 | Fleet | one row per station: online, offline, access revoked or not enrolled; its program version (*older* when others run a newer one); **Settings** (*Up to date*, *Behind* with the version the station has and the one assigned, *Not reported*); today's counts. Stations that need attention are listed first; the list refreshes itself every 30 seconds |
 | Activity | documents, pages, batches or errors per day for 7, 14, 30 or 90 days, and a table per station |
 
+**One station.** Click a station's name (in Fleet or in the alert list) for its page: whether it is online and what
+program it runs, for each project the last published versions against the one it runs, 30 days of activity as a chart,
+its own alerts and its recent events (enrolled, renamed, settings assigned, access revoked). Renaming, new codes,
+revoking and deleting stay under *PCs*.
+
 **Alerts.** The Overview's *Needs a look* list shows what needs attention, most serious first, with how long
 it has been going on, and the Overview entry in the side menu carries a count (red when something is critical).
 A station that stopped checking in is a warning, and critical after a day. Settings published but not applied are

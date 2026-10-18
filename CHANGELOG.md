@@ -8,6 +8,10 @@ All notable changes to DOK Scanner. The newest release is first. The version num
 Changes since 1.0.0. At release time this heading becomes the new version number and date.
 
 ### Central web center
+- **Station page.** Click a station for its settings history against what it runs, 30 days of activity, its alerts
+  and recent events (`GET /admin/fleet/{pc_id}`).
+- **Webhook safety.** The address is re-checked at every send and the connection goes to the vetted address, so a
+  name re-pointed at the server after saving cannot be used to reach it.
 - **Fleet monitoring.** Each station reports, with every sync, its program version, the settings version
   of each project it runs, and today's counts of documents, pages, batches and errors (counts only, never
   document content). New **Fleet** and **Activity** screens, and an Overview that leads with the state of the

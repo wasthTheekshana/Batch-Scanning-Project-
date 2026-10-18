@@ -79,6 +79,12 @@ const b = [...scope.querySelectorAll("button,a")].find((x) => name(x) === l && x
     (await text()).includes("Fleet") && (await text()).includes("Scan-Desk-1-A") && (await text()).includes("Not enrolled yet"));
   await check("fleet says in words how the fleet is doing", await page.$eval(".lead", (e) => e.textContent.length > 20));
   await shot("05d-fleet");
+  await page.evaluate(() => [...document.querySelectorAll(".station a")].find((a) => a.textContent === "Scan-Desk-1-A").click());
+  await sleep(600);
+  await check("a station has its own page with settings, activity and events",
+    (await text()).includes("Back to the fleet") && (await text()).includes("Recent events") && (await text()).includes("Scan-Desk-1-A"));
+  await shot("05e-station");
+  await click("Fleet"); await sleep(400);
   await click("Activity"); await sleep(600);
   await check("activity explains that nothing has been reported yet",
     (await text()).includes("No activity reported") && (await page.$("svg.chart")) !== null);

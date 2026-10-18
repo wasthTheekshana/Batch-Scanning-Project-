@@ -77,11 +77,17 @@ def test_nothing_in_the_dashboard_needs_an_inline_style_or_script_or_another_sit
 
 def test_the_fleet_and_activity_screens_are_read_only():
     js = _js()
-    fleet = js[js.index("async function fleet()"):js.index("async function activity()")]
+    fleet = js[js.index("async function stationDetail("):js.index("async function activity()")]
     activity = js[js.index("async function activity()"):js.index("const routes = {")]
     for source in (fleet, activity):
         assert 'api("POST"' not in source and 'api("PUT"' not in source and 'api("DELETE"' not in source
         assert "wbutton(" not in source and 'api("PATCH"' not in source
+
+
+def test_a_station_has_its_own_page_reached_from_the_fleet_and_the_alerts():
+    js = _js()
+    assert "async function fleet(id)" in js and "if (id) return stationDetail(id)" in js
+    assert js.count('"#/fleet/" + encodeURIComponent(') >= 2
 
 
 def test_the_fleet_view_keeps_itself_current_and_a_stale_render_is_discarded():

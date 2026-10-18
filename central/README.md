@@ -177,7 +177,7 @@ encrypted and never returned (the API shows only its host name); an address that
 link-local address (cloud metadata) or to a multicast address is refused, and `CENTRAL_WEBHOOK_BLOCK_PRIVATE=1` refuses
 private networks too; redirects are not followed, the answer is ignored, the timeout is 10 seconds, and any answer
 other than 2xx counts as a failure. The audit log records that a message was sent or failed and the host, never the
-address or secret. Endpoints: `GET/PUT /admin/webhook`, `POST /admin/webhook/test` (an auditor can read the status, not change it).
+address or secret. The address is checked again at every send and the connection goes to exactly the address that passed (so a name re-pointed at the server after saving is refused). Endpoints: `GET/PUT /admin/webhook`, `POST /admin/webhook/test` (an auditor can read the status, not change it).
 
 ### Admin API added for the dashboard
 
@@ -192,6 +192,7 @@ address or secret. Endpoints: `GET/PUT /admin/webhook`, `POST /admin/webhook/tes
 | `GET /admin/audit` | audit log, newest first, `limit`, `before_id`, `action`, `actor` |
 | `GET /admin/audit/actions`, `GET /admin/overview` | filter list, dashboard summary |
 | `GET /admin/fleet` | every PC with its status, program version, settings rollout and today's counts, and a summary (read-only: an auditor may call it) |
+| `GET /admin/fleet/{pc_id}` | one station: facts, each project's last five published versions against what it runs, 30 days of activity, its own alerts and 25 recent events (poll noise left out); 404 if unknown; read-only |
 | `GET /admin/alerts` | what needs attention now, most serious first, with counts per level (read-only; computed on request, so an alert exists exactly while its condition does) |
 | `GET /admin/stats?days=14` | per-day totals (1 to 90 days, quiet days included as zeros) and each PC's total, busiest first |
 | `GET /admin/project-defaults` | a complete starting configuration for a new project |
