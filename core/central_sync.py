@@ -172,7 +172,20 @@ class CentralSyncService:
             if pulled.pc_id != s.pc_id:
                 return self._unavailable(
                     "server answered for a different PC", generation)
-            return self._apply(pulled, generation)
+            result = self._apply(pulled, generation)
+        if result.status == "ok":
+            self._report(client, s.pc_id, api_key)       # outside the lock: it is a network call
+        return result
+
+    def _report(self, client, pc_id: str, api_key: str) -> None:
+        """Tell central what this PC runs and how much it did today. Best effort: a failure here
+        never changes the sync's outcome (the next poll tries again), and an older server without
+        the report simply refuses it."""
+        try:
+            from core.central_report import build_report
+            client.heartbeat(pc_id, api_key, build_report(self.db))
+        except Exception as e:
+            log.debug("central report not sent (%s)", type(e).__name__)
 
     def _unavailable(self, message: str, generation: int) -> SyncResult:
         message = _clean(message)

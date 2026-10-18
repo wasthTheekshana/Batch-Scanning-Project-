@@ -159,6 +159,19 @@ class CentralClient:
             raise CentralUnavailable("malformed register response")
         return RegisterResult(pc_id, key, _clamp(poll))
 
+    def heartbeat(self, pc_id: str, api_key: str, report: dict) -> None:
+        """Tell the server this PC is alive and what it runs (core.central_report). Raises
+        CentralAuthError when the key is no longer accepted, CentralUnavailable otherwise."""
+        status, _data = self._transport(
+            "POST", f"{self.base}/pcs/{quote(pc_id, safe='')}/heartbeat",
+            {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json",
+             "Accept": "application/json"},
+            json.dumps(report).encode("utf-8"), self._timeout)
+        if status in (401, 403):
+            raise CentralAuthError(status)
+        if status != 204:
+            raise CentralUnavailable(f"heartbeat failed (HTTP {status})")
+
     def pull_config(self, pc_id: str, api_key: str,
                     operator_id: str = "") -> PullResult:
         headers = {"Authorization": f"Bearer {api_key}",

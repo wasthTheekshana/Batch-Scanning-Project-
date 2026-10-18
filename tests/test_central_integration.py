@@ -262,3 +262,31 @@ def test_admin_cannot_publish_a_config_with_a_password(s):
                         json={"pc_ids": [pc["pc_id"]]}).status_code == 404
     res = s.svc.sync_once()
     assert res.status == "ok" and res.applied == [] and res.errors == {}
+
+
+# -- the fleet view: what the PC reports reaches the admin's screens ----------------------------------------
+def test_the_pc_report_reaches_the_admin_fleet_view(s):
+    from version import __version__
+    pc = s.enrol()
+    pid = s.publish("Bank files", s.seed_config(), push_to=[pc["pc_id"]])
+    fleet = s.admin.get("/admin/fleet").json()
+    assert fleet["pcs"][0]["rollout"] == "unknown"              # assigned, the PC has not reported yet
+    assert s.svc.sync_once().status == "ok"                      # the PC pulls the project and reports
+    pc_row = s.admin.get("/admin/fleet").json()["pcs"][0]
+    assert pc_row["status"] == "online" and pc_row["app_version"] == __version__
+    assert pc_row["rollout"] == "current"
+    assert [(p["project_id"], p["state"]) for p in pc_row["projects"]] == [(pid, "current")]
+    assert pc_row["today"] == {"documents": 0, "pages": 0, "batches": 0, "errors": 0}
+
+
+def test_a_new_version_published_shows_the_pc_as_behind_until_it_syncs(s):
+    pc = s.enrol()
+    config = s.seed_config()
+    pid = s.publish("Bank files", config, push_to=[pc["pc_id"]])
+    s.svc.sync_once()
+    assert s.admin.get("/admin/fleet").json()["pcs"][0]["rollout"] == "current"
+    config["ocr"]["lang"] = "eng+sin"
+    assert s.admin.put(f"/admin/projects/{pid}", json={"name": "Bank files", "config": config}).status_code == 200
+    assert s.admin.get("/admin/fleet").json()["pcs"][0]["rollout"] == "behind"
+    s.svc.sync_once()
+    assert s.admin.get("/admin/fleet").json()["pcs"][0]["rollout"] == "current"

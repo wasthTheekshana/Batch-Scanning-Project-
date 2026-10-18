@@ -363,6 +363,21 @@ class Database:
         with self._lock:
             return self.conn.execute(q + " ORDER BY project_id").fetchall()
 
+    def activity_for_day(self, day: str) -> dict[str, int]:
+        """How much this PC processed on one UTC day (YYYY-MM-DD): counts only. `errors` are the
+        day's documents that were rejected or whose delivery was reported unsuccessful."""
+        like = day + "%"
+        with self._lock:
+            documents, errors = self.conn.execute(
+                "SELECT COUNT(*), COALESCE(SUM(validation_status = 'rejected' "
+                "OR delivery_detail LIKE '%\"success\": false%'), 0) "
+                "FROM documents WHERE created_at LIKE ?", (like,)).fetchone()
+            batches, pages = self.conn.execute(
+                "SELECT COUNT(*), COALESCE(SUM(page_count), 0) FROM batches "
+                "WHERE created_at LIKE ?", (like,)).fetchone()
+        return {"documents": int(documents), "pages": int(pages), "batches": int(batches),
+                "errors": int(errors)}
+
     def unmanage_central_project(self, project_id: str) -> None:
         with self._lock, self.conn:
             self.conn.execute(
