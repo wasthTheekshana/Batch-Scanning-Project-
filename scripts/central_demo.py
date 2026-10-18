@@ -2,6 +2,7 @@
 
     python scripts/central_demo.py            # http://127.0.0.1:8000/dashboard
     python scripts/central_demo.py --no-browser
+    python scripts/central_demo.py --empty    # no sample data
 
 Sign in as  admin / demo-admin-passphrase. Data lives in demo_kit/central_demo.db
 (delete the file for a fresh start). Local only: plain HTTP on 127.0.0.1.
@@ -29,6 +30,13 @@ def main() -> int:
     os.environ.setdefault("CENTRAL_SESSION_SECRET", "central-demo-secret-0123456789abcdef-demo")
     os.environ["CENTRAL_COOKIE_SECURE"] = "0"          # plain HTTP, local only
 
+    key_file = REPO / "demo_kit" / "central_demo.key"          # the demo's data key: keep it with the database file
+    if not os.environ.get("CENTRAL_DATA_KEY"):
+        from central.crypto import generate_key
+        if not key_file.exists():
+            key_file.write_text(generate_key(), encoding="utf-8")
+        os.environ["CENTRAL_DATA_KEY"] = key_file.read_text(encoding="utf-8").strip()
+
     import uvicorn
     from sqlalchemy import select
 
@@ -44,6 +52,12 @@ def main() -> int:
         have_admin = db.scalar(select(AdminUser).where(AdminUser.username == USER))
     if not have_admin:
         create_admin(factory, USER, PASSWORD)
+
+    if "--empty" not in sys.argv:
+        from scripts.central_demo_data import AUDITOR, SEARCHER, seed
+        if seed(app):
+            print(f"Sample data added. Also: {SEARCHER[0]} / {SEARCHER[1]} (search only), "
+                  f"{AUDITOR[0]} / {AUDITOR[1]} (read-only)")
 
     config = uvicorn.Config(app, host="127.0.0.1", port=PORT, log_level="warning")
     server = uvicorn.Server(config)
