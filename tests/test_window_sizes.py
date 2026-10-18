@@ -87,12 +87,21 @@ def test_a_filled_form_keeps_readable_fields_and_the_tables_keep_their_rows(admi
     assert panel.recon_table.height() >= 140
 
 
-def test_the_window_still_fits_when_the_fonts_are_wider_than_ours(admin_window):
-    """CI's Windows machine has wider fonts than the development PC and came out 39 px too wide:
-    leave real margin, not a hair under the limit. Pages may use at most 85% of the room left for them."""
-    from ui.sidebar import RAIL_COMPACT
-    room = SMALL_W - RAIL_COMPACT - 28
-    widest = {admin_window.tabs.tabText(i): admin_window.tabs.widget(i).minimumSizeHint().width()
-              for i in range(admin_window.tabs.count())}
-    too_wide = {n: w for n, w in widest.items() if w > 0.85 * room}
-    assert not too_wide, too_wide
+def test_no_page_however_wide_can_push_the_window_past_the_screen(admin_window):
+    """GitHub's Windows machine has wider fonts than the development PC: its pages needed up to 1012 px
+    and the window 1132. Whatever a page needs, it scrolls inside the window; the window itself stays small."""
+    from PyQt6.QtWidgets import QScrollArea
+    tabs = admin_window.tabs
+    assert all(isinstance(tabs.stack.widget(i), QScrollArea) for i in range(tabs.count()))
+    for i in range(tabs.count()):                         # make every page absurdly wide
+        tabs.widget(i).setMinimumWidth(3000)
+    admin_window.updateGeometry()
+    assert admin_window.minimumSizeHint().width() <= SMALL_W
+
+
+def test_the_tab_api_still_returns_the_pages_not_their_scroll_areas(admin_window):
+    tabs = admin_window.tabs
+    assert tabs.widget(tabs.indexOf(admin_window.index_editor)) is admin_window.index_editor
+    tabs.setCurrentWidget(admin_window.index_editor)
+    assert tabs.currentWidget() is admin_window.index_editor
+    assert tabs.indexOf(QWidget()) == -1                 # not one of the pages

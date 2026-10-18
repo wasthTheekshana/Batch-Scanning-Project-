@@ -11,7 +11,7 @@ from __future__ import annotations
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (QButtonGroup, QFrame, QHBoxLayout, QLabel, QPushButton,
-                             QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
+                             QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
 
 COMPACT_BELOW = 1120
 RAIL_WIDE, RAIL_COMPACT = 218, 64
@@ -31,6 +31,7 @@ class SideNav(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._texts: list[str] = []
+        self._pages: list[QWidget] = []
         self._buttons: list[QPushButton] = []
         self._compact = False
         self._icon_size = QSize(18, 18)
@@ -106,7 +107,14 @@ class SideNav(QWidget):
         button.setIconSize(self._icon_size)
         button.setCursor(Qt.CursorShape.PointingHandCursor)
         button.setToolTip(label)
-        index = self.stack.addWidget(widget)
+        # Each page sits in a scroll area: a page that needs more room than the window has (a small
+        # screen, wider fonts) scrolls instead of forcing the window wider than the screen.
+        area = QScrollArea()
+        area.setWidgetResizable(True)
+        area.setFrameShape(QFrame.Shape.NoFrame)
+        area.setWidget(widget)
+        self._pages.append(widget)
+        index = self.stack.addWidget(area)
         self._group.addButton(button, index)
         self._nav.addWidget(button)
         self._buttons.append(button)
@@ -120,22 +128,23 @@ class SideNav(QWidget):
         return self.stack.count()
 
     def widget(self, index: int) -> QWidget | None:
-        return self.stack.widget(index)
+        """The page itself (not the scroll area it sits in)."""
+        return self._pages[index] if 0 <= index < len(self._pages) else None
 
     def tabText(self, index: int) -> str:
         return self._texts[index]
 
     def indexOf(self, widget: QWidget) -> int:
-        return self.stack.indexOf(widget)
+        return self._pages.index(widget) if widget in self._pages else -1
 
     def currentIndex(self) -> int:
         return self.stack.currentIndex()
 
     def currentWidget(self) -> QWidget | None:
-        return self.stack.currentWidget()
+        return self.widget(self.stack.currentIndex())
 
     def setCurrentWidget(self, widget: QWidget) -> None:
-        self.setCurrentIndex(self.stack.indexOf(widget))
+        self.setCurrentIndex(self.indexOf(widget))
 
     def setCurrentIndex(self, index: int) -> None:
         if not 0 <= index < self.stack.count():
