@@ -120,3 +120,15 @@ def stats(days: Annotated[int, Query(ge=1, le=MAX_DAYS)] = 14, db: Session = Dep
     return {"days": [{"day": d, **per_day[d]} for d in wanted], "totals": totals,
             "per_pc": [{"pc_id": pid, "display_name": names.get(pid, "(deleted)"), **c}
                        for pid, c in ranked]}
+
+
+@router.get("/alerts")
+def alerts(request: Request, db: Session = Depends(get_db)):
+    """What needs attention right now, most serious first (see central/alerts.py for the rules).
+    Computed on request: an alert exists exactly while its condition does."""
+    from central.alerts import compute_alerts
+    found = compute_alerts(db, online_window(db, request))
+    counts = {"critical": 0, "warn": 0, "info": 0}
+    for a in found:
+        counts[a["severity"]] += 1
+    return {"alerts": found, "counts": counts}

@@ -130,6 +130,24 @@ A PC that never reports (an older program) is shown as "not reported", never as 
 **unknown** when it has not reported, and the PC is not counted as behind while its access is revoked.
 A PC is **online** if it checked in within three polling intervals (at least five minutes).
 
+### Alerts
+
+`GET /admin/alerts` (rules in `central/alerts.py`) lists what needs an administrator's attention. A station
+still inside the grace window (three polling intervals, at least five minutes) raises nothing: one missed poll
+is not an incident.
+
+| Kind | Raised when | Level |
+|---|---|---|
+| `offline` | the station is silent beyond the grace window | warning; critical after 24 hours |
+| `behind` | a settings version was published longer ago than the grace window and the station has not applied it (one alert per project; not raised for an offline station, and never for one that does not report) | warning; critical after 24 hours |
+| `errors` | the station reports errors today | note for 1 to 4; warning from 5 |
+| `revoked` | the station's access key was revoked | note |
+| `not_enrolled` | added more than 7 days ago and never connected | note |
+
+Each alert has a stable `id` (for example `behind:<pc>:<project>`), the station, a plain message, and `since`
+(when the condition began, when known). The dashboard's Overview lists them and the side menu shows how many
+are critical or warnings. Delivery by e-mail or webhook is not built: the alerts are read in the dashboard.
+
 ### Admin API added for the dashboard
 
 | Endpoint | Purpose |
@@ -143,6 +161,7 @@ A PC is **online** if it checked in within three polling intervals (at least fiv
 | `GET /admin/audit` | audit log, newest first, `limit`, `before_id`, `action`, `actor` |
 | `GET /admin/audit/actions`, `GET /admin/overview` | filter list, dashboard summary |
 | `GET /admin/fleet` | every PC with its status, program version, settings rollout and today's counts, and a summary (read-only: an auditor may call it) |
+| `GET /admin/alerts` | what needs attention now, most serious first, with counts per level (read-only; computed on request, so an alert exists exactly while its condition does) |
 | `GET /admin/stats?days=14` | per-day totals (1 to 90 days, quiet days included as zeros) and each PC's total, busiest first |
 | `GET /admin/project-defaults` | a complete starting configuration for a new project |
 

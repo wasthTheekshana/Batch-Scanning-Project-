@@ -40,6 +40,7 @@ never the value that was sent. The service has no interactive docs page (`/docs`
 | PUT | `/admin/templates/{template_id}` | admin session + CSRF header on changes |
 | GET | `/admin/templates/{template_id}/versions` | admin session + CSRF header on changes |
 | GET | `/admin/templates/{template_id}/versions/{version}` | admin session + CSRF header on changes |
+| GET | `/admin/alerts` | admin session + CSRF header on changes |
 | GET | `/admin/fleet` | admin session + CSRF header on changes |
 | GET | `/admin/stats` | admin session + CSRF header on changes |
 | GET | `/admin/audit` | admin session + CSRF header on changes |
@@ -179,6 +180,14 @@ A complete, valid starting configuration for a new project (the
 - **Replies:** 200, 422
 
 ## admin-fleet
+
+### GET `/admin/alerts`
+
+What needs attention right now, most serious first (see central/alerts.py for the rules).
+    Computed on request: an alert exists exactly while its condition does.
+
+- **Who:** admin session + CSRF header on changes
+- **Replies:** 200
 
 ### GET `/admin/fleet`
 

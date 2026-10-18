@@ -127,8 +127,9 @@ and open its PDF.
   name (needs the real domain).
 - STARTED 2026-10-18 (owner decision: a fuller dashboard): fleet monitoring. Stations report their program
   version, applied project versions and daily counts; new Fleet and Activity screens, an Overview led by the
-  fleet's state, a phone layout. Next in this track: alerts when a station goes quiet or fails to apply a
-  version, a per-station detail page, and (needs the approved document-sync design) central search.
+  fleet's state, a phone layout, and alerts (quiet station, settings not applied, errors) on the Overview and as
+  a count in the menu. Next in this track: alerts sent by e-mail or webhook, a per-station detail page, and
+  (needs the approved document-sync design) central search.
 
 ### 8. Needs a business decision, not code
 Bank document-system field mapping (plan 3.5), incident and insurance workflow

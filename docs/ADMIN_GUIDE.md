@@ -153,6 +153,13 @@ counts of documents, pages, batches and errors. **Never any document content.**
 | Fleet | one row per station: online, offline, access revoked or not enrolled; its program version (*older* when others run a newer one); **Settings** (*Up to date*, *Behind* with the version the station has and the one assigned, *Not reported*); today's counts. Stations that need attention are listed first; the list refreshes itself every 30 seconds |
 | Activity | documents, pages, batches or errors per day for 7, 14, 30 or 90 days, and a table per station |
 
+**Alerts.** The Overview's *Needs a look* list shows what needs attention, most serious first, with how long
+it has been going on, and the Overview entry in the side menu carries a count (red when something is critical).
+A station that stopped checking in is a warning, and critical after a day. Settings published but not applied are
+a warning once the station has had time to pick them up (a few polling intervals), and critical after a day.
+Five or more errors today is a warning; fewer, or a revoked key, or a station added over a week ago that never
+connected, is a note. Nothing is e-mailed: someone has to look at the dashboard.
+
 Reading it: *Behind* means you published a newer version of a project and the station has not applied it
 yet (it applies at its next sync; offline stations catch up when they return). *Not reported* is a station
 with an older program that does not send these details. An *error* is a document that was rejected or

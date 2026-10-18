@@ -12,6 +12,9 @@ Changes since 1.0.0. At release time this heading becomes the new version number
   of each project it runs, and today's counts of documents, pages, batches and errors (counts only, never
   document content). New **Fleet** and **Activity** screens, and an Overview that leads with the state of the
   fleet; the admin API has `GET /admin/fleet` and `GET /admin/stats`.
+- **Alerts.** The Overview lists what needs attention (a station that stopped checking in, settings published but
+  not applied, errors, revoked access, a station that never connected), most serious first and with how long, and the
+  side menu shows a count; `GET /admin/alerts`.
 - The dashboard has a new side-menu layout that works on a phone (tables become cards) and in dark mode.
 - Central migration 0002 adds the reporting tables; starting the service applies it.
 - A database made by the old `create_all()` is now adopted at the schema it actually has.

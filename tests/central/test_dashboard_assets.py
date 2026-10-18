@@ -94,3 +94,13 @@ def test_the_stylesheet_serves_and_has_a_phone_layout(client):
     r = client.get("/dashboard/style.css")
     assert r.status_code == 200 and "table.stack" in r.text and "max-width: 880px" in r.text
     assert "prefers-color-scheme: dark" in r.text and ":focus-visible" in r.text
+
+
+def test_the_overview_lists_the_servers_alerts_and_the_menu_shows_how_many():
+    js = _js()
+    overview = js[js.index("async function overview()"):js.index("function detailText")]
+    assert 'api("GET", "/admin/alerts")' in overview and "SEVERITY_TEXT" in js
+    assert "updateAlertBadge()" in js and "overview.refresh" in js
+    html = (DASHBOARD / "index.html").read_text(encoding="utf-8")
+    assert 'id="alert-count"' in html
+    assert 'api("POST"' not in overview and "wbutton(" not in overview          # reading only

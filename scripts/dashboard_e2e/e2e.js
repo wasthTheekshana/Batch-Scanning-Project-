@@ -16,7 +16,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   page.on("response", (r) => { if (r.status() >= 400 && !(r.status() === 401 && (r.url().includes("/admin/me") || r.url().includes("/admin/login")))) problems.push(r.status() + " " + r.url()); });
   const shot = async (n) => page.screenshot({ path: path.join(OUT, n + ".png") });
   const text = async () => page.evaluate(() => document.body.innerText);
-  const click = async (label) => { const ok = await page.evaluate((l) => { const scope = document.querySelector("dialog[open]") || document; const b = [...scope.querySelectorAll("button,a")].find((x) => x.textContent.trim() === l && x.offsetParent !== null); if (b) { b.click(); return true; } return false; }, label); if (!ok) throw new Error("no button: " + label); await sleep(400); };
+  const click = async (label) => { const ok = await page.evaluate((l) => { const scope = document.querySelector("dialog[open]") || document; const name = (x) => (x.dataset.view ? x.querySelector("span").textContent : x.textContent).trim();   // a menu link also holds the alert count
+const b = [...scope.querySelectorAll("button,a")].find((x) => name(x) === l && x.offsetParent !== null); if (b) { b.click(); return true; } return false; }, label); if (!ok) throw new Error("no button: " + label); await sleep(400); };
   const check = async (name, ok) => { console.log((ok ? "PASS " : "FAIL ") + name); if (!ok) { problems.push("check failed: " + name); console.log("   page text: " + (await text()).replace(/\s+/g, " ").slice(0, 400)); await shot("fail-" + name.replace(/\W+/g, "-").slice(0, 30)); } };
 
   await page.goto(BASE + "/", { waitUntil: "load" });

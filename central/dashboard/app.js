@@ -185,9 +185,8 @@
 
   // ------------------------------------------------------------------ views
   async function overview() {
-    const [o, fl] = await Promise.all([api("GET", "/admin/overview"), api("GET", "/admin/fleet")]);
+    const [o, fl, al] = await Promise.all([api("GET", "/admin/overview"), api("GET", "/admin/fleet"), api("GET", "/admin/alerts")]);
     const minutes = Math.round(o.poll_interval_seconds / 60);
-    const looks = fl.pcs.filter(needsAttention);
     return h("div", {},
       h("h1", {}, "Overview"),
       fleetHeader(fl.summary),
@@ -198,11 +197,11 @@
         + ", and asks stations to check in every "
         + (minutes >= 1 ? minutes + " " + plural(minutes, "minute", "minutes") : o.poll_interval_seconds + " seconds") + "."),
       h("h2", {}, "Needs a look"),
-      looks.length
-        ? stack(table(["Station", "Why"], looks.map((p) => [
-            h("a", { href: "#/fleet" }, p.display_name),
-            h("ul", { class: "projects why" }, reasons(p).map((r) => h("li", {}, r)))]),
-          ""), ["Station", "Why"])
+      al.alerts.length
+        ? stack(table(["Level", "Station", "What", "Since"], al.alerts.map((x) => [
+            badge(SEVERITY_TEXT[x.severity], SEVERITY_KIND[x.severity]),
+            h("a", { href: "#/fleet" }, x.pc_name), x.message, x.since ? ago(x.since) : "today"]), ""),
+          ["Level", "Station", "What", "Since"])
         : h("p", { class: "empty" }, fl.summary.total ? "Nothing right now: every station is online and up to date." : "Add a PC to start monitoring."),
       h("h2", {}, "Recent activity"),
       stack(auditTable(o.recent_audit), ["Time", "Who", "Action", "Details"]),
@@ -688,17 +687,20 @@
     ];
   }
 
-  // Why a station is on the "needs a look" list, in words.
-  function reasons(p) {
-    const out = [];
-    if (p.status === "offline") out.push("No contact since " + ago(p.last_seen_at));
-    if (p.status === "key_revoked") out.push("Its access was revoked");
-    if (p.rollout === "behind" && p.status !== "key_revoked") {
-      const n = p.projects.filter((q) => q.state === "behind" || q.state === "not_applied").length;
-      out.push(n + " " + plural(n, "project is", "projects are") + " behind");
-    }
-    if (p.today && p.today.errors > 0) out.push(count(p.today.errors) + " " + plural(p.today.errors, "error", "errors") + " today");
-    return out;
+  const SEVERITY_TEXT = { critical: "Critical", warn: "Warning", info: "Note" };
+  const SEVERITY_KIND = { critical: "bad", warn: "warn", info: "" };
+
+  // The nav badge: how many things need attention, without opening the Overview.
+  async function updateAlertBadge() {
+    try {
+      const a = await api("GET", "/admin/alerts");
+      const urgent = a.counts.critical + a.counts.warn;
+      const el = document.getElementById("alert-count");
+      el.textContent = String(urgent);
+      el.className = "count" + (a.counts.critical ? " critical" : "");
+      el.title = urgent + " " + plural(urgent, "thing needs", "things need") + " attention";
+      el.hidden = urgent === 0;
+    } catch (e) { /* the badge is a convenience: the Overview shows the real list */ }
   }
 
   // On a narrow screen a table row becomes a card: each cell is labelled with its column.
@@ -786,6 +788,7 @@
       holder);
   }
   fleet.refresh = 30000;
+  overview.refresh = 60000;
 
   // ---- activity
   let activityDays = 14;
@@ -884,6 +887,7 @@
       if (route.refresh) {
         refreshTimer = setInterval(() => { if (!document.hidden && !dialogEl.open) render(); }, route.refresh);
       }
+      updateAlertBadge();
     } catch (e) {
       if (e.status === 401) return;
       clear(view);
