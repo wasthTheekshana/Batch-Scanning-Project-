@@ -36,6 +36,8 @@ services:
       CENTRAL_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-dokcentral}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-dokcentral}
       CENTRAL_SESSION_SECRET: ${CENTRAL_SESSION_SECRET:?set CENTRAL_SESSION_SECRET (32+ characters) in .env}
       CENTRAL_COOKIE_SECURE: "1"
+      # empty = the features that store secrets or index data (the alert webhook, index sync) stay off
+      CENTRAL_DATA_KEY: ${CENTRAL_DATA_KEY:-}
       CENTRAL_WORKERS: ${CENTRAL_WORKERS:-1}
     expose:
       - "8000"

@@ -3,7 +3,7 @@
 # in /opt/dokscanner-central, a virtualenv with central/requirements.txt in
 # /opt/dokscanner-central/venv, a PostgreSQL database, and
 # /etc/dokscanner-central.env holding CENTRAL_DATABASE_URL, CENTRAL_SESSION_SECRET
-# (chmod 600, owned by root). Put a TLS proxy (nginx.conf.example) in front.
+# and, for the alert webhook, CENTRAL_DATA_KEY (chmod 600, owned by root). Put a TLS proxy (nginx.conf.example) in front.
 [Unit]
 Description=DOK Scanner central service
 After=network-online.target postgresql.service

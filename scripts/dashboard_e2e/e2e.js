@@ -3,14 +3,25 @@
 // (see README.md in this folder). Writes screenshots to $OUT.
 const puppeteer = require("puppeteer-core");
 const path = require("path");
+const http = require("http");
+const crypto = require("crypto");
 const OUT = process.env.OUT, BASE = process.env.BASE || "http://127.0.0.1:8765";
 const CHROME = process.env.CHROME || "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const problems = [];
+// The webhook step runs when WEBHOOK_PORT is set: a tiny receiver on that port records what the server sends.
+// The central server must then have CENTRAL_DATA_KEY set and CENTRAL_WEBHOOK_ALLOW_HTTP=1 (the receiver is plain http).
+const WEBHOOK_PORT = process.env.WEBHOOK_PORT;
+const received = [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 (async () => {
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: "new", args: ["--no-sandbox", "--no-proxy-server"] });
+  const receiver = WEBHOOK_PORT ? http.createServer((req, res) => {
+    let body = ""; req.on("data", (c) => (body += c));
+    req.on("end", () => { received.push({ headers: req.headers, body }); res.writeHead(200); res.end("ok"); });
+  }).listen(Number(WEBHOOK_PORT), "127.0.0.1") : null;
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 860 });
+  page.on("dialog", (d) => d.accept());          // the dashboard asks "are you sure?" before removing things
   page.on("pageerror", (e) => problems.push("pageerror: " + e.message));
   page.on("console", (m) => { if (m.type() === "error" && !m.text().includes("401")) problems.push("console: " + m.text()); });
   page.on("response", (r) => { if (r.status() >= 400 && !(r.status() === 401 && (r.url().includes("/admin/me") || r.url().includes("/admin/login")))) problems.push(r.status() + " " + r.url()); });
@@ -86,6 +97,25 @@ const b = [...scope.querySelectorAll("button,a")].find((x) => name(x) === l && x
   await check("audit shows the actions", (await text()).includes("pc_created") && (await text()).includes("admin_user_created"));
   await shot("08-audit");
   await click("Settings"); await sleep(500); await shot("09-settings");
+  if (WEBHOOK_PORT) {
+    const SECRET = "e2e-signing-secret", ADDRESS = "http://127.0.0.1:" + WEBHOOK_PORT + "/services/TOKEN-IN-THE-ADDRESS";
+    const inCard = (label) => page.evaluate((l) => { const card = [...document.querySelectorAll(".card")].find((c) => c.querySelector("h2") && c.querySelector("h2").textContent === "Alert notifications");
+      const b = [...card.querySelectorAll("button")].find((x) => x.textContent.trim() === l); if (b) { b.click(); return true; } return false; }, label);
+    await check("the webhook card is there and nothing is set up yet", (await text()).includes("Alert notifications") && (await text()).includes("No webhook yet"));
+    await page.evaluate((url, secret) => { const card = [...document.querySelectorAll(".card")].find((c) => c.querySelector("h2") && c.querySelector("h2").textContent === "Alert notifications");
+      const inputs = card.querySelectorAll("input"); inputs[0].value = url; inputs[1].value = secret; inputs[2].checked = true; }, ADDRESS, SECRET);
+    await inCard("Save"); await sleep(900);
+    await check("saved: the page shows the host and never the address or secret",
+      (await text()).includes("Sending to 127.0.0.1") && !(await text()).includes("TOKEN-IN-THE-ADDRESS") && !(await text()).includes(SECRET));
+    await inCard("Send a test message"); await sleep(1200);
+    const test = received.find((r) => JSON.parse(r.body).event === "test");
+    await check("a test message arrived", !!test && JSON.parse(test.body).text.includes("test message"));
+    await check("... with a valid signature", !!test && test.headers["x-dok-signature"] === "sha256=" + crypto.createHmac("sha256", SECRET)
+      .update(test.headers["x-dok-timestamp"] + "." + test.body).digest("hex"));
+    await check("the page says the last message was received", (await text()).includes("was received"));
+    await shot("09b-webhook");
+    await inCard("Remove the webhook"); await sleep(300);
+  }
   await click("Overview"); await sleep(500);
   await check("overview counts the new PC and project", (await text()).includes("Projects"));
 
@@ -109,6 +139,7 @@ const b = [...scope.querySelectorAll("button,a")].find((x) => name(x) === l && x
   await shot("10-auditor");
   await click("Sign out"); await sleep(600);
   await browser.close();
+  if (receiver) receiver.close();
   console.log(problems.length ? "PROBLEMS:\n" + problems.join("\n") : "no browser errors");
   process.exit(problems.length ? 1 : 0);
 })().catch((e) => { console.log("CRASH", e.message); process.exit(2); });

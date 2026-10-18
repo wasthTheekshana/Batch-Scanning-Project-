@@ -12,3 +12,4 @@ httpx==0.28.1
 bcrypt==5.0.0
 jsonschema==4.26.0
 alembic==1.20.0
+cryptography==49.0.0

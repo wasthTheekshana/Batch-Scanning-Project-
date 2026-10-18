@@ -12,7 +12,11 @@ from central.settings import Settings
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    settings = app.state.settings
+    if settings.alert_notifier and settings.data_key is not None:
+        app.state.notifier.start()                 # announces alert changes to the webhook, if one is set up
     yield
+    app.state.notifier.stop()
     app.state.engine.dispose()
 
 
@@ -24,6 +28,11 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.settings = settings
     app.state.engine = engine
     app.state.session_factory = make_session_factory(engine)
+    from central.notify import Notifier
+    app.state.notifier = Notifier(
+        app.state.session_factory, settings.data_key, allow_http=settings.webhook_allow_http,
+        block_private=settings.webhook_block_private, interval=settings.alert_interval_seconds,
+        default_poll=settings.default_poll_interval_seconds)
     app.add_middleware(
         SessionMiddleware, secret_key=settings.session_secret,
         session_cookie="dok_central", https_only=settings.cookie_secure,
@@ -75,11 +84,12 @@ def create_app(settings: Settings) -> FastAPI:
     from central import (routes_admin_auth, routes_admin_config,
                          routes_admin_fleet, routes_admin_overview,
                          routes_admin_pcs, routes_admin_users,
-                         routes_dashboard, routes_pcs)
+                         routes_admin_webhook, routes_dashboard, routes_pcs)
     app.include_router(routes_admin_auth.router)
     app.include_router(routes_admin_users.router)
     app.include_router(routes_admin_overview.router)
     app.include_router(routes_admin_fleet.router)
+    app.include_router(routes_admin_webhook.router)
     app.include_router(routes_admin_pcs.router)
     app.include_router(routes_admin_config.router)
     app.include_router(routes_pcs.router)

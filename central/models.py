@@ -110,6 +110,18 @@ class PcDailyStat(Base):
     errors: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class AlertState(Base):
+    """An alert the webhook has announced as open. A row exists exactly while the administrators have been
+    told the alert is open; the unique key is what stops two server processes announcing it twice."""
+    __tablename__ = "alert_state"
+    alert_id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    severity: Mapped[str] = mapped_column(String(10))
+    pc_name: Mapped[str] = mapped_column(String(200), default="")
+    message: Mapped[str] = mapped_column(Text, default="")
+    opened_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_sent_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class Setting(Base):
     __tablename__ = "settings"
     key: Mapped[str] = mapped_column(String(100), primary_key=True)

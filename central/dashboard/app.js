@@ -589,6 +589,56 @@
     return body;
   }
 
+  // Alert notifications: where to send a message when something needs attention. The address is a secret (chat
+  // tools put a key in it): it is sent to the server once and only its host name is ever shown again.
+  async function webhookCard() {
+    const w = await api("GET", "/admin/webhook");
+    const url = h("input", { type: "text", maxlength: 2000, autocomplete: "off",
+      placeholder: w.configured ? "Leave empty to keep the address already saved" : "Paste the address (it starts with https)" });
+    const secret = h("input", { type: "password", maxlength: 200, autocomplete: "new-password",
+      placeholder: w.has_secret ? "Leave empty to keep the secret already saved" : "Optional: used to sign every message" });
+    const enabled = h("input", { type: "checkbox" });
+    enabled.checked = w.enabled;
+    const level = h("select", {}, [["info", "Notes, warnings and critical"], ["warn", "Warnings and critical"], ["critical", "Critical only"]]
+      .map(([k, t]) => h("option", { value: k }, t)));
+    level.value = w.min_level;
+    const last = w.last_result;
+    const status = !w.key_available
+      ? h("p", { class: "error" }, "This server has no data key, so a webhook address cannot be stored. Ask whoever runs the server to set CENTRAL_DATA_KEY (see the deployment guide).")
+      : w.configured
+        ? h("p", {}, (w.enabled ? "Sending to " : "Switched off. Address on file: ") + w.host + ". ",
+            last ? "The last message, " + ago(last.at) + ", " + (last.ok ? "was received." : "failed: " + last.error + ".") : "No message has been sent yet.")
+        : h("p", { class: "muted" }, "No webhook yet. Paste the address your chat tool or ticket system gives you.");
+    const reload = () => render();
+    return h("div", { class: "card" },
+      h("h2", {}, "Alert notifications"),
+      h("p", { class: "muted" }, "When an alert opens, becomes critical, stays critical for 12 hours, or is resolved, the server sends a message to this address."
+        + " Chat tools such as Slack and Teams show the text; other systems can read the JSON and check its signature."),
+      status,
+      h("div", { class: "settings-form" },
+        h("label", {}, "Webhook address", url),
+        h("label", {}, "Signing secret", secret),
+        h("label", {}, "Send", level),
+        h("label", { class: "inline" }, enabled, " Send alert messages")),
+      h("div", { class: "row" },
+        wbutton("Save", () => act(() => api("PUT", "/admin/webhook", {
+          url: url.value.trim() || undefined, secret: secret.value.trim() || undefined,
+          enabled: enabled.checked, min_level: level.value }), reload, "Saved."), "primary"),
+        w.configured ? wbutton("Send a test message", async () => {
+          try {
+            const r = await api("POST", "/admin/webhook/test");
+            toast(r.ok ? "The test message was received." : "The test message failed: " + r.error + ".", !r.ok);
+            reload();
+          } catch (e) { if (e.status !== 401) toast(e.message, true); }
+        }) : null,
+        w.has_secret ? wbutton("Remove the secret", () => act(() => api("PUT", "/admin/webhook",
+          { secret: "", enabled: enabled.checked, min_level: level.value }), reload, "Secret removed.")) : null,
+        w.configured ? wbutton("Remove the webhook", () => {
+          if (confirm("Remove the webhook? Alert messages stop until you set one up again."))
+            act(() => api("PUT", "/admin/webhook", { url: "", enabled: false, min_level: level.value }), reload, "Webhook removed.");
+        }, "danger") : null));
+  }
+
   async function settings() {
     const s = await api("GET", "/admin/settings");
     const input = h("input", { type: "number", min: 30, max: 86400, value: String(s.poll_interval_seconds) });
@@ -600,7 +650,8 @@
           const n = Number(input.value);
           if (!Number.isInteger(n)) { toast("Enter a whole number of seconds.", true); return; }
           act(() => api("PUT", "/admin/settings", { poll_interval_seconds: n }), null, "Saved.");
-        }, "primary"))));
+        }, "primary"))),
+      await webhookCard());
   }
 
   // ------------------------------------------------------- fleet and activity

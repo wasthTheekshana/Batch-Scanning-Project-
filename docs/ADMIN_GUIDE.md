@@ -158,7 +158,17 @@ it has been going on, and the Overview entry in the side menu carries a count (r
 A station that stopped checking in is a warning, and critical after a day. Settings published but not applied are
 a warning once the station has had time to pick them up (a few polling intervals), and critical after a day.
 Five or more errors today is a warning; fewer, or a revoked key, or a station added over a week ago that never
-connected, is a note. Nothing is e-mailed: someone has to look at the dashboard.
+connected, is a note.
+
+**Sending alerts to a chat tool or ticket system (webhook).** In *Settings, Alert notifications*, paste the address
+your tool gives you (Slack, Teams and most ticket systems offer an "incoming webhook" address), choose the lowest
+level worth a message, tick *Send alert messages*, **Save**, then **Send a test message**. After that the server
+sends a message when an alert opens, becomes critical, is still critical 12 hours later, and when it is resolved.
+The address often contains a secret key: it is stored encrypted and never shown again (only its host name). An
+optional *signing secret* lets the receiving system check a message really came from this server. This needs the
+server's data key (`CENTRAL_DATA_KEY`, see `central/deploy/DEPLOY.md`); without it the card says so. If a test or
+a message fails, the card shows why (could not connect, timed out, or the receiver's answer code). Messages are
+not sent while the webhook is switched off.
 
 Reading it: *Behind* means you published a newer version of a project and the station has not applied it
 yet (it applies at its next sync; offline stations catch up when they return). *Not reported* is a station

@@ -4,6 +4,7 @@
     python -m central.manage migrate          bring the database to the latest schema
     python -m central.manage db-status        show the schema version and any drift from the models
     python -m central.manage new-migration "message"   write a migration for a model change
+    python -m central.manage generate-key     print a new CENTRAL_DATA_KEY (keep it safe, apart from the database)
 """
 from __future__ import annotations
 
@@ -62,6 +63,10 @@ def _schema_command(argv: list[str]) -> int | None:
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    if argv == ["generate-key"]:
+        from central.crypto import generate_key
+        print(generate_key())
+        return 0
     handled = _schema_command(argv)
     if handled is not None:
         return handled

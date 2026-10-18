@@ -11,6 +11,7 @@ documents. Spec: `docs/superpowers/specs/2026-08-29-central-admin-dashboard-desi
 | `CENTRAL_DATABASE_URL` | yes | e.g. `postgresql+psycopg://user:pw@host/dokcentral` |
 | `CENTRAL_SESSION_SECRET` | yes | 32+ random characters; rotating it logs every admin out |
 | `CENTRAL_COOKIE_SECURE` | no | default `1`; set `0` only for local HTTP development |
+| `CENTRAL_DATA_KEY` | for the alert webhook and index data | the key that encrypts what the server stores for you; `python -m central.manage generate-key` makes one. Keep a copy apart from the database backups (see `deploy/DEPLOY.md`) |
 
 ## Run
 
@@ -147,6 +148,36 @@ is not an incident.
 Each alert has a stable `id` (for example `behind:<pc>:<project>`), the station, a plain message, and `since`
 (when the condition began, when known). The dashboard's Overview lists them and the side menu shows how many
 are critical or warnings. Delivery by e-mail or webhook is not built: the alerts are read in the dashboard.
+
+### Alert webhook
+
+An administrator can give the server one webhook address (dashboard: Settings, Alert notifications). A background worker
+(`central/notify.py`) then sends a message when an alert **opens**, becomes **critical** (`alert.escalated`), is still
+critical 12 hours after the last message (`alert.reminder`), or is **resolved**. The chosen minimum level (notes,
+warnings, or critical only) decides which alerts are announced. Each change is sent once, even with several server
+processes (each is claimed in the database first), and a failed send is retried on the next pass.
+
+    POST <your address>
+    Content-Type: application/json
+    X-DOK-Event: alert.opened          (alert.escalated, alert.reminder, alert.resolved, test)
+    X-DOK-Timestamp: 1760860000        (seconds since 1970)
+    X-DOK-Signature: sha256=<hex>      (only when a signing secret is set)
+
+    {"event": "alert.opened", "at": "2026-10-18T09:00:00Z",
+     "text": "[Critical] Galle: Stopped checking in",
+     "alert": {"id": "offline:<pc>", "kind": "offline", "severity": "critical", "pc_id": "...",
+               "pc_name": "Galle", "message": "Stopped checking in", "since": "2026-10-16T08:00:00Z"}}
+
+`text` is ready to read (Slack, Teams and similar services show it as it is). To check a message came from the server,
+compute `HMAC-SHA256(secret, timestamp + "." + raw body)`, compare it with the signature (constant-time), and reject a
+timestamp more than a few minutes old.
+
+Safety: the address must be https (plain http only with `CENTRAL_WEBHOOK_ALLOW_HTTP=1`, development); it is stored
+encrypted and never returned (the API shows only its host name); an address that resolves to the server itself, to a
+link-local address (cloud metadata) or to a multicast address is refused, and `CENTRAL_WEBHOOK_BLOCK_PRIVATE=1` refuses
+private networks too; redirects are not followed, the answer is ignored, the timeout is 10 seconds, and any answer
+other than 2xx counts as a failure. The audit log records that a message was sent or failed and the host, never the
+address or secret. Endpoints: `GET/PUT /admin/webhook`, `POST /admin/webhook/test` (an auditor can read the status, not change it).
 
 ### Admin API added for the dashboard
 

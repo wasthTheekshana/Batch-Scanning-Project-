@@ -54,10 +54,10 @@ def build_app():
 def _all_routes(app):
     """Every API route, however this FastAPI version stores included routers."""
     from central import (routes_admin_auth, routes_admin_config, routes_admin_fleet, routes_admin_overview,
-                         routes_admin_pcs, routes_admin_users, routes_pcs)
+                         routes_admin_pcs, routes_admin_users, routes_admin_webhook, routes_pcs)
     found = [r for r in app.routes if hasattr(r, "dependant")]
     for module in (routes_admin_auth, routes_admin_users, routes_admin_overview, routes_admin_fleet,
-                   routes_admin_pcs, routes_admin_config, routes_pcs):
+                   routes_admin_webhook, routes_admin_pcs, routes_admin_config, routes_pcs):
         found += [r for r in module.router.routes if hasattr(r, "dependant")]
     return [r for r in found if getattr(r, "include_in_schema", True)]
 

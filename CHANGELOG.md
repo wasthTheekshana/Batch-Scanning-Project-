@@ -15,6 +15,9 @@ Changes since 1.0.0. At release time this heading becomes the new version number
 - **Alerts.** The Overview lists what needs attention (a station that stopped checking in, settings published but
   not applied, errors, revoked access, a station that never connected), most serious first and with how long, and the
   side menu shows a count; `GET /admin/alerts`.
+- **Alerts by webhook.** Settings, Alert notifications: the server messages a chat tool or ticket system when an alert
+  opens, becomes critical, stays critical for 12 hours, or is resolved (once each, retried on failure, optionally
+  signed). The address is stored encrypted with a new server data key (`CENTRAL_DATA_KEY`, `manage generate-key`).
 - The dashboard has a new side-menu layout that works on a phone (tables become cards) and in dark mode.
 - Central migration 0002 adds the reporting tables; starting the service applies it.
 - A database made by the old `create_all()` is now adopted at the schema it actually has.

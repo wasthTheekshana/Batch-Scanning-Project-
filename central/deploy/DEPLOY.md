@@ -83,6 +83,27 @@ Rehearse a restore once before relying on it.
 7. Put nginx in front using `nginx.conf.example` (TLS, and `client_max_body_size 1m`).
 8. Back up with `pg_dump dokcentral | gzip > ...` on a schedule.
 
+## The data key (alert webhook, index data)
+
+The server encrypts what it stores for you with a **data key** that lives outside the database: the alert webhook
+address and signing secret now, and the index data once index sync is in use. Without a key those features refuse
+to start (the rest of the service works as before).
+
+1. Generate one, once: `python -m central.manage generate-key` (in Docker:
+   `docker compose run --rm central python -m central.manage generate-key`).
+2. Put it in `.env` as `CENTRAL_DATA_KEY=...` (or in `/etc/dokscanner-central.env`, `chmod 600`), or save it in a
+   file and set `CENTRAL_DATA_KEY_FILE=/path/to/file` instead.
+3. **Keep a copy apart from the database backups** (a password manager or safe). The database alone cannot be
+   read without it, and **if the key is lost the encrypted data is lost**: the webhook would have to be set up again.
+4. To change the key: set the new one as `CENTRAL_DATA_KEY` with `CENTRAL_DATA_KEY_VERSION=2` and the old as
+   `CENTRAL_DATA_KEY_OLD=1:<old key>`. Data written under the old key stays readable; new data uses the new one.
+
+Other settings: `CENTRAL_ALERT_NOTIFIER=0` stops the worker that sends alert messages (it is on by default and does
+nothing until a webhook is set up), `CENTRAL_ALERT_INTERVAL` is its pass interval in seconds (default 60), and
+`CENTRAL_WEBHOOK_BLOCK_PRIVATE=1` refuses webhook addresses on private networks as well (a webhook address that
+points at the server itself or at cloud metadata is always refused). `CENTRAL_WEBHOOK_ALLOW_HTTP=1` is for
+development only. With several workers each message is still sent once.
+
 ## Accounts
 
 - **admin:** can change everything.

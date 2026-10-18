@@ -183,3 +183,6 @@ label.inline input[type=checkbox] { width: auto; flex: none; margin: 0; }
   table.stack td[data-label=""]::before { display: none; }
   .toolbar input[type=search] { width: 100%; }
 }
+
+.card + .card { margin-top: 16px; }
+.card h2 { margin-top: 0; }

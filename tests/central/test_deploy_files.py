@@ -195,3 +195,14 @@ def test_the_build_context_is_limited_to_what_the_dockerfile_copies():
     for source, _dest in copied_by_dockerfile():
         top = source.rstrip("/")
         assert top in allowed or top.split("/")[0] in allowed, source   # nothing the image needs is excluded
+
+
+def test_the_data_key_is_optional_in_compose_and_explained_where_it_is_set():
+    import yaml
+    env = yaml.safe_load(read("docker-compose.yml"))["services"]["central"]["environment"]
+    assert env["CENTRAL_DATA_KEY"] == "${CENTRAL_DATA_KEY:-}"                # empty: those features stay off
+    example, guide = read(".env.example"), read("DEPLOY.md")
+    assert re.search(r"^CENTRAL_DATA_KEY=$", example, re.M)                  # no key shipped
+    assert "generate-key" in example and "APART FROM THE DATABASE" in example
+    assert "generate-key" in guide and "apart from the database backups" in guide and "lost" in guide
+    assert "CENTRAL_DATA_KEY" in read("dokscanner-central.service")

@@ -62,6 +62,9 @@ never the value that was sent. The service has no interactive docs page (`/docs`
 | POST | `/admin/users/{user_id}/revoke-sessions` | admin session + CSRF header on changes |
 | POST | `/admin/users/{user_id}/role` | admin session + CSRF header on changes |
 | POST | `/admin/users/{user_id}/unlock` | admin session + CSRF header on changes |
+| GET | `/admin/webhook` | admin session + CSRF header on changes |
+| PUT | `/admin/webhook` | admin session + CSRF header on changes |
+| POST | `/admin/webhook/test` | admin session + CSRF header on changes |
 | GET | `/healthz` | anyone (a liveness check; it reveals nothing) |
 | POST | `/pcs/register` | nobody yet: the one-time enrolment code in the body is the credential |
 | GET | `/pcs/{pc_id}/config` | PC API key (Bearer) |
@@ -320,6 +323,24 @@ Documents, pages, batches and errors per day for the last `days` days (today inc
 - **Who:** admin session + CSRF header on changes
 - **Parameters:** `user_id` (path, required)
 - **Replies:** 200, 422
+
+## admin-webhook
+
+### GET `/admin/webhook`
+
+- **Who:** admin session + CSRF header on changes
+- **Replies:** 200
+
+### PUT `/admin/webhook`
+
+- **Who:** admin session + CSRF header on changes
+- **JSON body:** `url` (one of string/null); `secret` (one of string/null); `enabled` (boolean); `min_level` (string)
+- **Replies:** 200, 422
+
+### POST `/admin/webhook/test`
+
+- **Who:** admin session + CSRF header on changes
+- **Replies:** 200
 
 ## other
 
