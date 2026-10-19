@@ -185,6 +185,7 @@ def test_only_an_admin_can_delete_and_a_reason_is_required(world):
         world.admin_client.post("/admin/users", json={"username": role, "password": "a long passphrase here", "role": role})
         who = login(world.app, role, "a long passphrase here")
         assert delete(who, doc_id).status_code == 403, role
+        assert delete(who, "no-such-id").status_code == 403, role        # the same answer: no hint whether it exists
     assert world.admin_client.get(f"/admin/documents/{doc_id}").status_code == 200
     assert delete(world.admin_client, "no-such-id").status_code == 404
 
