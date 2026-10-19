@@ -101,7 +101,9 @@ def selftest() -> int:
             raise RuntimeError("digit model file not found")
         glyph = np.zeros((60, 40), np.uint8)
         glyph[5:55, 17:23] = 255                      # a plain vertical stroke
-        return "reads " + digits.read_digit(glyph)[0]
+        if not digits.cnn_available():
+            raise RuntimeError("the convolutional digit network (digit_cnn.onnx) did not load")
+        return "reads " + digits.read_digit(glyph)[0] + " (convolutional network + older network)"
 
     def handwriting_model():
         import numpy as np
