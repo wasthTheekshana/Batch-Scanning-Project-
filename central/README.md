@@ -223,6 +223,7 @@ like one that does not exist. Create one with `python -m central.manage create-a
 | `GET /admin/fleet/{pc_id}` | one station: facts, each project's last five published versions against what it runs, 30 days of activity, its own alerts and 25 recent events (poll noise left out); 404 if unknown; read-only |
 | `GET /admin/documents`, `/admin/documents/{id}`, `/admin/documents/filters`, `/admin/documents/access-log` | search and open reported documents, the search form's choices, who looked (see "Index sync") |
 | `PUT /admin/users/{id}/projects` | the projects a `searcher` may see (replaces the list) |
+| `POST /admin/documents/{id}/delete` | delete a document's index data and file details (admins only; body `{reason}`, at least 5 characters, audited). Leaves a marker: the station's later `PUT` answers 410 and it drops the item |
 | `GET /admin/documents/export.csv` | the search as a spreadsheet: same filters, at most 5,000 rows, text that would run as a formula is prefixed with a quote, logged as `export` |
 | `GET /admin/alerts` | what needs attention now, most serious first, with counts per level (read-only; computed on request, so an alert exists exactly while its condition does) |
 | `GET /admin/stats?days=14` | per-day totals (1 to 90 days, quiet days included as zeros) and each PC's total, busiest first |

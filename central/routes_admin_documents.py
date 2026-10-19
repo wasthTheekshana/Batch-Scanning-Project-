@@ -11,13 +11,15 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import func, select
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from central.audit import record
 from central.crypto import DataKey, DecryptionError
 from central.deps import get_db, require_admin, require_csrf
 from central.models import (AdminUser, Document, DocumentAccessLog, DocumentFile, IndexLookup, IndexRevision, Pc,
-                            Project, SearcherScope)
+                            Project, SearcherScope, utcnow)
 from central.routes_pc_documents import file_details
 
 router = APIRouter(prefix="/admin/documents", tags=["admin-documents"],
@@ -71,14 +73,15 @@ def _project_names(db: Session) -> dict[str, str]:
 def filters(user: AdminUser = Depends(require_admin), db: Session = Depends(get_db)):
     """What the search form can offer: the projects and stations that have documents (within the person's scope)."""
     scope = scope_of(db, user)
-    q = select(Document.project_id, Document.pc_id).distinct()
+    q = select(Document.project_id, Document.pc_id).where(Document.deleted_at.is_(None)).distinct()
     if scope is not None:
         q = q.where(Document.project_id.in_(scope))
     rows = db.execute(q).all()
     names, pcs = _project_names(db), {p.id: p.display_name for p in db.scalars(select(Pc))}
     return {"projects": sorted(({"id": p, "name": names.get(p, p)} for p in {r[0] for r in rows}), key=lambda x: x["name"]),
             "stations": sorted(({"id": i, "name": pcs.get(i, i)} for i in {r[1] for r in rows}), key=lambda x: x["name"]),
-            "statuses": sorted(set(db.scalars(select(Document.validation_status).distinct())) - {""})}
+            "statuses": sorted(set(db.scalars(select(Document.validation_status).where(Document.deleted_at.is_(None))
+                                              .distinct())) - {""})}
 
 
 @router.get("/access-log")
@@ -110,7 +113,7 @@ def build_query(f: Filters, request: Request, user: AdminUser, db: Session):
     q, field, value, project, pc, batch, status = f.q, f.field, f.value, f.project, f.pc, f.batch, f.status
     date_from, date_to = f.date_from, f.date_to
     scope = scope_of(db, user)
-    query = select(Document)
+    query = select(Document).where(Document.deleted_at.is_(None))
     used: list[str] = []
     if scope is not None:
         query = query.where(Document.project_id.in_(scope))
@@ -220,13 +223,41 @@ def export(request: Request, f: Filters = Depends(), user: AdminUser = Depends(r
         "X-Rows": str(len(rows)), "X-Matched": str(total)})
 
 
+class DeleteIn(BaseModel):
+    reason: str = Field(min_length=5, max_length=300)
+
+
+@router.post("/{document_id}/delete")
+def delete_document(document_id: str, body: DeleteIn, request: Request, user: AdminUser = Depends(require_admin),
+                    db: Session = Depends(get_db)):
+    """Remove a document's index data and file details from the server (administrators only; the PDF is not held
+    here, so it stays wherever it was delivered). The reason is recorded. A marker stays, so the station does not
+    send the document again; the station's own copy is not touched."""
+    doc = db.get(Document, document_id)
+    if doc is None or doc.deleted_at is not None:
+        raise HTTPException(404, "no such document")
+    if user.role != "admin":
+        raise HTTPException(403, "only an administrator can delete documents")
+    revisions = db.scalar(select(func.count()).select_from(IndexRevision).where(IndexRevision.document_id == doc.id)) or 0
+    db.execute(delete(IndexLookup).where(IndexLookup.document_id == doc.id))
+    db.execute(delete(IndexRevision).where(IndexRevision.document_id == doc.id))
+    db.execute(delete(DocumentFile).where(DocumentFile.document_id == doc.id))
+    doc.deleted_at, doc.deleted_by, doc.current_revision, doc.validation_status = utcnow(), user.username, 0, ""
+    record(db, f"admin:{user.username}", "document_deleted",
+           {"document": doc.id, "pc_id": doc.pc_id, "project_id": doc.project_id, "revisions": revisions,
+            "reason": body.reason.strip()})
+    _log(db, request, user, "delete", doc.id, {})
+    db.commit()
+    return {"deleted": True, "document": doc.id}
+
+
 @router.get("/{document_id}")
 def document(document_id: str, request: Request, user: AdminUser = Depends(require_admin),
              db: Session = Depends(get_db)):
     key = _key(request)
     doc = db.get(Document, document_id)
     scope = scope_of(db, user)
-    if doc is None or (scope is not None and doc.project_id not in scope):
+    if doc is None or doc.deleted_at is not None or (scope is not None and doc.project_id not in scope):
         raise HTTPException(404, "no such document")                  # outside the scope looks the same as absent
     pc = db.get(Pc, doc.pc_id)
     project = db.get(Project, doc.project_id)

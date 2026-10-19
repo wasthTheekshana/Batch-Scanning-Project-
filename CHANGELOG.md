@@ -8,6 +8,10 @@ All notable changes to DOK Scanner. The newest release is first. The version num
 Changes since 1.0.0. At release time this heading becomes the new version number and date.
 
 ### Central web center
+- **Deleting documents.** An administrator can delete a document's index data and file details from the server
+  (document page, *Delete this document...*, with a reason that goes to the audit log). Every revision and search entry
+  is removed; a marker stays so the station does not send it again (it answers 410 and the PC drops it from its queue).
+  The PDF is not held centrally and the station's own copy is not touched. Auditors and searchers cannot delete.
 - **Running it for real.** A station reports how many documents it has not been able to send (a count and a time),
   and the server raises *backlog* (waiting 4 hours or more, critical after a day) and *refused* alerts; Fleet and the
   station page show the queue, and the station page lists the documents it sent. The Overview warns when the server has

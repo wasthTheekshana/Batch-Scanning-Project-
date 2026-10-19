@@ -180,10 +180,10 @@ def station(pc_id: str, request: Request, db: Session = Depends(get_db)):
             totals[k] += v
     today = per_day[wanted[-1]]
 
-    held = db.scalar(select(func.count()).select_from(Document).where(Document.pc_id == pc.id)) or 0
+    held = db.scalar(select(func.count()).select_from(Document).where(Document.pc_id == pc.id, Document.deleted_at.is_(None))) or 0
     recent = [{"id": d.id, "created_at": _iso(d.created_at), "project_id": d.project_id, "batch_id": d.batch_id,
                "validation_status": d.validation_status, "page_count": d.page_count}
-              for d in db.scalars(select(Document).where(Document.pc_id == pc.id)
+              for d in db.scalars(select(Document).where(Document.pc_id == pc.id, Document.deleted_at.is_(None))
                                   .order_by(Document.created_at.desc()).limit(8))]
     events = db.scalars(select(AuditEvent).where(or_(
         (AuditEvent.actor == f"pc:{pc.id}") & (AuditEvent.action != "config_pull"),

@@ -158,6 +158,10 @@ class Document(Base):
     received_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     current_revision: Mapped[int] = mapped_column(Integer, default=0)
+    # An administrator deleted it: the index data and file details are gone, this row stays as a marker so the
+    # station's queue does not bring the document back.
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    deleted_by: Mapped[Optional[str]] = mapped_column(String(100))
 
 
 class DocumentFile(Base):

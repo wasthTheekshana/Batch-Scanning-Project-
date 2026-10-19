@@ -170,6 +170,12 @@ problem. A server outage only makes the queue grow: scanning continues and every
 returns. *Send existing documents* reports what was scanned before the PC was enrolled; *Retry refused* appears when the
 server refused documents (for example the project is not assigned to that PC).
 
+**Deleting a document.** On the document page an administrator can choose *Delete this document...* and give a reason
+(at least 5 characters; it is kept in the audit log with who did it). The server then forgets its index fields, every
+revision and the PDF details, and the document leaves Search and the station's list. The PDF itself is not on the server and
+stays where it was delivered; the station's own record is not touched either. The station is told the document was
+deleted and does not send it again. Auditors and searchers do not see the button.
+
 **One station.** Click a station's name (in Fleet or in the alert list) for its page: whether it is online and what
 program it runs, for each project the last published versions against the one it runs, 30 days of activity as a chart,
 its own alerts and its recent events (enrolled, renamed, settings assigned, access revoked). Renaming, new codes,

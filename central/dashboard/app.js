@@ -920,7 +920,15 @@
               c.field + ": " + (c.before === null || c.before === undefined ? "(empty)" : c.before)
               + " -> " + (c.after === null || c.after === undefined ? "(empty)" : c.after))))
           : null))),
-      h("p", { class: "sub" }, "Opening this document was recorded in the access log."));
+      h("p", { class: "sub" }, "Opening this document was recorded in the access log."),
+      wbutton("Delete this document...", async () => {
+        const v = await ask("Delete this document from the server?", [
+          { name: "reason", label: "Reason", hint: "Required, at least 5 characters. It is kept in the audit log.", max: 300 }], "Delete",
+          h("p", {}, "Its index fields and PDF details are removed from the server for good, including every earlier revision. "
+            + "The PDF itself is not kept here, and the station's own copy is not touched. The station will not send it again."));
+        if (v) act(() => api("POST", "/admin/documents/" + encodeURIComponent(id) + "/delete", { reason: v.reason.trim() }),
+          () => { location.hash = "#/search"; }, "Document deleted.");
+      }, "danger"));
   }
 
   async function accessLog() {

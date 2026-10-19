@@ -96,7 +96,7 @@ const b = [...scope.querySelectorAll("button,a")].find((x) => name(x) === l && x
   const PCS_NIC = "553216789V";
   const reg = await (await fetch(BASE + "/pcs/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code }) })).json();
   const projectId = (await page.evaluate(() => fetch("/admin/projects").then((r) => r.json())))[0].id;
-  const send = (part, body) => fetch(BASE + "/pcs/" + reg.pc_id + "/documents/doc-e2e-1/" + part,
+  const send = (part, body, id = "doc-e2e-1") => fetch(BASE + "/pcs/" + reg.pc_id + "/documents/" + id + "/" + part,
     { method: "PUT", headers: { "content-type": "application/json", authorization: "Bearer " + reg.api_key }, body: JSON.stringify(body) });
   const sent = [await send("meta", { project_id: projectId, batch_id: "batch-1", page_count: 3, created_at: new Date().toISOString(),
       validation_status: "approved", file_name: "kamal.pdf", size: 2048, sha256: "a".repeat(64), delivered_to: ["local_folder"], delivery_status: "delivered_local" }),
@@ -118,6 +118,22 @@ const b = [...scope.querySelectorAll("button,a")].find((x) => name(x) === l && x
   await page.evaluate(() => [...document.querySelectorAll(".station a")].find((a) => a.textContent === "Scan-Desk-1-A").click()); await sleep(600);
   await check("the station page lists the documents it sent", (await text()).includes("Documents sent to the server") && (await text()).includes("1 document reported by this station"));
 
+  // an administrator deletes the document: it leaves the search and the station's page
+  await click("Search"); await sleep(400);
+  await page.evaluate(() => [...document.querySelectorAll("a")].find((a) => a.textContent === "Open").click()); await sleep(600);
+  await click("Delete this document..."); await sleep(300);
+  await page.evaluate(() => { document.querySelector("dialog input").value = "e2e: entered by mistake"; });
+  await click("Delete"); await sleep(900);
+  await check("deleting returns to the search, where the document is gone",
+    (await text()).includes("Search documents") && !(await text()).includes("Kamal Perera") && (await text()).includes("No document matches"));
+  const again = [await send("meta", { project_id: projectId, batch_id: "batch-1", page_count: 3, created_at: new Date().toISOString(), validation_status: "approved",
+      file_name: "kamal.pdf", size: 2048, sha256: "a".repeat(64), delivered_to: ["local_folder"], delivery_status: "delivered_local" }),
+    await send("index", { fields: { nic: PCS_NIC, full_name: "Kamal Perera", branch: "Galle" }, validation_status: "approved" })];
+  await check("the station cannot bring the deleted document back", again.every((r) => r.status === 410));
+  await send("meta", { project_id: projectId, batch_id: "batch-1", page_count: 3, created_at: new Date().toISOString(), validation_status: "approved",
+      file_name: "kamal2.pdf", size: 2048, sha256: "b".repeat(64), delivered_to: ["local_folder"], delivery_status: "delivered_local" }, "doc-e2e-2");
+  await send("index", { fields: { nic: "199912345678", full_name: "Kamal Perera", branch: "Galle" }, validation_status: "approved" }, "doc-e2e-2");
+  await page.evaluate(() => [...document.querySelectorAll(".searchform button")].find((b) => b.textContent === "Clear").click()); await sleep(600);
   await click("Templates"); await sleep(500); await shot("06-templates");
   await click("Admins"); await click("Add admin...");
   const inputs = await page.$$("dialog input"); await inputs[0].type("auditor"); await inputs[1].type("a very long passphrase");

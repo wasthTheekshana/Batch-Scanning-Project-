@@ -45,6 +45,7 @@ never the value that was sent. The service has no interactive docs page (`/docs`
 | GET | `/admin/documents/export.csv` | ? |
 | GET | `/admin/documents/filters` | ? |
 | GET | `/admin/documents/{document_id}` | ? |
+| POST | `/admin/documents/{document_id}/delete` | ? |
 | GET | `/admin/alerts` | admin session + CSRF header on changes |
 | GET | `/admin/fleet` | admin session + CSRF header on changes |
 | GET | `/admin/fleet/{pc_id}` | admin session + CSRF header on changes |
@@ -220,6 +221,13 @@ A complete, valid starting configuration for a new project (the
 
 - **Who:** ?
 - **Parameters:** `document_id` (path, required)
+- **Replies:** 200, 422
+
+### POST `/admin/documents/{document_id}/delete`
+
+- **Who:** ?
+- **Parameters:** `document_id` (path, required)
+- **JSON body:** `reason` (string, required; minLength 5, maxLength 300)
 - **Replies:** 200, 422
 
 ## admin-fleet

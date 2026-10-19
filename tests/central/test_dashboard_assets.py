@@ -89,8 +89,11 @@ def test_documents_can_be_searched_and_opened_and_a_searcher_sees_nothing_else()
     assert "async function search()" in js and "async function documentDetail(id)" in js
     assert 'api("GET", "/admin/documents' in js and "#/documents/" in js
     assert 'role === "searcher"' in js and 'a.hidden = role === "searcher"' in js
-    for source in (js[js.index("async function search()"):js.index("async function accessLog()")],):
-        assert 'api("POST"' not in source and 'api("PUT"' not in source and 'api("DELETE"' not in source
+    searching = js[js.index("async function search()"):js.index("async function documentDetail(")]
+    assert 'api("POST"' not in searching and 'api("PUT"' not in searching and 'api("DELETE"' not in searching
+    # the one change a document page offers is a delete, shown to administrators only (wbutton hides it from the rest)
+    detail = js[js.index("async function documentDetail("):js.index("async function accessLog()")]
+    assert detail.count('api("POST"') == 1 and '/delete"' in detail and 'wbutton("Delete this document...' in detail
 
 
 def test_a_station_has_its_own_page_reached_from_the_fleet_and_the_alerts():

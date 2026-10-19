@@ -129,6 +129,8 @@ def put_meta(document_id: str, body: MetaIn, request: Request, pc: Pc = Depends(
     if db.get(PcAssignment, (pc.id, body.project_id)) is None:
         raise HTTPException(422, "this project is not assigned to this station")
     doc = _document(db, pc, document_id)
+    if doc is not None and doc.deleted_at is not None:
+        raise HTTPException(410, "this document was deleted on the server")
     new = doc is None
     if doc is None:
         doc = Document(id=str(uuid.uuid4()), pc_id=pc.id, source_document_id=document_id, project_id=body.project_id,
@@ -170,6 +172,8 @@ def put_index(document_id: str, body: IndexIn, request: Request, pc: Pc = Depend
     _check_id(document_id)
     key = data_key(request)
     doc = _document(db, pc, document_id)
+    if doc is not None and doc.deleted_at is not None:
+        raise HTTPException(410, "this document was deleted on the server")
     if doc is None:
         raise HTTPException(409, "send the document's details first")
     now = utcnow()

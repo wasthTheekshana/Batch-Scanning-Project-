@@ -192,6 +192,8 @@ class CentralClient:
             raise CentralAuthError(status)
         if status == 200:
             return
+        if status == 410:
+            raise CentralRejected("the server deleted this document", status)
         if status in (400, 413, 422):
             raise CentralRejected(f"central refused the document (HTTP {status})", status)
         raise CentralUnavailable(f"sending the document failed (HTTP {status})")

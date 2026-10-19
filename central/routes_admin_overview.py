@@ -96,5 +96,6 @@ def overview(request: Request, db: Session = Depends(get_db)):
             db, request.app.state.settings.default_poll_interval_seconds),
         "recent_audit": [_event(e) for e in recent],
         "server": {"data_key": request.app.state.settings.data_key is not None,
-                   "documents": db.scalar(select(func.count()).select_from(Document)) or 0},
+                   "documents": db.scalar(select(func.count()).select_from(Document)
+                                             .where(Document.deleted_at.is_(None))) or 0},
     }

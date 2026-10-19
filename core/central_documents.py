@@ -121,6 +121,7 @@ class PushResult:
     sent: int = 0
     retry_later: int = 0
     refused: int = 0
+    deleted: int = 0                    # documents the server says an administrator deleted: dropped from the queue
     stopped: str | None = None          # why the pass ended early: not_connected | access_refused | unavailable
 
 
@@ -169,6 +170,10 @@ class DocumentPusher:
                 result.stopped = "access_refused"           # the regular sync notices and asks for a new code
                 return result
             except CentralRejected as e:
+                if e.status == 410:                          # an administrator deleted it on the server: do not send it again
+                    self.db.outbox_drop(doc_id)
+                    result.deleted += 1
+                    continue
                 self.db.outbox_fail(doc_id, _clean(e))
                 result.refused += 1
                 continue
