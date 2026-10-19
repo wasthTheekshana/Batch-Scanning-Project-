@@ -221,6 +221,31 @@ def branches() -> list[str]:
             if ln.strip() and not ln.startswith("#")]
 
 
+def branch_text(text: str) -> str:
+    """A reading of a branch name made fit to compare with the bank's list: letters and spaces, in title case,
+    at least three letters (the model's stray dots and quotes dropped)."""
+    cleaned = re.sub(r"\s+", " ", re.sub(r"[^A-Za-z ]", " ", text or "")).strip()
+    return cleaned.title() if len(cleaned.replace(" ", "")) >= 3 else ""
+
+
+def branch_variants(text: str) -> list[str]:
+    """A branch reading and the ways it may differ from what was written: with a stray first or last letter
+    taken off (a box edge read as "I" or "[" in front, a "V" behind). Empty when nothing usable was read."""
+    base = branch_text(text)
+    if not base:
+        return []
+    out, words = [base], base.split()
+    while len(words) > 1 and len(words[0]) <= 1:
+        words = words[1:]
+        out.append(" ".join(words))
+    parts = base.split()
+    if len(parts[0]) >= 4:
+        out.append(" ".join([parts[0][1:]] + parts[1:]))
+    if len(parts[-1]) >= 4:
+        out.append(" ".join(parts[:-1] + [parts[-1][:-1]]))
+    return list(dict.fromkeys(o.title() for o in out))
+
+
 def fix_branch(text: str, ranked: list[tuple[str, float]] | None = None) -> tuple[str, float]:
     """The branch name: the model's own ranking of the bank's branches when given, else the
     nearest branch to the text. Anything not close to a branch is returned as read."""

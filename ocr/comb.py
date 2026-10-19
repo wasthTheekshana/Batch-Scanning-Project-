@@ -31,6 +31,9 @@ FIND_CUTS = (FIND_CUT, 170, 190)    # pale or dotted box lines need a higher cut
 INK_BELOW_BORDER = 15  # entry ink must be this much darker than the borders
 INK_FLOOR, INK_CEIL = 40, 150
 DEFAULT_INK = 140      # when no border level can be measured
+WIDE_CUT = 175         # for writing paler than the box lines: everything dark counts, lines go by shape
+LOST_FILL = 0.03       # a box with less ink than this at the ordinary cut has lost its writing
+CORE_CUT = 130         # real pen strokes have pixels at least this dark; printed hint letters do not
 WORKERS = 4            # cells read at the same time
 
 # what an engine restricted to digits often returns instead of the digit
@@ -113,13 +116,15 @@ def ink_level(gray: np.ndarray, loose: np.ndarray) -> int:
     return max(INK_FLOOR, min(INK_CEIL, border - INK_BELOW_BORDER))
 
 
-def _strip_lines(binary: np.ndarray) -> np.ndarray:
+def _strip_lines(binary: np.ndarray, vertical: bool = True) -> np.ndarray:
     import cv2
     h, w = binary.shape
     horizontal = cv2.morphologyEx(
         binary, cv2.MORPH_OPEN,
         cv2.getStructuringElement(cv2.MORPH_RECT, (max(5, int(w * 0.6)), 1)))
-    lines = cv2.dilate(cv2.bitwise_or(horizontal, _vertical_lines(binary)),
+    # Tall "vertical lines" are removed on black forms; where the box lines are grey and the pen paler, the stem of
+    # a 1, 4 or 7 is as tall as a divider and was being erased with it.
+    lines = cv2.dilate(cv2.bitwise_or(horizontal, _vertical_lines(binary)) if vertical else horizontal,
                        np.ones((3, 3), np.uint8))
     return cv2.bitwise_and(binary, cv2.bitwise_not(lines))
 
@@ -163,38 +168,62 @@ def _variants(cell: np.ndarray):
 
 CONFIDENT = 0.50       # a Tesseract reading at least this sure is trusted (measured: its
                        # wrong digits were all at 0.45 or below, its right ones 0.54+)
-MODEL_SURE = 0.92      # at least this sure, the digit model overrules the engine
+NETWORK_SURE = 0.60    # the digit network at least this sure of a digit: taken, whatever Tesseract says
+TESS_TRUSTED = 0.90    # Tesseract at least this sure of a digit (typed digits are 0.93-0.96): taken outright
+NETWORK_DOUBT = 0.90   # a network this sure of a different digit makes the winner doubtful
+DISAGREE_MIN = 0.70    # Tesseract this confident of a different digit makes the cell doubtful
 MODEL_MIN = 0.50       # the digit model must be at least this sure to be used
-ENGINE_STRONG = 0.70   # the engine this sure of a digit is not overruled: the digit model reports 1.00 even when wrong
 DISAGREE_CONF = 0.40   # when the two readers disagree and neither is sure, the cell is reported this uncertain
-SPREAD = 0.30          # a field is no more confident than its least sure box plus this
+SPREAD = 0.15          # a field is no more confident than its least sure box plus this
 DIGIT_BOXES = set("0123456789VvXx")
 
 
 def _read_char(cell: np.ndarray, whitelist: str) -> tuple[str, float]:
     """One character from a cell image (white ink on black).
 
-    Tesseract reads typed characters perfectly and says how sure it is. When
-    it is not sure (handwriting), a digit box is read by the small digit
-    model instead (ocr.digits), which handles pen strokes far better. The
-    engine's readings come from several enlargements, voted on; when none
-    finds a character, an unrestricted reading is mapped back to a character
-    the box allows (a digit box that reads "g" means 9)."""
+    Tesseract reads typed characters perfectly and says how sure it is, but on handwritten digits it is
+    right about 6 times in 10; the digit network (ocr.digits) about 97 in 100. So a digit box is read by the
+    network, and Tesseract is consulted only where the network is unsure, or as a second opinion: when the two
+    disagree and Tesseract is confident, the digit is kept but reported as doubtful, so the field is flagged
+    for the operator. The engine's readings come from several enlargements, voted on; when none finds a
+    character, an unrestricted reading is mapped back to a character the box allows (a digit box that reads
+    "g" means 9)."""
+    variants = list(cell) if isinstance(cell, (list, tuple)) else [cell]
+    cell = variants[-1]                              # Tesseract reads the generous cut best
     char, conf = _tesseract_char(cell, whitelist)
     if not set(whitelist) <= DIGIT_BOXES:
         return char, conf                            # letters: engine only
     if char in ("V", "v", "X", "x") and conf >= 0.5:
         return char, conf                            # the letter of an old NIC
-    from ocr.digits import read_digit
-    digit, probability = read_digit(cell)
-    if digit and probability >= MODEL_SURE and digit in whitelist and digit != char and conf < ENGINE_STRONG:
-        # handwriting: the digit model knows pens better, unless the engine is quite sure of its digit
-        return digit, probability * 0.95 if not char else min(probability * 0.95, DISAGREE_CONF if conf >= 0.3 else 1.0)
+    from ocr import digits as digit_models
+    digit, probability = digit_models.read_digit(variants)
+    usable = bool(digit) and digit in whitelist
+    if usable and digit_models.cnn_available():
+        # Three readers vote: the convolutional network, the fully connected one and Tesseract. On 119 handwritten
+        # digits from real bank forms the network alone was right 96% of the time, the three by majority 97.5%.
+        # A digit with a confident dissenter is kept but reported as doubtful, so the operator is asked.
+        if char in whitelist and conf >= TESS_TRUSTED:
+            return char, conf                        # typed digits: Tesseract this sure is right
+        second, second_p = digit_models.read_digit_mlp(variants)
+        votes = [d for d in (digit, second if second in whitelist else "", char if char in whitelist else "") if d]
+        winner = max(set(votes), key=lambda v: (votes.count(v), v == digit))
+        agree = votes.count(winner)
+        if agree == 3:
+            return winner, max(probability, 0.9) * 0.95
+        # Tesseract is the weakest reader of handwriting: only a dissenting network makes the digit doubtful.
+        dissent = [(d, c) for d, c in ((digit, probability), (second, second_p)) if d and d != winner]
+        if agree >= 2 and not any(c >= NETWORK_DOUBT for _, c in dissent):
+            return winner, 0.8
+        return winner, min(probability * 0.95, DISAGREE_CONF)
+    if usable and probability >= NETWORK_SURE:
+        if char and char != digit and conf >= DISAGREE_MIN:
+            return digit, min(probability * 0.95, DISAGREE_CONF)         # right most of the time, but say so
+        return digit, probability * 0.95
     if char and conf >= CONFIDENT:
+        if usable and probability >= MODEL_MIN and digit != char:
+            return char, min(conf, DISAGREE_CONF)    # unsure network against a fairly sure engine
         return char, conf
-    if char in ("V", "v", "X", "x") and conf >= 0.5:
-        return char, conf                            # the letter of an old NIC
-    if digit and probability >= MODEL_MIN and digit in whitelist:
+    if usable and probability >= MODEL_MIN:
         doubt = bool(char) and char != digit and conf >= 0.3         # the engine saw something else
         return digit, min(probability * 0.9, DISAGREE_CONF) if doubt else probability * 0.9
     return char, conf
@@ -284,9 +313,9 @@ def _pen_ink(color: np.ndarray, gray: np.ndarray) -> np.ndarray | None:
     return cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((2, 2), np.uint8))
 
 
-def split_cells(strip: np.ndarray) -> list[np.ndarray]:
+def cell_variants(strip: np.ndarray) -> list[list[np.ndarray]]:
     """The entry ink of each box of a strip, left to right (empty boxes are
-    left out). Empty list when the strip is not a row of boxes. The box lines
+    left out), each box as one or more images made with different ink cuts. Empty list when the strip is not a row of boxes. The box lines
     of some forms are printed pale or dotted, so the lines are looked for at
     a few darkness levels and the one that finds the most boxes wins."""
     gray = _gray(strip)
@@ -301,23 +330,91 @@ def split_cells(strip: np.ndarray) -> list[np.ndarray]:
     if len(cells) < MIN_CELLS:
         return []
     pen = _pen_ink(strip[top:bottom, left:right], gray) if strip.ndim == 3 else None
-    ink = pen if pen is not None else _strip_lines(_dark(gray, ink_level(gray, loose)))
+    if pen is not None:
+        spans = [_cell_images(pen, cells)]
+    else:
+        level = ink_level(gray, loose)
+        if level == DEFAULT_INK:
+            # Black borders (or none measurable): everything dark counts as ink and the lines go by shape.
+            spans = [_cell_images(_strip_lines(_dark(gray, DEFAULT_INK)), cells)]
+        else:
+            spans = [_cell_images(_strip_lines(_dark(gray, level), vertical=False), cells)]
+            # Writing as pale as, or paler than, the box lines (soft pencil, a light pen on grey lines): the
+            # darkness cut that spares the lines also loses the writing, and digits come out as fragments. Count
+            # everything dark as ink and let the lines be removed by shape, if that finds clearly more writing.
+            wide = _cell_images(_strip_lines(_dark(gray, WIDE_CUT), vertical=False), cells)
+            # ...but only in boxes whose writing has a dark core: the printed hint letters of a date box
+            # ("D D M M Y Y Y Y") are as pale as pencil and must not be read as writing.
+            core = _cell_images(_strip_lines(_dark(gray, CORE_CUT), vertical=False), cells)
+            wide = [_attached(w, c) if c is not None and w is not None else None for w, c in zip(wide, core)]
+            spans = [[_better(p_, w_) for p_, w_ in zip(spans[0], wide)]]
+    variants = []
+    for k in range(len(cells)):
+        found = [s_[k] for s_ in spans if s_[k] is not None]
+        if found:
+            variants.append(found)
+    return variants
+
+
+def _attached(wide: np.ndarray, core: np.ndarray) -> np.ndarray:
+    """The generous cut's ink, minus what is not joined to the dark core of a stroke: a pale printed hint letter
+    sitting beside a digit is dropped, the pale part of the digit's own stroke stays."""
+    import cv2
+    near = cv2.dilate(core, np.ones((3, 3), np.uint8), iterations=3)
+    count, labels = cv2.connectedComponents((wide > 0).astype(np.uint8), connectivity=8)
+    keep = np.zeros_like(wide)
+    for i in range(1, count):
+        part = labels == i
+        if (near[part] > 0).any():
+            keep[part] = 255
+    return keep
+
+
+def _fill(image: np.ndarray | None) -> float:
+    return np.count_nonzero(image) / image.size if image is not None else 0.0
+
+
+def _better(plain: np.ndarray | None, wide: np.ndarray | None) -> np.ndarray | None:
+    """One box's ink: the ordinary cut's, unless that lost the writing (almost nothing left: the stroke is paler
+    than the box lines). Measured: on pale-pencil scans the ordinary cut keeps 0-2.6% of a box, on a normal
+    scan at least 5.9%."""
+    if wide is None:
+        return plain
+    return wide if plain is None or _fill(plain) < LOST_FILL else plain
+
+
+def _count(images: list[np.ndarray | None]) -> int:
+    return sum(1 for c in images if c is not None)
+
+
+def _coverage(images: list[np.ndarray | None]) -> float:
+    """How much of a box the writing covers on average (over the boxes that have any)."""
+    found = [np.count_nonzero(c) / c.size for c in images if c is not None]
+    return sum(found) / len(found) if found else 0.0
+
+
+def split_cells(strip: np.ndarray) -> list[np.ndarray]:
+    """The entry ink of each box of a strip, left to right (empty boxes are left out); one image per box."""
+    return [v[0] for v in cell_variants(strip)]
+
+
+def _cell_images(ink: np.ndarray, cells: list[tuple[int, int]]) -> list[np.ndarray | None]:
+    """The cleaned ink of every box (None where the box is empty)."""
     height = ink.shape[0]
     margin = max(2, int(height * 0.06))
-    inked = []
+    out: list[np.ndarray | None] = []
     for x0, x1 in cells:
         cell = ink[margin:height - margin, x0 + 5:x1 - 4]
         if cell.size:
             cell = _clean_cell(cell)
-        if cell.size and np.count_nonzero(cell) / cell.size >= INK_MIN:
-            inked.append(cell)                         # empty boxes are skipped
-    return inked
+        out.append(cell if cell.size and np.count_nonzero(cell) / cell.size >= INK_MIN else None)
+    return out
 
 
 def read_comb(strip: np.ndarray, charset: str = "alnum") -> OCRResult:
     """The characters written in a strip of boxes, left to right."""
     whitelist = CHARSETS.get(charset) or EXTRA_CHARSETS.get(charset) or charset or CHARSETS["alnum"]
-    inked = split_cells(strip)
+    inked = cell_variants(strip)
     # each reading runs the OCR engine as a separate process: do several at once
     allowed = [whitelist] * len(inked)
     if charset == "nic" and inked:

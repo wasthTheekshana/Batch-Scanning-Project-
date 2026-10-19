@@ -124,10 +124,11 @@ def _clearly_typed(result: OCRResult, zone: dict) -> bool:
     return bool(found and found.strip())        # an empty box can "match" with just a space
 
 
-MIN_LINE_CONF = 0.3          # a handwritten line read less surely than this is box edge or noise, not writing
+TYPED_BONUS = 0.6           # log-probability head start for the ordinary reader's own branch reading
+MIN_LINE_CONF = 0.25          # a handwritten line read less surely than this is box edge or noise, not writing
 
 
-def read_handwritten(strip: np.ndarray, zone: dict) -> OCRResult | None:
+def read_handwritten(strip: np.ndarray, zone: dict, hint: str = "") -> OCRResult | None:
     """A handwritten line (or lines) read with the handwriting model, then corrected for the
     kind of field it is (name, e-mail, mobile, branch ...). None when the model is not
     installed, so the caller reads it the older way."""
@@ -140,10 +141,24 @@ def read_handwritten(strip: np.ndarray, zone: dict) -> OCRResult | None:
     kind = zone.get("kind")
     if kind == "branch":
         text, conf = handwriting.read_line(lines[0])
-        ranked = handwriting.rank(lines[0], fieldfix.branches()) if fieldfix.branches() else None
+        # The bank's branches compete with what was actually read (the handwriting reader's own readings and
+        # the ordinary reader's `hint`): the handwriting model scores them all against the writing, so a branch
+        # that is on the list wins when the writing says it, and a name that is not on the list (a new branch,
+        # a misspelling) is kept as written instead of being forced onto the nearest listed one.
+        read_back = fieldfix.branch_variants(hint) or [fieldfix.branch_text(t) for t in
+                                                       [text, *[t for t, _ in handwriting.read_all(lines[0])[:3]]]]
+        candidates = list(dict.fromkeys([*(fieldfix.branches() or []), *[c for c in read_back if c]]))
+        ranked = handwriting.rank(lines[0], candidates) if candidates else None
+        if ranked and hint and fieldfix.branch_text(hint):
+            # The ordinary reader reads blocky capitals better than the handwriting model does: what it read
+            # (unchanged) gets a small head start over its own trimmed variants and over look-alike branches.
+            ranked = sorted(((c, s + (TYPED_BONUS if c == fieldfix.branch_text(hint) else 0.0)) for c, s in ranked),
+                            key=lambda c: -c[1])
         value, factor = fieldfix.fix_branch(text, ranked)
         return OCRResult(text=value, confidence=min(conf + 0.3, 1.0) * factor if ranked else conf * factor)
     read = [handwriting.read_line(line) for line in lines]
+    if max(c for _, c in read) < MIN_LINE_CONF:
+        return OCRResult(text="", confidence=0.0)        # nothing was written (the model only "reads" stray marks)
     if len(read) > 1:
         # An empty second box is not blank to the model: it "reads" a made-up sentence at low confidence.
         # Keep the lines that were read about as well as the best one.
@@ -224,15 +239,17 @@ def extract_fields(img: np.ndarray, zones: list[dict], lang: str = "eng",
         y1 = max(y0 + 1, min(y0 + zh, h))
         strip = img[y0:y1, x0:x1]
         hand = typed = None
+        typed_text = ""
         if (zone.get("hand") or zone.get("charset") == "email") and own_engine:
             if not zone.get("comb"):
                 # typed or printed entries are read better by the ordinary reader, and say so
                 # with a high confidence; only what is not clearly typed goes to the handwriting model
                 typed = _read_typed(strip, zone, run_ocr)
+                typed_text = typed.text
                 if not _clearly_typed(typed, zone):
                     typed = None
             if typed is None:
-                hand = read_handwritten(strip, zone)
+                hand = read_handwritten(strip, zone, hint=typed_text)
             elif typed.confidence < TYPED_CERTAIN:
                 # The ordinary reader can be fairly sure of a word or two of a handwritten line (it saw
                 # only "PERSON" of "Dummy PERSON", at 0.80). If the handwriting reader sees clearly more

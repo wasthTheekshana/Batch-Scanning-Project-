@@ -175,11 +175,11 @@ def test_all_built_in_templates_load_and_seed(db):
     names = {t["name"] for t in templates}
     assert names == {"Banking", "Insurance", "HR / Personnel",
                      "Legal / Contracts", "Invoices / Receipts",
-                     "Bank - Customer file"}
+                     "Bank - Customer file", "Bank - Demo (account, NIC, branch)"}
     for t in templates:
         assert t["built_in"] is True
         ocr = t["config"]["ocr"]
-        if t["name"] == "Bank - Customer file":
+        if t["name"].startswith("Bank - "):
             # fields live in per-type sections, not the common zone list
             assert ocr["zones"] == [] and ocr["document_types"]
             continue

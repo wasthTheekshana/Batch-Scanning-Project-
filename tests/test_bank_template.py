@@ -148,3 +148,15 @@ def test_a_loan_form_that_contains_an_nic_number_is_still_the_form():
 
 def test_a_plain_letter_with_a_reference_number_is_not_taken_for_a_card():
     assert read("Dear Sir, our reference 202604170001 is attached")[0] == "Letter"
+
+
+def test_the_demo_template_reads_only_account_number_nic_and_branch():
+    import json
+    path = Path(__file__).parent.parent / "core" / "templates" / "bank_demo_index.json"
+    demo = json.loads(path.read_text(encoding="utf-8"))
+    assert demo["name"] == "Bank - Demo (account, NIC, branch)"
+    types = demo["config"]["ocr"]["document_types"]
+    assert {t["name"] for t in types} >= {"Home loan application", "Education loan application",
+                                          "Personal loan application", "Credit card application"}
+    assert {z["name"] for t in types for z in t["zones"]} == {"account_number", "nic_number", "branch"}
+    assert all(t.get("anchors") for t in types if t["name"].endswith("loan application"))      # the pages still line up

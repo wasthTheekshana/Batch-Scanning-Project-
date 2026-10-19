@@ -83,6 +83,10 @@ def _bands(ink: np.ndarray, min_height: int = 8) -> list[tuple[int, int]]:
     return out
 
 
+MIN_INK_PIXELS = 300       # a written line has well over a thousand ink pixels; stray marks a few hundred at most
+MIN_LINE_WIDTH = 20
+
+
 def clean_lines(strip: np.ndarray) -> list[np.ndarray]:
     """One white image per written line, strokes black, cropped with a margin."""
     import cv2
@@ -91,8 +95,8 @@ def clean_lines(strip: np.ndarray) -> list[np.ndarray]:
     for y0, y1 in _bands(ink):
         band = ink[max(0, y0 - 2):y1 + 2]
         xs = np.nonzero(band.any(axis=0))[0]
-        if len(xs) == 0:
-            continue
+        if len(xs) == 0 or np.count_nonzero(band) < MIN_INK_PIXELS or xs.max() - xs.min() < MIN_LINE_WIDTH:
+            continue                      # dust and box-edge debris: the model would "read" a sentence from it
         pad = max(6, int(0.3 * band.shape[0]))
         crop = band[:, max(0, xs.min() - pad):xs.max() + pad + 1]
         crop = cv2.copyMakeBorder(crop, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=0)

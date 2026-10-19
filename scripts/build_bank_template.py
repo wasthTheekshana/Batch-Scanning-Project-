@@ -87,7 +87,23 @@ TEMPLATE = {
     },
 }
 
+DEMO_FIELDS = ("account_number", "nic_number", "branch")
+
+
+def demo_template() -> dict:
+    """The same forms and page recognition, but only the three index fields a bank officer looks for first
+    (account number, NIC, branch) are read: fewer fields to get wrong or to confirm, and much faster, because
+    the slow handwriting reader runs for the branch only."""
+    import copy
+    demo = copy.deepcopy(TEMPLATE)
+    demo["name"] = "Bank - Demo (account, NIC, branch)"
+    for doc_type in demo["config"]["ocr"]["document_types"]:
+        doc_type["zones"] = [z for z in doc_type.get("zones", []) if z["name"] in DEMO_FIELDS]
+    return demo
+
+
 if __name__ == "__main__":
-    out = HERE.parent / "core" / "templates" / "bank_customer_file.json"
-    out.write_text(json.dumps(TEMPLATE, indent=2) + "\n", encoding="utf-8")
-    print(f"wrote {out}")
+    for name, template in (("bank_customer_file.json", TEMPLATE), ("bank_demo_index.json", demo_template())):
+        out = HERE.parent / "core" / "templates" / name
+        out.write_text(json.dumps(template, indent=2) + "\n", encoding="utf-8")
+        print(f"wrote {out}")

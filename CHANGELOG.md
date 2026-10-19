@@ -5,6 +5,20 @@ All notable changes to DOK Scanner. The newest release is first. The version num
 
 ## [Unreleased]
 
+### Indexing
+- **Handwriting reader works in the application.** It was switched off whenever the ordinary OCR engine was
+  present (which is always), so names and branches were read by Tesseract alone.
+- **Better digit reading.** Boxed digits (account number, NIC) are read by a small convolutional network
+  (`ocr/digit_cnn.onnx`) that votes with the older digit network and Tesseract: 97.5% of 119 handwritten digits
+  from real forms right, up from 90%. A digit the readers disagree about marks the field for the operator.
+  Pale pencil or light pen on grey box lines no longer loses the writing.
+- **Branch kept as written.** A branch that is not on the list is no longer forced onto the nearest listed one:
+  the reading of the ordinary engine and the handwriting model compete with the list, and the best fit wins.
+- **Empty boxes read as empty.** A blank name box no longer produces an invented sentence.
+- **Second pages.** A home or education loan's second page is no longer taken for a personal loan's.
+- **New built-in template "Bank - Demo (account, NIC, branch)":** the same forms, reading only those three fields
+  (fewer to confirm and faster). Existing projects keep their old settings: create a new project from the template.
+
 Changes since 1.0.0. At release time this heading becomes the new version number and date.
 
 ### Central web center

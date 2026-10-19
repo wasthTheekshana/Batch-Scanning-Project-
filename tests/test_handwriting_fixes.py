@@ -122,7 +122,7 @@ def test_blue_pen_is_separated_from_the_black_box_lines_by_colour():
 def test_an_nic_of_ten_boxes_ends_in_a_letter(monkeypatch):
     seen = []
     monkeypatch.setattr(comb, "_read_char", lambda cell, allowed: (seen.append(allowed) or "5", 0.9))
-    monkeypatch.setattr(comb, "split_cells", lambda strip: [np.ones((10, 10), np.uint8)] * 10)
+    monkeypatch.setattr(comb, "cell_variants", lambda strip: [[np.ones((10, 10), np.uint8)]] * 10)
     comb.read_comb(np.zeros((10, 10)), "nic")
     assert seen[-1] == "VX" and set(seen[0]) == set("0123456789")
 
@@ -170,7 +170,7 @@ def _run(monkeypatch, typed_text, typed_conf):
     calls = []
     monkeypatch.setattr(ze, "ocr_page", lambda region, **kw: OCRResult(text=typed_text, confidence=typed_conf))
     monkeypatch.setattr(ze, "read_handwritten",
-                        lambda strip, zone: calls.append("handwriting") or OCRResult(text="Written Name", confidence=0.6))
+                        lambda strip, zone, hint="": calls.append("handwriting") or OCRResult(text="Written Name", confidence=0.6))
     got = ze.extract_fields(np.full((60, 400, 3), 255, np.uint8), [_zone()])["applicant_name"]
     return got, calls
 

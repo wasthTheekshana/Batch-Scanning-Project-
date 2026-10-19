@@ -146,13 +146,16 @@ def test_without_the_model_file_digits_are_simply_not_read(monkeypatch, tmp_path
     from ocr import digits
     monkeypatch.setattr(digits, "MODEL_PATH", tmp_path / "missing.npz")
     monkeypatch.setattr(digits, "MODEL28_PATH", tmp_path / "missing28.npz")
+    monkeypatch.setattr(digits, "CNN_PATH", tmp_path / "missing.onnx")
     digits._model.cache_clear()
     digits._model28.cache_clear()
+    digits._cnn.cache_clear()
     try:
         assert digits.read_digit(glyph("5")) == ("", 0.0)
     finally:
         digits._model.cache_clear()
         digits._model28.cache_clear()
+        digits._cnn.cache_clear()
 
 
 def test_a_digit_box_trusts_the_engine_when_it_is_sure_and_the_model_when_it_is_not(monkeypatch):

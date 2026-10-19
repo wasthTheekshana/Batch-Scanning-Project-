@@ -17,6 +17,7 @@ datas = [
     ("core/templates", "core/templates"),
     ("ocr/digit_model.npz", "ocr"),     # handwritten-digit model (ocr/digits.py)
     ("ocr/digit_model28.npz", "ocr"),   # the MNIST-trained one it prefers
+    ("ocr/digit_cnn.onnx", "ocr"),      # the small convolutional digit network it prefers over both
     ("ocr/branches.txt", "ocr"),        # branch names the handwriting reader chooses from
     ("ocr/names.txt", "ocr"),           # common names it snaps near-misses to
 ]
