@@ -233,11 +233,11 @@ def delete_document(document_id: str, body: DeleteIn, request: Request, user: Ad
     """Remove a document's index data and file details from the server (administrators only; the PDF is not held
     here, so it stays wherever it was delivered). The reason is recorded. A marker stays, so the station does not
     send the document again; the station's own copy is not touched."""
+    if user.role != "admin":                         # before looking the document up: no hint whether it exists
+        raise HTTPException(403, "only an administrator can delete documents")
     doc = db.get(Document, document_id)
     if doc is None or doc.deleted_at is not None:
         raise HTTPException(404, "no such document")
-    if user.role != "admin":
-        raise HTTPException(403, "only an administrator can delete documents")
     revisions = db.scalar(select(func.count()).select_from(IndexRevision).where(IndexRevision.document_id == doc.id)) or 0
     db.execute(delete(IndexLookup).where(IndexLookup.document_id == doc.id))
     db.execute(delete(IndexRevision).where(IndexRevision.document_id == doc.id))
