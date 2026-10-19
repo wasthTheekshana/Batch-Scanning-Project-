@@ -89,6 +89,7 @@ def prepare_strip(strip: np.ndarray) -> np.ndarray:
 FIXERS = {"name": "fix_name", "email": "fix_email", "mobile": "fix_mobile", "nic": "fix_nic"}
 
 
+TYPED_CERTAIN = 0.88    # typed text read at least this surely is taken as it is, without asking the handwriting reader
 TYPED_SURE = 0.80       # the ordinary reader at least this sure of a line: typed or printed text (typed: 0.82-0.94, real handwriting: at most 0.77)
 
 
@@ -107,6 +108,10 @@ def _read_typed(strip: np.ndarray, zone: dict, run_ocr) -> OCRResult:
     return OCRResult(text=printable, confidence=result.confidence)
 
 
+def _alnum(text: str) -> int:
+    return len(re.sub(r"[^A-Za-z0-9]", "", text or ""))
+
+
 def _clearly_typed(result: OCRResult, zone: dict) -> bool:
     """Did the ordinary reader read this strip with confidence, and is what it read the right
     shape for the field (its clean-up pattern finds a value)?"""
@@ -117,6 +122,9 @@ def _clearly_typed(result: OCRResult, zone: dict) -> bool:
         return True
     found = _extract_match_value(pattern, result.text.strip())
     return bool(found and found.strip())        # an empty box can "match" with just a space
+
+
+MIN_LINE_CONF = 0.3          # a handwritten line read less surely than this is box edge or noise, not writing
 
 
 def read_handwritten(strip: np.ndarray, zone: dict) -> OCRResult | None:
@@ -136,6 +144,13 @@ def read_handwritten(strip: np.ndarray, zone: dict) -> OCRResult | None:
         value, factor = fieldfix.fix_branch(text, ranked)
         return OCRResult(text=value, confidence=min(conf + 0.3, 1.0) * factor if ranked else conf * factor)
     read = [handwriting.read_line(line) for line in lines]
+    if len(read) > 1:
+        # An empty second box is not blank to the model: it "reads" a made-up sentence at low confidence.
+        # Keep the lines that were read about as well as the best one.
+        best = max(c for _, c in read)
+        keep = [i for i, (_, c) in enumerate(read) if c >= max(MIN_LINE_CONF, 0.5 * best)]
+        keep = keep or [max(range(len(read)), key=lambda i: read[i][1])]          # never drop every line
+        read, lines = [read[i] for i in keep], [lines[i] for i in keep]
     fixer = getattr(fieldfix, FIXERS.get(kind, ""), None)
     if kind == "email":
         # the @ is the glyph the model misreads most: rank repaired addresses against the writing
@@ -174,10 +189,14 @@ def extract_fields(img: np.ndarray, zones: list[dict], lang: str = "eng",
     words of the blank form) and `words` (the page's OCR words) are given,
     the zones are first lined up with this scan (ocr.align), so a form that
     was printed smaller or fed in crooked is still read in the right boxes."""
-    run_ocr = ocr_fn or (lambda region, psm=None, min_conf=0,
-                         line_min_conf=0: ocr_page(
+    # The running application hands in the ordinary engine itself (ocr_page); only a different function
+    # (a test's stand-in, a vendor engine) replaces the readers below. Treating the ordinary engine as a
+    # replacement switched the handwriting reader off in the real application.
+    own_engine = ocr_fn is None or ocr_fn is ocr_page
+    run_ocr = (lambda region, psm=None, min_conf=0,
+               line_min_conf=0: ocr_page(
         region, lang=lang, psm=psm, min_conf=min_conf,
-        line_min_conf=line_min_conf))
+        line_min_conf=line_min_conf)) if own_engine else ocr_fn
     h, w = img.shape[:2]
     fields: dict[str, FieldValue] = {}
     anchors = next((z["anchors"] for z in zones if z.get("anchors")), None)
@@ -205,7 +224,7 @@ def extract_fields(img: np.ndarray, zones: list[dict], lang: str = "eng",
         y1 = max(y0 + 1, min(y0 + zh, h))
         strip = img[y0:y1, x0:x1]
         hand = typed = None
-        if (zone.get("hand") or zone.get("charset") == "email") and ocr_fn is None:
+        if (zone.get("hand") or zone.get("charset") == "email") and own_engine:
             if not zone.get("comb"):
                 # typed or printed entries are read better by the ordinary reader, and say so
                 # with a high confidence; only what is not clearly typed goes to the handwriting model
@@ -214,6 +233,13 @@ def extract_fields(img: np.ndarray, zones: list[dict], lang: str = "eng",
                     typed = None
             if typed is None:
                 hand = read_handwritten(strip, zone)
+            elif typed.confidence < TYPED_CERTAIN:
+                # The ordinary reader can be fairly sure of a word or two of a handwritten line (it saw
+                # only "PERSON" of "Dummy PERSON", at 0.80). If the handwriting reader sees clearly more
+                # text, that line was written, not typed. Typed text it is very sure of is not second-guessed.
+                check = read_handwritten(strip, zone)
+                if check is not None and _alnum(check.text) > 1.25 * _alnum(typed.text):
+                    typed, hand = None, check
         if typed is not None:
             result = typed
         elif hand is not None:
@@ -222,7 +248,7 @@ def extract_fields(img: np.ndarray, zones: list[dict], lang: str = "eng",
             # one character per box (account no., NIC, date of birth)
             from ocr.comb import read_comb
             result = read_comb(strip, zone.get("charset") or "alnum")
-        elif ocr_fn is not None:
+        elif not own_engine:
             result = ocr_fn(strip)
         else:
             result = _read_typed(strip, zone, run_ocr)

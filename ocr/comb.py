@@ -165,6 +165,9 @@ CONFIDENT = 0.50       # a Tesseract reading at least this sure is trusted (meas
                        # wrong digits were all at 0.45 or below, its right ones 0.54+)
 MODEL_SURE = 0.92      # at least this sure, the digit model overrules the engine
 MODEL_MIN = 0.50       # the digit model must be at least this sure to be used
+ENGINE_STRONG = 0.70   # the engine this sure of a digit is not overruled: the digit model reports 1.00 even when wrong
+DISAGREE_CONF = 0.40   # when the two readers disagree and neither is sure, the cell is reported this uncertain
+SPREAD = 0.30          # a field is no more confident than its least sure box plus this
 DIGIT_BOXES = set("0123456789VvXx")
 
 
@@ -184,14 +187,16 @@ def _read_char(cell: np.ndarray, whitelist: str) -> tuple[str, float]:
         return char, conf                            # the letter of an old NIC
     from ocr.digits import read_digit
     digit, probability = read_digit(cell)
-    if digit and probability >= MODEL_SURE and digit in whitelist and digit != char:
-        return digit, probability * 0.95             # handwriting: the digit model knows pens better
+    if digit and probability >= MODEL_SURE and digit in whitelist and digit != char and conf < ENGINE_STRONG:
+        # handwriting: the digit model knows pens better, unless the engine is quite sure of its digit
+        return digit, probability * 0.95 if not char else min(probability * 0.95, DISAGREE_CONF if conf >= 0.3 else 1.0)
     if char and conf >= CONFIDENT:
         return char, conf
     if char in ("V", "v", "X", "x") and conf >= 0.5:
         return char, conf                            # the letter of an old NIC
     if digit and probability >= MODEL_MIN and digit in whitelist:
-        return digit, probability * 0.9
+        doubt = bool(char) and char != digit and conf >= 0.3         # the engine saw something else
+        return digit, min(probability * 0.9, DISAGREE_CONF) if doubt else probability * 0.9
     return char, conf
 
 
@@ -329,4 +334,6 @@ def read_comb(strip: np.ndarray, charset: str = "alnum") -> OCRResult:
     chars = [char for char, _ in readings if char]
     confs = [conf for char, conf in readings if char]
     confidence = sum(confs) / len(confs) if confs else 0.0
+    if confs:
+        confidence = min(confidence, min(confs) + SPREAD)       # one doubtful box makes the number doubtful
     return OCRResult(text="".join(chars), confidence=confidence)

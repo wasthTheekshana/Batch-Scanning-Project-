@@ -23,9 +23,12 @@ NAME = r"([A-Za-z.]+(?: [A-Za-z.]+){0,4}?)"
 DOCUMENT_TYPES = [
     # a specific form first: types are tried in order and the first match wins
     bank_forms.credit_document_type(),   # the credit card form also mentions a "supplementary limit"
-    bank_forms.personal_document_type(),
-    loan_form.document_type(),
+    # The loan forms share the headings "Loan Details" and "Monthly Financial Details" on their second page, so
+    # the forms with words of their own are tried first and the personal loan, whose later-page pattern is the
+    # generic one, last. (Otherwise a home or education loan's second page is taken for a personal loan's.)
     home_loan_form.document_type(),      # before the generic Application: its title matches that too
+    loan_form.document_type(),
+    bank_forms.personal_document_type(),
     {"name": "Application",
      "regex": r"application\s+form|loan\s+application|account\s+opening|application\s+no",
      "zones": [

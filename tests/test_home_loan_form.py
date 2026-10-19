@@ -86,3 +86,17 @@ def test_a_letter_can_only_close_a_nic_and_a_12_box_number_has_no_letter(monkeyp
     seen.clear()
     comb.read_comb(pale_row(10, digits="8567890123"), "alnum")      # other charsets unchanged
     assert set(seen) == {comb.CHARSETS["alnum"]}
+
+
+def test_a_second_page_is_taken_for_its_own_form_not_for_the_personal_loan():
+    """The loan forms share "Loan Details" and "Monthly Financial Details"; only each form's own words may decide."""
+    import json
+    ocr_cfg = json.loads((ROOT / "core" / "templates" / "bank_customer_file.json")
+                         .read_text(encoding="utf-8"))["config"]["ocr"]
+    home = "Loan Details Loan Amount Purpose of the loan Purchase of land Purchase of house Construction / Renovation Monthly Financial Details"
+    education = "Loan Details Required loan amount Course Details Study Programme Monthly Financial Details"
+    personal = "Loan Amount Rs. Repayment Period Months Purpose of the loan Monthly Financial Details Primary Applicant"
+    assert match_page(home, ocr_cfg)[0]["name"] == "Home loan application"
+    assert match_page(education, ocr_cfg)[0]["name"] == "Education loan application"
+    assert match_page(personal, ocr_cfg)[0]["name"] == "Personal loan application"
+    assert match_page(home, ocr_cfg)[1] is False                    # a later page: typed, its fields are not read again

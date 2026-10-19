@@ -107,8 +107,8 @@ def test_the_template_is_seeded_and_builds_a_valid_project(tmp_path, db):
         "Bank - Customer file", config=cfg)       # validates against the schema
     assert created["separation"]["barcode_role"] == "auto"
     assert [t["name"] for t in created["ocr"]["document_types"]] == [
-        "Credit card application", "Personal loan application", "Education loan application",
-        "Home loan application", "Application", "NIC", "Letter"]
+        "Credit card application", "Home loan application", "Education loan application",
+        "Personal loan application", "Application", "NIC", "Letter"]
     assert created["export"]["filename_template"] == "{barcode}_{counter:04d}"
     assert created["export"]["output_path"].endswith("output")
 

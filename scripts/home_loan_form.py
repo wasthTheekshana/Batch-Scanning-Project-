@@ -21,6 +21,10 @@ REF = {"ref_w": 2488, "ref_h": 3507}
 ANCHORS_FILE = Path(__file__).with_name("home_loan_anchors.json")
 JOINT_OFFSET = 1122
 TITLE_PATTERN = r"home\s+loan\s+application"
+# Words only the home loan's second page has. The personal and education loan forms share its "Loan Details" and
+# "Monthly Financial Details" headings, so those cannot identify it.
+LATER_PAGES_PATTERN = (r"purchase\s+of\s+(?:land|house|condominium)|construction\s*/\s*renovation"
+                       r"|housing\s+purposes|property\s+details")
 
 # name, x, y, w, h (px of the reference scan)
 BOXES = [
@@ -71,7 +75,7 @@ def build_anchors(upright_scan, margin: int = 30) -> list[dict]:
 
 
 def document_type() -> dict:
-    doc_type = {"name": "Home loan application", "regex": TITLE_PATTERN,
+    doc_type = {"name": "Home loan application", "regex": TITLE_PATTERN, "continuation_regex": LATER_PAGES_PATTERN,
                 "mode": "zone", "zones": zones(), "enhancement_profile": loan_form._gentle()}
     if anchors():
         doc_type["anchors"] = anchors()
