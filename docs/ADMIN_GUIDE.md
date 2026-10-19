@@ -108,6 +108,13 @@ The corrections use two lists you can improve **without a new release**:
 list is replaced by the nearest listed one (with low confidence, so the Index tab highlights it). Use the
 bank's complete branch list.
 
+### Starting fresh for a demo
+
+Close DOK Scanner, then `python scriptseset_demo.py` (reports only) and `python scriptseset_demo.py --yes` (does it).
+It deletes every scanned document, batch, job, the custody log, the audit log and the files in `output\`, `delivered\`
+and `staging\`, and keeps the projects and users. A copy of the database is left in `reset-backup\`. Adding
+`--index-only "Project name"` also makes that project read only the account number, NIC and branch.
+
 ## 5. Backup and restore (Admin > Backup)
 
 Backups are encrypted archives written to a folder you choose, on a schedule (default every 24 hours)

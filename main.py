@@ -285,6 +285,7 @@ def main() -> int:
         export_fn=export_document,
         audit=audit,
         ocr_fn=ocr_fn,
+        ocr_workers=max(2, min(4, (os.cpu_count() or 4) // 3)),     # pages are read side by side
         working_dir=root / "staging",
         resolver=RuntimeResolver(db))
     pipeline.subscribe(bus.publish_pipeline_event)

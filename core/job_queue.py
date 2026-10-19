@@ -42,6 +42,7 @@ from separation.rule_engine import RuleEngine, RuleSetError
 from separation.splitter import split_documents
 
 log = logging.getLogger(__name__)
+TEXT_LAYER_WORKERS = 4
 
 
 def _starts_document(text: str, ocr_cfg: dict) -> bool:
@@ -591,7 +592,9 @@ class Pipeline(ReissueMixin, CustodyMixin):
         found at ingest and goes out without word boxes."""
         words: list[list] = []
         out_texts: list[str] = []
-        for path, early in zip(images, texts):
+
+        def read(pair):
+            path, early = pair
             page_words, text = [], early
             if self.ocr_fn is not None:
                 try:
@@ -602,8 +605,15 @@ class Pipeline(ReissueMixin, CustodyMixin):
                 except Exception:
                     log.warning("could not read %s again for the PDF text "
                                 "layer", Path(path).name)
-            words.append(page_words)
-            out_texts.append(text)
+            return page_words, text
+
+        # each page is a separate Tesseract process: read the pages of a document side by side
+        from concurrent.futures import ThreadPoolExecutor
+        pairs = list(zip(images, texts))
+        with ThreadPoolExecutor(max_workers=max(1, min(TEXT_LAYER_WORKERS, len(pairs)))) as pool:
+            for page_words, text in pool.map(read, pairs):
+                words.append(page_words)
+                out_texts.append(text)
         return out_texts, words
 
     def _delivery_worker(self) -> None:

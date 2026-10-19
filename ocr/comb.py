@@ -169,6 +169,7 @@ def _variants(cell: np.ndarray):
 CONFIDENT = 0.50       # a Tesseract reading at least this sure is trusted (measured: its
                        # wrong digits were all at 0.45 or below, its right ones 0.54+)
 NETWORK_SURE = 0.60    # the digit network at least this sure of a digit: taken, whatever Tesseract says
+FAST_SURE = 0.97       # both networks at least this sure of the same digit: Tesseract is not asked
 TESS_TRUSTED = 0.90    # Tesseract at least this sure of a digit (typed digits are 0.93-0.96): taken outright
 NETWORK_DOUBT = 0.90   # a network this sure of a different digit makes the winner doubtful
 DISAGREE_MIN = 0.70    # Tesseract this confident of a different digit makes the cell doubtful
@@ -190,6 +191,15 @@ def _read_char(cell: np.ndarray, whitelist: str) -> tuple[str, float]:
     "g" means 9)."""
     variants = list(cell) if isinstance(cell, (list, tuple)) else [cell]
     cell = variants[-1]                              # Tesseract reads the generous cut best
+    if set(whitelist) <= set("0123456789"):
+        # Fast path: Tesseract costs ~0.3 s a box and the two networks a few milliseconds. When both name the
+        # same digit and are nearly certain, ask no one else (about 3 boxes in 4 on handwriting).
+        from ocr import digits as models
+        if models.cnn_available():
+            first, p1 = models.read_digit(variants)
+            second, p2 = models.read_digit_mlp(variants)
+            if first and first == second and first in whitelist and min(p1, p2) >= FAST_SURE:
+                return first, min(p1, p2) * 0.95
     char, conf = _tesseract_char(cell, whitelist)
     if not set(whitelist) <= DIGIT_BOXES:
         return char, conf                            # letters: engine only

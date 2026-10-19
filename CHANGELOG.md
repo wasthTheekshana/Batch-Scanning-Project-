@@ -16,6 +16,12 @@ All notable changes to DOK Scanner. The newest release is first. The version num
   the reading of the ordinary engine and the handwriting model compete with the list, and the best fit wins.
 - **Empty boxes read as empty.** A blank name box no longer produces an invented sentence.
 - **Second pages.** A home or education loan's second page is no longer taken for a personal loan's.
+- **Faster processing.** Boxed digits skip Tesseract when both digit networks agree (86% of boxes on real forms),
+  a document's pages are read for the PDF text layer side by side, and pages are processed by up to 4 workers.
+  Ten pages' fields: 139 s down to 85 s before the parallel stages.
+- **`scripts/reset_demo.py`** starts a demo fresh: deletes documents, batches, jobs, custody events, the audit log
+  and the output, delivered and staging files, keeps projects and users, and can make a project read only account
+  number, NIC and branch (`--index-only`). A copy of the database is kept in `reset-backup\`.
 - **New built-in template "Bank - Demo (account, NIC, branch)":** the same forms, reading only those three fields
   (fewer to confirm and faster). Existing projects keep their old settings: create a new project from the template.
 
