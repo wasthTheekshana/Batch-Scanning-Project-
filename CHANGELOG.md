@@ -9,6 +9,8 @@ All notable changes to DOK Scanner. The newest release is first. The version num
 - **Sign out no longer closes the program.** It returns to the sign-in page (the same one as at start-up), where the
   same or another user can sign in; background work (scanning, processing, delivery) carries on. Closing the window
   still quits, and so does *Cancel and sign out* on the sign-in page. The idle lock's Sign out does the same.
+  Anything the user still had open (viewers, editing or review dialogs) is closed first, so nothing of the old session
+  stays on screen behind the sign-in page.
 
 ### Indexing
 - **Handwriting reader works in the application.** It was switched off whenever the ordinary OCR engine was

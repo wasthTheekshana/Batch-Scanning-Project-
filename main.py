@@ -320,11 +320,28 @@ def main() -> int:
         if not signed_out:
             app.quit()                           # the window was closed: that is quitting
             return
+        close_session_windows(window)
         window.deleteLater()
         QTimer.singleShot(0, sign_in_again)
 
+    def close_session_windows(window) -> None:
+        """Whatever the signed-out user still had open (an image viewer, a review or editing dialog, a message box,
+        even one that is running its own event loop) is closed, so nothing of the old session stays on screen
+        behind the sign-in page."""
+        from PyQt6.QtWidgets import QDialog, QWidget
+        for widget in QApplication.topLevelWidgets():
+            if widget is window or not isinstance(widget, QWidget) or not widget.isVisible():
+                continue
+            if isinstance(widget, QDialog):
+                widget.reject()                  # also ends a dialog's own event loop
+            else:
+                widget.close()
+
     def sign_in_again() -> None:
         """The same sign-in page as at start-up, over an empty desktop: a different user may sign in."""
+        if app.activeModalWidget() is not None:  # a dialog of the old session is still unwinding: try again shortly
+            QTimer.singleShot(100, sign_in_again)
+            return
         dialog = LoginDialog(db)
         if dialog.exec() != dialog.DialogCode.Accepted or not require_password_change(db):
             app.quit()                           # "Cancel and sign out" on the sign-in page quits
