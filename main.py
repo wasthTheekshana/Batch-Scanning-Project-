@@ -295,18 +295,43 @@ def main() -> int:
         sync_worker.start(initial_sync=False, first_result=startup_result)
     start_document_sync(sync_service)
 
-    window = MainWindow(db, pm, bus, pipeline=pipeline, audit=audit,
-                        staging_dir=root / "staging",
-                        backup_service=backup_service,
-                        cddvd_channel=cddvd_channel,
-                        central_state=central_state,
-                        sync_service=sync_service,
-                        sync_worker=sync_worker)
-    window.restore_geometry_or_default()
-    window.show()
-    window.start_idle_lock(app)
-    window.report_refused_batches(pipeline.refused_batches)
-    window.report_unreadable_projects()
+    from PyQt6.QtCore import QTimer
+    app.setQuitOnLastWindowClosed(False)         # Sign out brings back the sign-in page; it must not end the program
+    windows: list = []
+
+    def open_window(first: bool) -> None:
+        window = MainWindow(db, pm, bus, pipeline=pipeline, audit=audit,
+                            staging_dir=root / "staging",
+                            backup_service=backup_service,
+                            cddvd_channel=cddvd_channel,
+                            central_state=central_state,
+                            sync_service=sync_service,
+                            sync_worker=sync_worker)
+        windows[:] = [window]
+        window.closed.connect(lambda signed_out: on_closed(window, signed_out))
+        window.restore_geometry_or_default()
+        window.show()
+        window.start_idle_lock(app)
+        if first:
+            window.report_refused_batches(pipeline.refused_batches)
+            window.report_unreadable_projects()
+
+    def on_closed(window, signed_out: bool) -> None:
+        if not signed_out:
+            app.quit()                           # the window was closed: that is quitting
+            return
+        window.deleteLater()
+        QTimer.singleShot(0, sign_in_again)
+
+    def sign_in_again() -> None:
+        """The same sign-in page as at start-up, over an empty desktop: a different user may sign in."""
+        dialog = LoginDialog(db)
+        if dialog.exec() != dialog.DialogCode.Accepted or not require_password_change(db):
+            app.quit()                           # "Cancel and sign out" on the sign-in page quits
+            return
+        open_window(first=False)
+
+    open_window(first=True)
     hot_folders = HotFolderService(db, pipeline, root / "staging", audit=audit)
     hot_folders.start()
     code = app.exec()

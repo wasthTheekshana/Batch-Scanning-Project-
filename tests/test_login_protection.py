@@ -159,3 +159,30 @@ def test_the_main_window_locks_and_signs_out_after_a_failed_unlock(qtbot, tmp_pa
     assert closed == [] and "session_unlocked" in [r["action"] for r in d.conn.execute("SELECT action FROM audit_log")]
     Session.logout()
     d.close()
+
+
+def test_signing_out_tells_the_program_to_show_the_sign_in_page_but_closing_the_window_quits(qtbot, tmp_path):
+    """The program keeps running after Sign out (main.py shows the sign-in page again); only a plain close quits."""
+    from core.event_bus import EventBus
+    from core.profile_manager import ProfileManager
+    from ui.main_window import MainWindow
+    d = Database(tmp_path / "so.db")
+    pm = ProfileManager(tmp_path / "projects", d)
+    Session.login("admin", "admin", d)
+    first = MainWindow(d, pm, EventBus(), staging_dir=tmp_path / "s")
+    qtbot.addWidget(first)
+    seen = []
+    first.closed.connect(seen.append)
+    first.show()
+    first.sign_out()
+    assert seen == [True] and Session.current_user() is None
+
+    Session.login("admin", "admin", d)
+    second = MainWindow(d, pm, EventBus(), staging_dir=tmp_path / "s")
+    qtbot.addWidget(second)
+    second.closed.connect(seen.append)
+    second.show()
+    second.close()
+    assert seen == [True, False]
+    Session.logout()
+    d.close()

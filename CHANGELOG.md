@@ -5,6 +5,11 @@ All notable changes to DOK Scanner. The newest release is first. The version num
 
 ## [Unreleased]
 
+### Sign-in
+- **Sign out no longer closes the program.** It returns to the sign-in page (the same one as at start-up), where the
+  same or another user can sign in; background work (scanning, processing, delivery) carries on. Closing the window
+  still quits, and so does *Cancel and sign out* on the sign-in page. The idle lock's Sign out does the same.
+
 ### Indexing
 - **Handwriting reader works in the application.** It was switched off whenever the ordinary OCR engine was
   present (which is always), so names and branches were read by Tesseract alone.

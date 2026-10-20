@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from PyQt6.QtCore import QSize, Qt, pyqtSlot
+from PyQt6.QtCore import QSize, Qt, pyqtSlot, pyqtSignal
 from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QMainWindow, QMessageBox,
                              QPushButton, QVBoxLayout, QWidget)
 
@@ -80,11 +80,14 @@ class UserBlock(QWidget):
 
 
 class MainWindow(QMainWindow):
+    closed = pyqtSignal(bool)           # True when it closed because the user signed out (not to quit the program)
+
     def __init__(self, db, profile_manager, bus, pipeline=None, audit=None,
                  staging_dir="staging", backup_service=None,
                  cddvd_channel=None, central_state=None, sync_service=None,
                  sync_worker=None, parent=None):
         super().__init__(parent)
+        self._signed_out = False
         self.db = db
         self.profile_manager = profile_manager
         self.bus = bus
@@ -338,9 +341,14 @@ class MainWindow(QMainWindow):
             from PyQt6.QtCore import QSettings
             QSettings("DOKScanner", "DOKScanner").setValue("window/geometry", self.saveGeometry())
         super().closeEvent(event)
+        if event.isAccepted():
+            self.closed.emit(self._signed_out)
 
     def sign_out(self) -> None:
+        """End the session. The program stays open and shows the sign-in page again (see main.py); closing the
+        window any other way quits the program."""
         Session.logout(self.db)
+        self._signed_out = True
         self.close()
 
     def show_in_index(self, document_id: str) -> None:
