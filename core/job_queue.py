@@ -645,6 +645,7 @@ class Pipeline(ReissueMixin, CustodyMixin):
                 state["counter"] += 1
                 counter = state["counter"]
             ctx = {"batch_id": document["batch_id"],
+                   "document_id": doc_id,
                    "counter": counter,
                    "barcode": document.get("barcode") or "",
                    "date": __import__("datetime").datetime.now().strftime("%Y%m%d"),

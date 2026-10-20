@@ -12,6 +12,12 @@ All notable changes to DOK Scanner. The newest release is first. The version num
 - **They open on all documents.** The drop-down above the list starts on *All documents* (it used to start on the review
   queue / needs indexing), so the user sees everything and picks any document; the queue filters are one choice away.
 
+### Export
+- **A later batch no longer replaces an earlier batch's PDFs.** Files were named `{barcode}_{counter}`; every form of a
+  bundle has the same barcode and the counter restarts at 1 in each batch, so the second batch overwrote the first's
+  files (on a real run, 6 of 10 PDFs). A name already taken now gets the document's short id added. A document with no
+  barcode is named `NO-BARCODE_0001.pdf` instead of `_0001.pdf`.
+
 ### Separation
 - **No more forms glued together.** A QR code that the scanner's threshold had fattened (3 of 10 on a real batch) could
   not be read, and its form joined the one before. A second decoder (zxing-cpp) now reads two of three such codes, and
