@@ -218,7 +218,9 @@ class MainWindow(QMainWindow):
             self.tabs.addTab(self.custody_panel, nav_icon("fa5s.boxes"),
                              "Custody")
 
-        bus.qc_ready.connect(lambda _doc_id: self.qc_panel.refresh())
+        # a method, not a lambda: Qt drops a method's connection when the window is destroyed (after Sign out), while
+        # a lambda would stay connected and touch the deleted panel at the next finished document
+        bus.qc_ready.connect(self._on_qc_ready)
         # Central notices are for every role (the Central tab is admin-only).
         self._central_state = central_state
         self.reenroll_label = QLabel(REENROLL_NOTICE)
@@ -335,6 +337,9 @@ class MainWindow(QMainWindow):
                 self._idle.rearm()
         else:
             self.sign_out()
+
+    def _on_qc_ready(self, _doc_id: str) -> None:
+        self.qc_panel.refresh()
 
     def closeEvent(self, event) -> None:
         if getattr(self, "_remember_geometry", False):

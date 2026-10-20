@@ -186,3 +186,23 @@ def test_signing_out_tells_the_program_to_show_the_sign_in_page_but_closing_the_
     assert seen == [True, False]
     Session.logout()
     d.close()
+
+
+def test_a_closed_window_is_not_touched_by_later_pipeline_events(qtbot, tmp_path):
+    """After Sign out the old window is deleted; a document finishing QC afterwards must not reach its deleted panel
+    (a lambda connected to the bus did, and raised RuntimeError in refresh)."""
+    from PyQt6.QtCore import QCoreApplication, QEvent
+    from core.event_bus import EventBus
+    from core.profile_manager import ProfileManager
+    from ui.main_window import MainWindow
+    d = Database(tmp_path / "del.db")
+    bus = EventBus()
+    Session.login("admin", "admin", d)
+    win = MainWindow(d, ProfileManager(tmp_path / "projects", d), bus, staging_dir=tmp_path / "s")
+    win.show()
+    win.sign_out()
+    win.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    bus.qc_ready.emit("some-document")           # pytest-qt fails the test if a slot raises
+    bus.job_progress.emit({"stage": "ocr", "status": "done"})
+    d.close()
