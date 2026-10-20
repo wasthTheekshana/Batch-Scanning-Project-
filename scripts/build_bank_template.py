@@ -65,11 +65,17 @@ DOCUMENT_TYPES = [
          {"name": "letter_date", "regex": r"(?i)(?<!of )Date\s*[:.]?\s*" + DATE}]},
 ]
 
+# The title page of each form begins a document, so a form whose QR code the scanner spoiled (unreadable) still
+# starts its own document instead of being glued to the one before it.
+for _type in DOCUMENT_TYPES:
+    if _type["name"].endswith("loan application") or _type["name"] == "Credit card application":
+        _type["starts_document"] = True
+
 TEMPLATE = {
     "name": "Bank - Customer file",
     "category": "Banking",
     "config": {
-        "separation": {"strategy": ["barcode"], "barcode_role": "auto",
+        "separation": {"strategy": ["barcode", "document_type"], "barcode_role": "auto",
                        "cover_max_chars": 40, "blank_threshold": 0.02,
                        "drop_blank_pages": True},
         "ocr": {"lang": "eng", "mode": "full_page", "confidence_threshold": 0.75,

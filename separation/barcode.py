@@ -43,19 +43,41 @@ def decode_barcodes(img: np.ndarray) -> list[dict]:
     the coordinates of the orientation that decoded).
     """
     mod = _load_pyzbar()
-    if mod is None:
+    if mod is not None:
+        for rotation in _ROTATIONS:
+            view = img if rotation is None else cv2.rotate(img, rotation)
+            results = [{
+                "type": sym.type,
+                "value": sym.data.decode("utf-8", errors="replace"),
+                "rect": (sym.rect.left, sym.rect.top, sym.rect.width,
+                         sym.rect.height),
+            } for sym in mod.decode(view)]
+            if results:
+                return results
+    return _decode_with_zxing(img)
+
+
+def _decode_with_zxing(img: np.ndarray) -> list[dict]:
+    """A second, more forgiving decoder, tried when the first finds nothing. A scanner's black-and-white threshold
+    can fatten a printed QR code's modules until zbar gives up (on real bank forms 2 of 3 such codes were still
+    read by this one). It finds the code on a rotated page too."""
+    try:
+        import zxingcpp
+    except Exception:
         return []
-    for rotation in _ROTATIONS:
-        view = img if rotation is None else cv2.rotate(img, rotation)
-        results = [{
-            "type": sym.type,
-            "value": sym.data.decode("utf-8", errors="replace"),
-            "rect": (sym.rect.left, sym.rect.top, sym.rect.width,
-                     sym.rect.height),
-        } for sym in mod.decode(view)]
-        if results:
-            return results
-    return []
+    try:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
+        found = zxingcpp.read_barcodes(gray, try_rotate=True, try_downscale=True)
+    except Exception as e:
+        log.warning("second barcode decoder failed (%s)", type(e).__name__)
+        return []
+    out = []
+    for b in found:
+        pos = b.position
+        xs, ys = [pos.top_left.x, pos.bottom_right.x], [pos.top_left.y, pos.bottom_right.y]
+        out.append({"type": _symbology(b.format.name), "value": b.text,
+                    "rect": (min(xs), min(ys), abs(xs[1] - xs[0]), abs(ys[1] - ys[0]))})
+    return out
 
 
 def _symbology(name: str) -> str:

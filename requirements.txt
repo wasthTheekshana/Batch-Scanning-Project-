@@ -7,6 +7,7 @@ Pillow==12.3.0
 numpy==2.4.6
 pytesseract==0.3.13
 pyzbar==0.1.9
+zxing-cpp==3.1.1           # second barcode decoder, for QR codes the scanner fattened (separation/barcode.py)
 ImageHash==4.3.2
 img2pdf==0.6.3
 PyMuPDF==1.28.0

@@ -63,6 +63,9 @@ def index_only(root: Path, db, name: str) -> str:
     if cfg is None:
         raise SystemExit(f"project {name!r} cannot be read")
     demo = json.loads(DEMO_TEMPLATE.read_text(encoding="utf-8"))["config"]["ocr"]
+    template = json.loads(DEMO_TEMPLATE.read_text(encoding="utf-8"))["config"]
+    # a form's title page also begins a document: a QR code the scanner spoiled no longer glues two forms together
+    cfg["separation"] = {**cfg.get("separation", {}), "strategy": template["separation"]["strategy"]}
     keep = {k: v for k, v in cfg.get("ocr", {}).items() if k not in ("document_types", "zones")}
     cfg["ocr"] = {**keep, "zones": [], "document_types": demo["document_types"],
                   "mode": demo.get("mode", keep.get("mode", "zone"))}
@@ -76,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--yes", action="store_true", help="really do it (without this, only report)")
     ap.add_argument("--data-dir", type=Path, default=DEFAULT_ROOT, help="the DOKScanner data folder")
     ap.add_argument("--index-only", metavar="PROJECT", help="make this project read only account number, NIC, branch")
+    ap.add_argument("--no-wipe", action="store_true", help="with --index-only: change the project only, delete nothing")
     args = ap.parse_args(argv)
     root: Path = args.data_dir
     if not (root / "dokscanner.db").exists():
@@ -85,6 +89,16 @@ def main(argv: list[str] | None = None) -> int:
         print("DOK Scanner is running: close it first (it holds the database open), then run this again.")
         return 3
     db = open_db(root)
+    if args.no_wipe:
+        if not args.index_only:
+            print("--no-wipe is for use with --index-only")
+            return 2
+        if args.yes and app_running() and root == DEFAULT_ROOT:
+            print("DOK Scanner is running: close it first, then run this again.")
+            return 3
+        print(index_only(root, db, args.index_only) if args.yes else "Would update the project. Add --yes to do it.")
+        db.close()
+        return 0
     counts = {t: db.query(f"SELECT COUNT(*) FROM {t}")[0][0] for t in WIPE_TABLES}
     folders = {f: folder_stats(root / f) for f in WIPE_FOLDERS}
     print("Would remove:" if not args.yes else "Removing:")

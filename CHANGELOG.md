@@ -5,6 +5,13 @@ All notable changes to DOK Scanner. The newest release is first. The version num
 
 ## [Unreleased]
 
+### Separation
+- **No more forms glued together.** A QR code that the scanner's threshold had fattened (3 of 10 on a real batch) could
+  not be read, and its form joined the one before. A second decoder (zxing-cpp) now reads two of three such codes, and
+  the bank templates also start a new document at each form's title page, so all 10 forms of that batch split correctly.
+  Existing projects keep their old setting: `python scriptseset_demo.py --index-only "Project" --no-wipe --yes` applies it
+  (and the three-field index) to a project without deleting anything.
+
 ### Sign-in
 - **Sign out no longer closes the program.** It returns to the sign-in page (the same one as at start-up), where the
   same or another user can sign in; background work (scanning, processing, delivery) carries on. Closing the window

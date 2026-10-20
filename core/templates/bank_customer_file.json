@@ -4,7 +4,8 @@
   "config": {
     "separation": {
       "strategy": [
-        "barcode"
+        "barcode",
+        "document_type"
       ],
       "barcode_role": "auto",
       "cover_max_chars": 40,
@@ -732,7 +733,8 @@
               "x": 1119.0,
               "y": 2333.5
             }
-          ]
+          ],
+          "starts_document": true
         },
         {
           "name": "Home loan application",
@@ -1364,7 +1366,8 @@
               "x": 1210.0,
               "y": 3358.5
             }
-          ]
+          ],
+          "starts_document": true
         },
         {
           "name": "Education loan application",
@@ -2051,7 +2054,8 @@
               "x": 447.9,
               "y": 119.5
             }
-          ]
+          ],
+          "starts_document": true
         },
         {
           "name": "Personal loan application",
@@ -2681,7 +2685,8 @@
               "x": 1207.0,
               "y": 3219.0
             }
-          ]
+          ],
+          "starts_document": true
         },
         {
           "name": "Application",

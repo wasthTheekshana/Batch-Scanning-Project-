@@ -43,7 +43,7 @@ a = Analysis(
     # reportlab loads its barcode symbologies by name at run time, which
     # PyInstaller cannot see: without these, "Print cover sheets" fails with
     # "No module named reportlab.graphics.barcode.code93" in the built exe.
-    hiddenimports=["onnxruntime", "tokenizers", "pytesseract", "pyzbar.pyzbar", "imagehash", "qrcode",
+    hiddenimports=["onnxruntime", "tokenizers", "pytesseract", "pyzbar.pyzbar", "zxingcpp", "imagehash", "qrcode",
                   "qrcode.image.pil", "pythoncom", "pywintypes",
                   "win32gui", "win32con", "twain"]
                  + collect_submodules("reportlab.graphics.barcode"),

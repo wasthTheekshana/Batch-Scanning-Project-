@@ -78,7 +78,8 @@ def test_the_templates_form_zones_are_the_ones_tested_here():
     template = json.loads((ROOT / "core" / "templates"
                            / "bank_customer_file.json").read_text(encoding="utf-8"))
     types = {t["name"]: t for t in template["config"]["ocr"]["document_types"]}
-    assert types["Education loan application"] == loan_form.document_type()
+    shipped = {k: v for k, v in types["Education loan application"].items() if k != "starts_document"}
+    assert shipped == loan_form.document_type()          # (the template also marks it as beginning a document)
 
 
 def test_only_the_first_page_carries_the_form_title():
