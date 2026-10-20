@@ -33,8 +33,10 @@ class QCReviewPanel(QWidget):
         left_layout = QVBoxLayout(left)
         left_layout.addWidget(QLabel("Documents"))
         self.filter_combo = QComboBox()
-        self.filter_combo.addItem("Review queue (WARN / FAIL)", "pending")
+        # All documents first: the list opens showing everything and the user picks what to open; the review queue
+        # is one click away in the same drop-down.
         self.filter_combo.addItem("All documents", "all")
+        self.filter_combo.addItem("Review queue (WARN / FAIL)", "pending")
         self.filter_combo.currentIndexChanged.connect(lambda _: self.refresh())
         left_layout.addWidget(self.filter_combo)
         self.queue = QListWidget()

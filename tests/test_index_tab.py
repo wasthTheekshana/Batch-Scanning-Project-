@@ -44,9 +44,10 @@ def test_needs_indexing_filter(qtbot, env):
     db, audit, _tmp = env
     editor = IndexEditor(db, ZONES, audit, ADMIN)
     qtbot.addWidget(editor)
-    assert editor.doc_list.count() == 1          # only the flagged doc
-    editor.filter_combo.setCurrentIndex(1)       # All documents
+    assert editor.filter_combo.currentData() == "all"      # it opens on every document: the user picks
     assert editor.doc_list.count() == 2
+    editor.filter_combo.setCurrentIndex(editor.filter_combo.findData("needs"))
+    assert editor.doc_list.count() == 1                    # only the flagged doc
 
 
 def test_select_loads_fields_and_image(qtbot, env):
@@ -73,6 +74,7 @@ def test_save_updates_fields_clears_flag_and_audits(qtbot, env):
         "SELECT * FROM audit_log WHERE action='index_edit'").fetchone()
     assert row is not None
     # queue no longer lists it under "needs indexing"
+    editor.filter_combo.setCurrentIndex(editor.filter_combo.findData("needs"))
     assert editor.doc_list.count() == 0
 
 
@@ -194,7 +196,7 @@ def test_auto_extract_prefers_original_geometry(qtbot, env, monkeypatch):
     monkeypatch.setattr("ocr.zone_extractor.extract_fields", fake_extract)
     editor = IndexEditor(db, ZONES, audit, ADMIN)
     qtbot.addWidget(editor)
-    editor.filter_combo.setCurrentIndex(1)
+    editor.filter_combo.setCurrentIndex(editor.filter_combo.findData("all"))
     for i in range(editor.doc_list.count()):
         if "d1"[:8] in editor.doc_list.item(i).text():
             editor.doc_list.setCurrentRow(i)
@@ -254,7 +256,7 @@ def test_auto_extract_searches_all_pages(qtbot, env, monkeypatch):
     monkeypatch.setattr("ocr.zone_extractor.extract_fields", fake_extract)
     editor = IndexEditor(db, ZONES, audit, ADMIN)
     qtbot.addWidget(editor)
-    editor.filter_combo.setCurrentIndex(1)
+    editor.filter_combo.setCurrentIndex(editor.filter_combo.findData("all"))
     for i in range(editor.doc_list.count()):
         if "d1" in editor.doc_list.item(i).text():
             editor.doc_list.setCurrentRow(i)

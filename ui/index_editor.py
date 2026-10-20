@@ -54,8 +54,8 @@ class IndexEditor(QWidget):
         ll = QVBoxLayout(left)
         ll.addWidget(QLabel("Documents"))
         self.filter_combo = QComboBox()
+        self.filter_combo.addItem("All documents", "all")          # the default: everything, the user picks
         self.filter_combo.addItem("Needs indexing", "needs")
-        self.filter_combo.addItem("All documents", "all")
         self.filter_combo.addItem("Fields to check (low confidence)", "lowconf")
         self.filter_combo.currentIndexChanged.connect(lambda _: self.refresh())
         ll.addWidget(self.filter_combo)

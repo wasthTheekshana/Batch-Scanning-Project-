@@ -92,6 +92,7 @@ def test_qc_review_lists_pending_documents(qtbot, db):
     db.insert_document("d1", "b1", "p1", validation_status="pending_qc",
                        qc_score=55, page_range="1-2")
     panel = QCReviewPanel(db, None, user)
+    panel.filter_combo.setCurrentIndex(panel.filter_combo.findData("pending"))   # the review queue
     qtbot.addWidget(panel)
     panel.refresh()
     assert panel.queue.count() == 1
@@ -117,6 +118,7 @@ def test_qc_detail_does_not_inflate_minimum_width(qtbot, db):
     db.insert_document("d1", "b1", "p1", validation_status="pending_qc",
                        qc_score=70, page_range="1-1", qc_detail=long_detail)
     panel = QCReviewPanel(db, None, user)
+    panel.filter_combo.setCurrentIndex(panel.filter_combo.findData("pending"))   # the review queue
     qtbot.addWidget(panel)
     panel.refresh()
     panel.queue.setCurrentRow(0)
@@ -129,6 +131,7 @@ def test_qc_detail_does_not_inflate_minimum_width(qtbot, db):
 def test_qc_buttons_disabled_for_viewer_role(qtbot, db):
     user = login_as(db, "viewer")
     panel = QCReviewPanel(db, None, user)
+    panel.filter_combo.setCurrentIndex(panel.filter_combo.findData("pending"))   # the review queue
     qtbot.addWidget(panel)
     assert not panel.accept_btn.isEnabled()
 

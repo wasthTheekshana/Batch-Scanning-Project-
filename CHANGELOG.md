@@ -5,6 +5,10 @@ All notable changes to DOK Scanner. The newest release is first. The version num
 
 ## [Unreleased]
 
+### Review and Index tabs
+- **They open on all documents.** The drop-down above the list starts on *All documents* (it used to start on the review
+  queue / needs indexing), so the user sees everything and picks any document; the queue filters are one choice away.
+
 ### Separation
 - **No more forms glued together.** A QR code that the scanner's threshold had fattened (3 of 10 on a real batch) could
   not be read, and its form joined the one before. A second decoder (zxing-cpp) now reads two of three such codes, and

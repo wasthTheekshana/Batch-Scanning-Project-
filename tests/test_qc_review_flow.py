@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+from PyQt6.QtCore import Qt
 
 from core.job_queue import Pipeline
 from core.rbac import User
@@ -49,12 +50,15 @@ def test_panel_populates_on_construction(qtbot, held_doc_env):
     db, _profile, _tmp = held_doc_env
     panel = QCReviewPanel(db, None, QC_OFFICER)   # fresh session, no events
     qtbot.addWidget(panel)
-    assert panel.queue.count() == 1
+    assert panel.queue.count() == len(db.list_documents()) > 0           # every document, to pick from
+    panel.filter_combo.setCurrentIndex(panel.filter_combo.findData("pending"))
+    assert panel.queue.count() == 1                                      # the held one is in the review queue
 
 
 def test_panel_shows_before_after_images(qtbot, held_doc_env):
     db, _profile, _tmp = held_doc_env
     panel = QCReviewPanel(db, None, QC_OFFICER)
+    panel.filter_combo.setCurrentIndex(panel.filter_combo.findData("pending"))   # the review queue
     qtbot.addWidget(panel)
     panel.queue.setCurrentRow(0)
     assert not panel.before_view._item.pixmap().isNull()
@@ -70,6 +74,7 @@ def test_accept_exports_and_delivers(qtbot, held_doc_env):
     pipeline.start()
     try:
         panel = QCReviewPanel(db, None, QC_OFFICER, pipeline=pipeline)
+        panel.filter_combo.setCurrentIndex(panel.filter_combo.findData("pending"))   # the review queue
         qtbot.addWidget(panel)
         panel.queue.setCurrentRow(0)
         doc_id = panel.current_document_id()
@@ -91,9 +96,10 @@ def test_all_documents_filter_shows_passed_docs(qtbot, held_doc_env):
     WARN/FAIL review queue."""
     db, _profile, _tmp = held_doc_env
     panel = QCReviewPanel(db, None, QC_OFFICER)
+    panel.filter_combo.setCurrentIndex(panel.filter_combo.findData("pending"))   # the review queue
     qtbot.addWidget(panel)
-    assert panel.queue.count() == 1          # default: review queue only
-    panel.filter_combo.setCurrentIndex(1)    # All documents
+    assert panel.queue.count() == 1          # the review queue holds just the held document
+    panel.filter_combo.setCurrentIndex(panel.filter_combo.findData("all"))
     assert panel.queue.count() == 2          # passed doc now visible too
     panel.queue.setCurrentRow(0)
     assert panel.editable_pages(panel.current_document_id())
@@ -102,6 +108,7 @@ def test_all_documents_filter_shows_passed_docs(qtbot, held_doc_env):
 def test_reject_does_not_export(qtbot, held_doc_env):
     db, profile, tmp_path = held_doc_env
     panel = QCReviewPanel(db, None, QC_OFFICER)
+    panel.filter_combo.setCurrentIndex(panel.filter_combo.findData("pending"))   # the review queue
     qtbot.addWidget(panel)
     panel.queue.setCurrentRow(0)
     doc_id = panel.current_document_id()
@@ -136,6 +143,7 @@ def test_accept_for_an_unavailable_project_changes_nothing_and_says_why(
         db.conn.execute("UPDATE projects SET config_json='{oops'")
         db.conn.commit()
         panel = QCReviewPanel(db, audit, QC_OFFICER, pipeline=pipeline)
+        panel.filter_combo.setCurrentIndex(panel.filter_combo.findData("pending"))   # the review queue
         qtbot.addWidget(panel)
         panel.queue.setCurrentRow(0)
         doc_id = panel.current_document_id()
@@ -159,6 +167,7 @@ def test_accept_with_missing_page_images_keeps_the_old_message_and_behaviour(
         for info in json.loads(doc["qc_detail"])["pages"].values():
             Path(info["working_path"]).unlink()
         panel = QCReviewPanel(db, audit, QC_OFFICER, pipeline=pipeline)
+        panel.filter_combo.setCurrentIndex(panel.filter_combo.findData("pending"))   # the review queue
         qtbot.addWidget(panel)
         panel.queue.setCurrentRow(0)
         doc_id = panel.current_document_id()
@@ -168,3 +177,17 @@ def test_accept_with_missing_page_images_keeps_the_old_message_and_behaviour(
         assert "qc_review" in _audit_actions(db)
     finally:
         audit.close()
+
+
+def test_the_panel_opens_on_all_documents_and_the_review_queue_is_one_choice_away(qtbot, held_doc_env):
+    """The drop-down starts on every document (approved ones too), so the user picks whichever to open."""
+    db, _profile, _tmp = held_doc_env
+    db.insert_document("approved-doc", "batch-1", "p1", page_range="9-9", validation_status="auto_approved")
+    panel = QCReviewPanel(db, None, QC_OFFICER)
+    qtbot.addWidget(panel)
+    assert panel.filter_combo.currentData() == "all"
+    shown = {panel.queue.item(i).data(Qt.ItemDataRole.UserRole) for i in range(panel.queue.count())}
+    assert "approved-doc" in shown and len(shown) == len(db.list_documents())
+    panel.filter_combo.setCurrentIndex(panel.filter_combo.findData("pending"))
+    queue = {panel.queue.item(i).data(Qt.ItemDataRole.UserRole) for i in range(panel.queue.count())}
+    assert "approved-doc" not in queue and queue
