@@ -79,6 +79,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--yes", action="store_true", help="really do it (without this, only report)")
     ap.add_argument("--data-dir", type=Path, default=DEFAULT_ROOT, help="the DOKScanner data folder")
     ap.add_argument("--index-only", metavar="PROJECT", help="make this project read only account number, NIC, branch")
+    ap.add_argument("--keep-bundles", metavar="PREFIX",
+                    help="also delete every custody bundle whose label does not start with PREFIX (case ignored), "
+                         "e.g. --keep-bundles dok/com")
     ap.add_argument("--no-wipe", action="store_true", help="with --index-only: change the project only, delete nothing")
     args = ap.parse_args(argv)
     root: Path = args.data_dir
@@ -106,6 +109,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {n:6d} rows  {t}")
     for f, (n, size) in folders.items():
         print(f"  {n:6d} files {f}\\  ({size / 1e6:.0f} MB)")
+    if args.keep_bundles:
+        like = args.keep_bundles.lower() + "%"
+        gone = db.query("SELECT label FROM bundles WHERE lower(label) NOT LIKE ?", (like,))
+        kept = db.query("SELECT label FROM bundles WHERE lower(label) LIKE ?", (like,))
+        print(f"  {len(gone):6d} custody bundles not starting with {args.keep_bundles!r}: " + ", ".join(r["label"] for r in gone))
+        print(f"  {len(kept):6d} custody bundles kept: " + ", ".join(r["label"] for r in kept))
     print("Keeping: projects, users, templates, central registration, backups, keys, logs")
     if not args.yes:
         print("Nothing changed. Add --yes to do it.")
@@ -119,6 +128,8 @@ def main(argv: list[str] | None = None) -> int:
     with db._lock, db.conn:
         for t in WIPE_TABLES:
             db.conn.execute(f"DELETE FROM {t}")
+        if args.keep_bundles:
+            db.conn.execute("DELETE FROM bundles WHERE lower(label) NOT LIKE ?", (args.keep_bundles.lower() + "%",))
         db.conn.execute("UPDATE bundles SET status = 'received'")
     for f in WIPE_FOLDERS:
         folder = root / f
