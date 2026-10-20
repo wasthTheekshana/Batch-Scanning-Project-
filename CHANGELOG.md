@@ -6,6 +6,9 @@ All notable changes to DOK Scanner. The newest release is first. The version num
 ## [Unreleased]
 
 ### Review and Index tabs
+- **Every page can be seen.** A document of several pages showed only its first page. Both tabs now have *Previous page* /
+  *Next page* and "Page 2 of 4" under the image (hidden for a one-page document); the QC review pages the original and
+  the cleaned-up image together.
 - **They open on all documents.** The drop-down above the list starts on *All documents* (it used to start on the review
   queue / needs indexing), so the user sees everything and picks any document; the queue filters are one choice away.
 

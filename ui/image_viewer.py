@@ -6,8 +6,8 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (QGraphicsPixmapItem, QGraphicsScene,
-                             QGraphicsView, QHBoxLayout, QListWidget,
-                             QListWidgetItem, QWidget)
+                             QGraphicsView, QHBoxLayout, QLabel, QListWidget,
+                             QListWidgetItem, QPushButton, QWidget)
 
 
 class ImageView(QGraphicsView):
@@ -32,6 +32,10 @@ class ImageView(QGraphicsView):
         self.fit()
         return True
 
+    def clear_image(self) -> None:
+        """Show nothing (a page whose image is gone), not the previous page's."""
+        self._item.setPixmap(QPixmap())
+
     def fit(self) -> None:
         if not self._item.pixmap().isNull():
             self.fitInView(self._item, Qt.AspectRatioMode.KeepAspectRatio)
@@ -39,6 +43,60 @@ class ImageView(QGraphicsView):
     def wheelEvent(self, event) -> None:
         factor = 1.2 if event.angleDelta().y() > 0 else 1 / 1.2
         self.scale(factor, factor)
+
+
+def document_pages(doc) -> list[dict]:
+    """The pages of a document, in order: [{"no", "original", "working"}], from the paths the QC step recorded in
+    qc_detail. Pages with no recorded image are left out."""
+    import json
+    try:
+        pages = json.loads(doc["qc_detail"] or "{}").get("pages", {})
+    except (TypeError, ValueError):
+        return []
+    out = []
+    for no in sorted(pages, key=lambda k: int(k) if str(k).isdigit() else 0):
+        info = pages[no]
+        if isinstance(info, dict) and (info.get("original_path") or info.get("working_path")):
+            out.append({"no": str(no), "original": info.get("original_path"), "working": info.get("working_path")})
+    return out
+
+
+class PageNav(QWidget):
+    """Previous / Next and "Page 2 of 4", for a document that has more than one page. Hidden for a single page."""
+
+    changed = pyqtSignal(int)          # the index (0-based) of the page now wanted
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.prev_btn = QPushButton("◀ Previous page")
+        self.next_btn = QPushButton("Next page ▶")
+        self.label = QLabel("")
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        row.addWidget(self.prev_btn)
+        row.addWidget(self.label, stretch=1)
+        row.addWidget(self.next_btn)
+        self.prev_btn.clicked.connect(lambda: self.go(self.index - 1))
+        self.next_btn.clicked.connect(lambda: self.go(self.index + 1))
+        self.count, self.index = 0, 0
+        self.set_count(0)
+
+    def set_count(self, count: int, index: int = 0) -> None:
+        self.count, self.index = count, max(0, min(index, max(count - 1, 0)))
+        self._refresh()
+
+    def go(self, index: int) -> None:
+        if 0 <= index < self.count and index != self.index:
+            self.index = index
+            self._refresh()
+            self.changed.emit(index)
+
+    def _refresh(self) -> None:
+        self.setVisible(self.count > 1)
+        self.label.setText(f"Page {self.index + 1} of {self.count}" if self.count else "")
+        self.prev_btn.setEnabled(self.index > 0)
+        self.next_btn.setEnabled(self.index < self.count - 1)
 
 
 class ImageViewer(QWidget):

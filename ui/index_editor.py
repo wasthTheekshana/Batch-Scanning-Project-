@@ -113,7 +113,16 @@ class IndexEditor(QWidget):
         buttons.addWidget(self.extract_btn)
         buttons.addWidget(self.save_button)
         side_layout.addLayout(buttons)
-        splitter.addWidget(self.page_view)
+        from ui.image_viewer import PageNav
+        self._pages: list[dict] = []
+        self.page_nav = PageNav()
+        self.page_nav.changed.connect(self._show_page)
+        page_col = QWidget()
+        page_layout = QVBoxLayout(page_col)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.addWidget(self.page_view, stretch=1)
+        page_layout.addWidget(self.page_nav)
+        splitter.addWidget(page_col)
         splitter.addWidget(side)
         splitter.setChildrenCollapsible(False)
         splitter.setStretchFactor(0, 0)
@@ -299,9 +308,21 @@ class IndexEditor(QWidget):
         for name, edit in self._inputs.items():
             edit.setText(str(fields.get(name, "")))
             self._check_field(name)
-        image = self._first_page_image(doc)
-        if image:
-            self.page_view.set_image(image)
+        from ui.image_viewer import document_pages
+        self._pages = document_pages(doc)
+        self.page_nav.set_count(len(self._pages))
+        self._show_page(0)
+
+    def _show_page(self, index: int) -> None:
+        """One page of the open document (the cleaned-up image, else the original), to look at while indexing."""
+        if not 0 <= index < len(self._pages):
+            self.page_view.clear_image()
+            return
+        page = self._pages[index]
+        for key in ("working", "original"):
+            if page[key] and Path(page[key]).exists() and self.page_view.set_image(page[key]):
+                return
+        self.page_view.clear_image()
 
     # -- page types ------------------------------------------------------------
     def _load_page_types(self, doc) -> None:

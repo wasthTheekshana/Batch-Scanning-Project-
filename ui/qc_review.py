@@ -60,6 +60,11 @@ class QCReviewPanel(QWidget):
             col.addWidget(view)
             views.addLayout(col)
         right_layout.addLayout(views)
+        from ui.image_viewer import PageNav
+        self._pages: list[dict] = []
+        self.page_nav = PageNav()
+        self.page_nav.changed.connect(self._show_page)
+        right_layout.addWidget(self.page_nav)
 
         self.score_label = QLabel("")
         # word wrap keeps long QC detail from inflating the window's
@@ -130,11 +135,21 @@ class QCReviewPanel(QWidget):
         if doc is None:
             return
         self.score_label.setText(self._summarise_qc(doc))
-        original, working = self._first_page_paths(doc)
-        if original:
-            self.before_view.set_image(original)
-        if working:
-            self.after_view.set_image(working)
+        from ui.image_viewer import document_pages
+        self._pages = document_pages(doc)
+        self.page_nav.set_count(len(self._pages))
+        self._show_page(0)
+
+    def _show_page(self, index: int) -> None:
+        """The original and the cleaned-up image of one page of the open document."""
+        if not 0 <= index < len(self._pages):
+            self.before_view.clear_image()
+            self.after_view.clear_image()
+            return
+        page = self._pages[index]
+        for view, path in ((self.before_view, page["original"]), (self.after_view, page["working"])):
+            if not (path and view.set_image(path)):
+                view.clear_image()
 
     @staticmethod
     def _first_page_paths(doc) -> tuple[str | None, str | None]:
