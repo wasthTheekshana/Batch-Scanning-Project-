@@ -106,7 +106,7 @@ def test_saved_project_gets_a_new_runtime(db, resolver, tmp_path):
 def test_two_saves_with_identical_timestamps_still_invalidate(db, resolver, tmp_path, monkeypatch):
     cfg = put(db, tmp_path)
     first = resolver.resolve("proj-a")
-    monkeypatch.setattr("data.db._now", lambda: "2026-10-12T00:00:00.000+00:00")
+    monkeypatch.setattr("data.timeutil._now", lambda: "2026-10-12T00:00:00.000+00:00")
     cfg2 = copy.deepcopy(cfg)
     cfg2["ocr"]["lang"] = "deu"
     db.update_project("proj-a", "Alpha", cfg2, version=2)
