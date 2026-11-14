@@ -137,8 +137,8 @@ def scan(simulate: bool = False) -> int:
     def scenario(app, win):
         import uuid
 
-        from core.profile_manager import ProfileManager
-        from core.template_manager import TemplateManager
+        from projects.profile_manager import ProfileManager
+        from projects.template_manager import TemplateManager
         from scanning.file_import import import_files
 
         root = Path(os.environ["LOCALAPPDATA"]) / "DOKScanner"

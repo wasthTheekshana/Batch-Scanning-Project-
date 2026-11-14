@@ -5,6 +5,14 @@ All notable changes to DOK Scanner. The newest release is first. The version num
 
 ## [Unreleased]
 
+### Structure (no change in behaviour)
+- **The `core` package is split by purpose:** `pipeline/` (job queue, stages, hot folder, split/merge), `projects/` (settings,
+  schema, templates), `security/` (users and roles), `search/`, `sync/` (central connection) and `shared/` (safe paths, data
+  classes, crash guard); the event bus lives with the screens in `ui/`. Imports, patch targets and file paths in code,
+  tests, build files and docs were updated; the central server's Docker image copies `projects/` instead of `core/`.
+- **`scripts/check_layers.py`** (also a test and a CI step) fails when a package imports one it must not, so the layering
+  described in the README cannot drift back.
+
 ### Review and Index tabs
 - **Every page can be seen.** A document of several pages showed only its first page. Both tabs now have *Previous page* /
   *Next page* and "Page 2 of 4" under the image (hidden for a one-page document); the QC review pages the original and

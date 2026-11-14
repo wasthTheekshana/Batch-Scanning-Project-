@@ -36,8 +36,8 @@ def test_every_file_the_dockerfile_copies_exists():
 
 def test_the_dockerfile_copies_no_part_of_the_desktop_application():
     sources = [s for s, _ in copied_by_dockerfile()]
-    assert all(s.startswith(("central", "core/")) for s in sources), sources
-    assert set(sources) >= {"core/profile_manager.py", "core/project_schema.json", "core/__init__.py"}
+    assert all(s.startswith(("central", "projects/")) for s in sources), sources
+    assert set(sources) >= {"projects/profile_manager.py", "projects/project_schema.json", "projects/__init__.py"}
 
 
 def _image_tree(tmp_path):
@@ -81,7 +81,7 @@ def test_the_service_starts_with_only_the_files_the_dockerfile_copies(tmp_path):
 
 def test_that_check_really_notices_a_missing_file(tmp_path):
     _image_tree(tmp_path)
-    (tmp_path / "core" / "profile_manager.py").unlink()
+    (tmp_path / "projects" / "profile_manager.py").unlink()
     out = _start_from(tmp_path)
     assert out.returncode != 0 and "profile_manager" in out.stderr
 
@@ -190,8 +190,8 @@ def test_the_build_context_is_limited_to_what_the_dockerfile_copies():
              if l.strip() and not l.strip().startswith("#")]
     assert lines[0] == "*"                                   # everything excluded first
     allowed = {l[1:] for l in lines if l.startswith("!")}
-    assert allowed == {"central", "core/__init__.py", "core/profile_manager.py",
-                       "core/project_schema.json"}
+    assert allowed == {"central", "projects/__init__.py", "projects/profile_manager.py",
+                       "projects/project_schema.json"}
     for source, _dest in copied_by_dockerfile():
         top = source.rstrip("/")
         assert top in allowed or top.split("/")[0] in allowed, source   # nothing the image needs is excluded

@@ -3,7 +3,7 @@ import sys
 
 import pytest
 
-from core.safe_paths import is_safe_relative_subpath, safe_join
+from shared.safe_paths import is_safe_relative_subpath, safe_join
 
 SAFE = ["", "Routed", "Exceptions/Missing", "ClientA/Invoices", "ok/sub",
         "a\\b", "console", "com10", "my.folder", "a b"]

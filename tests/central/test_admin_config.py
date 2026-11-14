@@ -304,11 +304,11 @@ def test_template_concurrent_both_races_returns_409(admin_client, monkeypatch):
 
 
 # R2: Built-in template credential guard — parametrised
-_TEMPLATES = sorted((Path(__file__).resolve().parents[2] / "core" / "templates").glob("*.json"))
+_TEMPLATES = sorted((Path(__file__).resolve().parents[2] / "projects" / "templates").glob("*.json"))
 
 
 def test_builtin_templates_exist():
-    """Verify core/templates/ has templates to test."""
+    """Verify projects/templates/ has templates to test."""
     assert len(_TEMPLATES) >= 5, f"Expected >=5 templates, found {len(_TEMPLATES)}"
 
 

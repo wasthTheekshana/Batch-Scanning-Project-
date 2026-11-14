@@ -4,8 +4,8 @@ import json
 import cv2
 import pytest
 
-from core.hot_folder import OPERATOR, HotFolderService
-from core.project_runtime import ProjectUnavailable
+from pipeline.hot_folder import OPERATOR, HotFolderService
+from pipeline.project_runtime import ProjectUnavailable
 from data.db import Database
 from tests.conftest import make_text_page
 
@@ -123,15 +123,15 @@ def test_subfolders_are_not_watched(env):
 
 
 def test_the_schema_accepts_the_setting():
-    schema = json.loads(open("core/project_schema.json", encoding="utf-8").read())
+    schema = json.loads(open("projects/project_schema.json", encoding="utf-8").read())
     props = schema["properties"]["scanner"]["properties"]["hot_folder"]["properties"]
     assert set(props) == {"enabled", "path"}
 
 
 # -- the Designer ---------------------------------------------------------------------
 def test_the_designer_saves_and_reloads_the_hot_folder_setting(qtbot, tmp_path):
-    from core.profile_manager import ProfileManager
-    from core.rbac import User
+    from projects.profile_manager import ProfileManager
+    from security.rbac import User
     from ui.workflow_designer import WorkflowDesigner
     db = Database(tmp_path / "d.db")
     pm = ProfileManager(tmp_path / "projects", db)
@@ -192,7 +192,7 @@ def test_a_symlink_in_the_folder_is_never_read(env, tmp_path):
 
 
 def test_an_oversize_file_is_refused_unread(env, monkeypatch):
-    import core.hot_folder as hf
+    import pipeline.hot_folder as hf
     svc, pipe, _a, watch, _db = env
     monkeypatch.setattr(hf, "MAX_FILE_BYTES", 10)
     assert svc.handle("p1", drop(watch)) is None

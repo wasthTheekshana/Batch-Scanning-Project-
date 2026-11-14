@@ -5,7 +5,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QDialog, QFrame, QLabel, QLineEdit,
                              QPushButton, QVBoxLayout)
 
-from core.rbac import (DEFAULT_PASSWORD, MIN_PASSWORD_LENGTH, AuthError, Session,
+from security.rbac import (DEFAULT_PASSWORD, MIN_PASSWORD_LENGTH, AuthError, Session,
                        change_password, validate_new_password)
 from ui.theme import mark
 

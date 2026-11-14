@@ -4,9 +4,9 @@ its right-hand buttons out of reach."""
 import pytest
 from PyQt6.QtWidgets import QWidget
 
-from core.event_bus import EventBus
-from core.profile_manager import ProfileManager
-from core.rbac import Session
+from ui.event_bus import EventBus
+from projects.profile_manager import ProfileManager
+from security.rbac import Session
 from data.db import Database
 from ui.cover_sheet_dialog import CoverSheetDialog
 from ui.document_type_dialog import DocumentTypeDialog

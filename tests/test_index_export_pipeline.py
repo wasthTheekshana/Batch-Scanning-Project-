@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from core.job_queue import Pipeline
+from pipeline.job_queue import Pipeline
 from data.audit import AuditLogger
 from data.db import Database
 from delivery.base import DeliveryResult
@@ -135,7 +135,7 @@ def test_a_failure_writing_the_index_is_audited_by_type_and_the_pdf_still_goes(e
 
     def broken(*a, **k):
         raise PermissionError("S3CRET-VALUE-123 cannot be written")
-    monkeypatch.setattr("core.job_queue.write_index", broken)
+    monkeypatch.setattr("pipeline.job_queue.write_index", broken)
     doc, tmp, _p = run(env, {"enabled": True, "format": "csv"})
     assert doc["delivery_status"] == "delivered_local"
     events = db.conn.execute(
@@ -220,9 +220,9 @@ def test_a_document_that_was_never_exported_is_not_reissued(env):
 
 def test_the_index_tab_save_triggers_the_reissue(qtbot, tmp_path):
     """MainWindow wires a saved correction to the pipeline."""
-    from core.event_bus import EventBus
-    from core.profile_manager import ProfileManager
-    from core.rbac import Session, User
+    from ui.event_bus import EventBus
+    from projects.profile_manager import ProfileManager
+    from security.rbac import Session, User
     from ui.main_window import MainWindow
     seen = []
 

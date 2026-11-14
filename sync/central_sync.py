@@ -26,14 +26,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from core.central_client import (CentralAuthError, CentralClient,
+from sync.central_client import (CentralAuthError, CentralClient,
                                  CentralError, allow_loopback_http)
-from core.central_state import CentralState
-from core.config_overlay import (LOCAL_ONLY_KEYS, PulledProjectError,
+from sync.central_state import CentralState
+from projects.config_overlay import (LOCAL_ONLY_KEYS, PulledProjectError,
                                  default_local_sections, overlay,
                                  validate_entry)
-from core.profile_manager import ProfileManager, ProjectConfigError
-from core.project_store import config_error_path, load_config
+from projects.profile_manager import ProfileManager, ProjectConfigError
+from projects.project_store import config_error_path, load_config
 
 log = logging.getLogger(__name__)
 
@@ -182,7 +182,7 @@ class CentralSyncService:
         never changes the sync's outcome (the next poll tries again), and an older server without
         the report simply refuses it."""
         try:
-            from core.central_report import build_report
+            from sync.central_report import build_report
             client.heartbeat(pc_id, api_key, build_report(self.db))
         except Exception as e:
             log.debug("central report not sent (%s)", type(e).__name__)
@@ -446,7 +446,7 @@ def _attach_document_sync(db, state: CentralState, service: CentralSyncService) 
     """Documents are queued for reporting only while this PC is enrolled; the sender hangs off the service as
     `document_worker` (started by start_document_sync). Failing to set it up never stops the application."""
     try:
-        from core.central_documents import DocumentPusher, DocumentSyncWorker
+        from sync.central_documents import DocumentPusher, DocumentSyncWorker
         db.outbox_gate = state.is_registered
         service.document_worker = DocumentSyncWorker(DocumentPusher(db, state))
     except Exception:

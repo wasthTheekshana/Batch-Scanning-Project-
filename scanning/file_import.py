@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from core.models import ScanJob
+from shared.models import ScanJob
 
 log = logging.getLogger(__name__)
 

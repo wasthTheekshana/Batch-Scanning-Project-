@@ -1,4 +1,4 @@
-"""Regenerate core/templates/bank_customer_file.json (the built-in
+"""Regenerate projects/templates/bank_customer_file.json (the built-in
 "Bank - Customer file" template): customer-file separation plus the document
 types NIC, Education and Home loan applications (regions on the real forms),
 generic Application and Letter.
@@ -110,6 +110,6 @@ def demo_template() -> dict:
 
 if __name__ == "__main__":
     for name, template in (("bank_customer_file.json", TEMPLATE), ("bank_demo_index.json", demo_template())):
-        out = HERE.parent / "core" / "templates" / name
+        out = HERE.parent / "projects" / "templates" / name
         out.write_text(json.dumps(template, indent=2) + "\n", encoding="utf-8")
         print(f"wrote {out}")

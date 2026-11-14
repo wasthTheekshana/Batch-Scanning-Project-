@@ -6,8 +6,8 @@ import shutil
 import fitz
 import pytest
 
-from core.job_queue import Pipeline
-from core.rbac import Session, hash_password
+from pipeline.job_queue import Pipeline
+from security.rbac import Session, hash_password
 from data.db import Database
 from delivery.local_folder import LocalFolderChannel
 from export.batch_exporter import export_document, set_type_bookmarks

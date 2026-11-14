@@ -4,7 +4,7 @@ generalized beyond banking to any document/project kind).
 A template is a *partial* project config - only the reusable parts
 (index zones, separation strategy, QC/enhancement settings, features,
 rules), never a project's identity or delivery/export destinations.
-Built-in templates ship as JSON under core/templates/ and are seeded
+Built-in templates ship as JSON under projects/templates/ and are seeded
 into the DB on app startup; admins can also capture any of their own
 configured projects as a new template via save_as_template().
 """
@@ -15,9 +15,9 @@ import json
 import logging
 from pathlib import Path
 
-from core.models import new_id
-from core.profile_manager import DEFAULT_PROJECT
-from core.project_store import load_config
+from shared.models import new_id
+from projects.profile_manager import DEFAULT_PROJECT
+from projects.project_store import load_config
 
 log = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ class TemplateManager:
         return cfg
 
     def seed_built_ins(self, templates_dir: Path | None = None) -> None:
-        """Insert or update built-in templates from core/templates/*.json.
+        """Insert or update built-in templates from projects/templates/*.json.
         Never touches an admin-saved template, even one with the same
         name as a built-in - matching is scoped to built_in=1 rows only."""
         templates_dir = templates_dir or (Path(__file__).parent / "templates")

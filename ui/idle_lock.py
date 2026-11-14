@@ -3,7 +3,7 @@
 A workstation left signed in at a bank counter is a risk, so after IDLE_MINUTES without
 input the window is covered by a dialog that asks for the signed-in user's password again.
 Three wrong passwords, or Cancel, sign the user out. Wrong passwords count towards the same
-account lock as at sign-in (core.rbac).
+account lock as at sign-in (security.rbac).
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import os
 from PyQt6.QtCore import QEvent, QObject, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (QDialog, QDialogButtonBox, QLabel, QLineEdit, QVBoxLayout)
 
-from core.rbac import verify_session_password
+from security.rbac import verify_session_password
 
 IDLE_MINUTES = 15
 MAX_UNLOCK_TRIES = 3

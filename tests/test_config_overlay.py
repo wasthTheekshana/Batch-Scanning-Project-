@@ -2,10 +2,10 @@ import copy
 
 import pytest
 
-from core.config_overlay import (LOCAL_ONLY_KEYS, PulledProjectError,
+from projects.config_overlay import (LOCAL_ONLY_KEYS, PulledProjectError,
                                  default_local_sections, overlay,
                                  validate_entry)
-from core.profile_manager import DEFAULT_PROJECT
+from projects.profile_manager import DEFAULT_PROJECT
 
 PID = "11111111-2222-3333-4444-555555555555"
 

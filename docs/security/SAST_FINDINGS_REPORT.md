@@ -85,7 +85,7 @@ files, full suite unaffected).
 
 ### Hardcoded-password false positives — 5 instances
 
-**Files:** `core/profile_manager.py:46`, `ui/workflow_designer.py:35,37,39`,
+**Files:** `projects/profile_manager.py:46`, `ui/workflow_designer.py:35,37,39`,
 `ui/theme.py:23`
 **Bandit rule:** B105 (CWE-259), Severity Low / Confidence Medium
 
@@ -256,9 +256,9 @@ The updated raw reports `sast_bandit_report.json` / `.txt` reflect this run.
 **Re-scan #4 (2026-10-09):** re-run via `scripts/security_scan.py` after the
 PC-side sync client for the central service landed.
 
-**Scope (lines of code per Bandit's per-file metrics):** `core/central_client.py`
-(141), `core/central_state.py` (111), `core/central_sync.py` (306),
-`core/config_overlay.py` (74), `core/safe_paths.py` (39), `ui/central_tab.py`
+**Scope (lines of code per Bandit's per-file metrics):** `sync/central_client.py`
+(141), `sync/central_state.py` (111), `sync/central_sync.py` (306),
+`projects/config_overlay.py` (74), `shared/safe_paths.py` (39), `ui/central_tab.py`
 (178).
 
 **Result for these files: 0 findings** (High 0, Medium 0, Low 0, no `#nosec`).
@@ -307,13 +307,13 @@ The client-side threat model is section 7 of
   does not satisfy the plan's "independence of testing" requirement, which
   needs a separate QA/security function or an external tester
 
-## Per-project pipeline (`core/project_runtime.py`, `core/job_queue.py`)
+## Per-project pipeline (`pipeline/project_runtime.py`, `pipeline/job_queue.py`)
 
 **Re-scan #5 (2026-10-12):** re-run via `scripts/security_scan.py` after the
 pipeline started resolving each batch's project at batch start.
 
 **Result for the new/changed files: 0 findings** (High 0, Medium 0, Low 0, no
-`#nosec`) in `core/project_runtime.py` and `core/job_queue.py`; the changed
+`#nosec`) in `pipeline/project_runtime.py` and `pipeline/job_queue.py`; the changed
 `ui/main_window.py` and `ui/central_tab.py` are also clean. Repository-wide
 totals are unchanged from re-scan #4: High 0 / Medium 6 / Low 15; the raw
 reports differ only by line-number shifts in already-triaged findings.

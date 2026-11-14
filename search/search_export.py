@@ -9,7 +9,7 @@ from __future__ import annotations
 import dataclasses
 from pathlib import Path
 
-from core.search import MAX_LIMIT, SearchQuery, search_documents
+from search.search import MAX_LIMIT, SearchQuery, search_documents
 from export.index_export import _csv_text, _write_atomic
 
 MAX_ROWS = 10_000

@@ -1,7 +1,7 @@
 """Finding documents by their index values, project, status and date."""
 import pytest
 
-from core.search import (MAX_LIMIT, SearchQuery, count_documents,
+from search.search import (MAX_LIMIT, SearchQuery, count_documents,
                          known_field_names, search_documents)
 from data.db import Database
 

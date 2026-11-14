@@ -22,6 +22,6 @@ select = ["E9", "F", "S110"]    # S110: an error must never be swallowed silentl
 # code is not annotated everywhere; widening this list is the way to adopt it gradually.
 python_version = "3.11"
 ignore_missing_imports = true
-files = ["core/doc_edit.py", "ocr/fieldfix.py", "ocr/handwriting.py", "central/migrate.py",
+files = ["pipeline/doc_edit.py", "ocr/fieldfix.py", "ocr/handwriting.py", "central/migrate.py",
          "ui/flow.py", "ui/sidebar.py", "ui/idle_lock.py", "version.py",
          "central/crypto.py", "central/alerts.py", "central/notify.py"]

@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import pytest
 
-from core.job_queue import Pipeline
+from pipeline.job_queue import Pipeline
 from data.db import Database
 from delivery.local_folder import LocalFolderChannel
 from export.batch_exporter import export_document

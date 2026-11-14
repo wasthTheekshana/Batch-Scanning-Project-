@@ -69,7 +69,7 @@ def start_server(out: Path, port: int):
 
 
 def central_project_config(tmp: Path) -> dict:
-    from core.profile_manager import ProfileManager
+    from projects.profile_manager import ProfileManager
     return ProfileManager(tmp / "pm").create("Seed")
 
 

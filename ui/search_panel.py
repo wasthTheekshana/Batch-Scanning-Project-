@@ -15,9 +15,9 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDateEdit, QDialog,
                              QTableWidget, QTableWidgetItem, QVBoxLayout,
                              QWidget)
 
-from core.search import (SearchQuery, count_documents, known_field_names,
+from search.search import (SearchQuery, count_documents, known_field_names,
                          search_documents)
-from core.search_export import MAX_ROWS, export_csv
+from search.search_export import MAX_ROWS, export_csv
 from custody.timeline import document_timeline, export_timeline
 from ui.flow import FlowLayout
 from ui.theme import fit_to_screen, mark

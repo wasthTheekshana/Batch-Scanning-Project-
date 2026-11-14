@@ -1,7 +1,7 @@
 """Tests for the chain-of-custody module (DOK_Scanner_Enhancement_Plan §3.2)."""
 import pytest
 
-from core.models import new_id
+from shared.models import new_id
 from data.db import Database
 from custody.bundle_manager import create_bundle, record_checkpoint
 
@@ -207,7 +207,7 @@ def test_flag_incident_rejects_unknown_kind(db):
 @pytest.fixture()
 def custody_env(tmp_path):
     from data.audit import AuditLogger
-    from core.rbac import User
+    from security.rbac import User
     db = Database(tmp_path / "custody_ui.db")
     db.insert_project("proj-1", "Test Project", {})
     audit = AuditLogger(db, tmp_path / "logs")
@@ -296,7 +296,7 @@ def test_custody_panel_shows_returned_column(qtbot, custody_env):
 @pytest.fixture()
 def custody_env_uuid_project(tmp_path):
     from data.audit import AuditLogger
-    from core.rbac import User
+    from security.rbac import User
     project_id = new_id()
     db = Database(tmp_path / "custody_ui2.db")
     db.insert_project(project_id, "Real Project", {})
@@ -320,7 +320,7 @@ def test_custody_panel_works_with_real_uuid_project_id(qtbot, custody_env_uuid_p
 
 def test_custody_panel_handles_no_active_project(qtbot, tmp_path):
     from data.audit import AuditLogger
-    from core.rbac import User
+    from security.rbac import User
     from ui.custody_panel import CustodyPanel
     db = Database(tmp_path / "custody_empty.db")
     audit = AuditLogger(db, tmp_path / "logs")

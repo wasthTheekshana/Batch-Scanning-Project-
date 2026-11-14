@@ -4,8 +4,8 @@ import threading
 
 import pytest
 
-from core.profile_manager import DEFAULT_PROJECT, ProfileManager, ProjectConfigError
-from core.project_runtime import ProjectRuntime, ProjectUnavailable, RuntimeResolver
+from projects.profile_manager import DEFAULT_PROJECT, ProfileManager, ProjectConfigError
+from pipeline.project_runtime import ProjectRuntime, ProjectUnavailable, RuntimeResolver
 from data.db import Database
 
 
@@ -134,7 +134,7 @@ def test_channel_construction_failure_is_unavailable(db, resolver, tmp_path, mon
     def boom(_cfg):
         raise OSError("disk offline")
 
-    monkeypatch.setattr("core.project_runtime.active_channels", boom)
+    monkeypatch.setattr("pipeline.project_runtime.active_channels", boom)
     with pytest.raises(ProjectUnavailable, match="OSError"):
         resolver.resolve("proj-a")
 
@@ -169,7 +169,7 @@ def test_concurrent_cold_resolves_build_exactly_once(db, resolver, tmp_path, mon
         threading.Event().wait(0.5)       # window for a racing second builder
         return real_validate(cfg)
 
-    monkeypatch.setattr("core.project_runtime.ProfileManager.validate", staticmethod(slow_validate))
+    monkeypatch.setattr("pipeline.project_runtime.ProfileManager.validate", staticmethod(slow_validate))
     results = []
 
     def work():

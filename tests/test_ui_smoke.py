@@ -3,9 +3,9 @@ import cv2
 import numpy as np
 import pytest
 
-from core.event_bus import EventBus
-from core.profile_manager import ProfileManager
-from core.rbac import Session, User, hash_password
+from ui.event_bus import EventBus
+from projects.profile_manager import ProfileManager
+from security.rbac import Session, User, hash_password
 from data.db import Database
 from tests.conftest import make_text_page
 from ui.image_viewer import ImageViewer

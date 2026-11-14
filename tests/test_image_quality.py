@@ -200,7 +200,7 @@ def test_a_solid_black_area_stays_black():
 def test_a_black_and_white_project_delivers_a_black_and_white_working_copy(tmp_path):
     import json
 
-    from core.job_queue import Pipeline
+    from pipeline.job_queue import Pipeline
     from data.db import Database
     from delivery.local_folder import LocalFolderChannel
     from export.batch_exporter import export_document

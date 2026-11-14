@@ -1,6 +1,6 @@
 import pytest
 
-from core.rbac import (ROLE_PERMISSIONS, AuthError, Session, User,
+from security.rbac import (ROLE_PERMISSIONS, AuthError, Session, User,
                        hash_password)
 from data.db import Database
 
@@ -64,7 +64,7 @@ def test_inactive_user_rejected(db):
 
 
 def test_custody_manage_permission_granted_to_admin_operator_qc():
-    from core.rbac import User
+    from security.rbac import User
     for role in ("admin", "operator", "qc_officer"):
         assert User("u", "u", role).can("custody.manage"), role
     assert not User("u", "u", "viewer").can("custody.manage")

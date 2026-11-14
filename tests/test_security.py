@@ -3,7 +3,7 @@ import sqlite3
 
 import pytest
 
-from core.rbac import (AuthError, Session, User, change_password,
+from security.rbac import (AuthError, Session, User, change_password,
                        create_user, hash_password, is_legacy_hash,
                        reset_password, set_user_active, set_user_role,
                        verify_password, _legacy_hash)

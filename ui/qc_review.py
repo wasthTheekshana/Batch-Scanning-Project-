@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QListWidget,
                              QListWidgetItem, QPushButton, QSplitter,
                              QVBoxLayout, QWidget)
 
-from core.job_queue import REASON_NO_PAGE_IMAGES
+from pipeline.job_queue import REASON_NO_PAGE_IMAGES
 from ui.flow import FlowLayout
 from ui.image_viewer import ImageView
 

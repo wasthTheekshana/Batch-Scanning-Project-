@@ -11,15 +11,15 @@ from PyQt6.QtWidgets import QListWidgetItem, QMessageBox
 
 import ui.central_tab
 import ui.main_window
-from core.central_client import (CentralRegistrationError, CentralUnavailable,
+from sync.central_client import (CentralRegistrationError, CentralUnavailable,
                                  RegisterResult)
-from core.central_state import CentralState
-import core.central_sync
-from core.central_sync import (CentralSyncService, SyncResult,
+from sync.central_state import CentralState
+import sync.central_sync
+from sync.central_sync import (CentralSyncService, SyncResult,
                                default_client_factory)
-from core.event_bus import EventBus
-from core.profile_manager import DEFAULT_PROJECT, ProfileManager
-from core.rbac import Session, User
+from ui.event_bus import EventBus
+from projects.profile_manager import DEFAULT_PROJECT, ProfileManager
+from security.rbac import Session, User
 from data.db import Database
 from ui.admin_panel import AdminPanel
 from ui.central_tab import CentralTab
@@ -582,7 +582,7 @@ def test_restart_state_is_gone_from_the_sync_module():
     assert not hasattr(SyncResult("ok"), "restart_needed")
     assert not hasattr(SyncResult("ok", applied=["p1"]), "restart_needed")
     for name in ("restart_pending", "_reset_restart_pending", "note_sync_result"):
-        assert not hasattr(core.central_sync, name), name
+        assert not hasattr(sync.central_sync, name), name
     assert not hasattr(ui.central_tab, "RESTART_TEXT")
     assert not hasattr(ui.main_window, "RESTART_NOTICE")
 

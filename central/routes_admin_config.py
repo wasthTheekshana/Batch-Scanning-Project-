@@ -15,7 +15,7 @@ from central.models import (AdminUser, ConfigVersion, Pc, PcAssignment, Project,
                             Template)
 from central.settings_store import get_poll_interval, set_poll_interval
 from central.versioning import save_version
-from core.profile_manager import (DEFAULT_PROJECT, ProfileManager,
+from projects.profile_manager import (DEFAULT_PROJECT, ProfileManager,
                                   ProjectConfigError)
 
 router = APIRouter(prefix="/admin", tags=["admin-config"],

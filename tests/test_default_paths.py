@@ -2,7 +2,7 @@ import copy
 
 import pytest
 
-from core.profile_manager import DEFAULT_PROJECT, ProfileManager
+from projects.profile_manager import DEFAULT_PROJECT, ProfileManager
 
 
 @pytest.fixture()

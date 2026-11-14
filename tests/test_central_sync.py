@@ -8,13 +8,13 @@ import time
 
 import pytest
 
-from core.central_client import (CentralAuthError, CentralRegistrationError,
+from sync.central_client import (CentralAuthError, CentralRegistrationError,
                                  CentralUnavailable, PullResult, RegisterResult)
-from core.central_state import CentralState
-from core.central_sync import (CentralSyncService, SyncResult,
+from sync.central_state import CentralState
+from sync.central_sync import (CentralSyncService, SyncResult,
                                choose_pipeline_profile)
-from core.config_overlay import default_local_sections
-from core.profile_manager import DEFAULT_PROJECT, ProfileManager
+from projects.config_overlay import default_local_sections
+from projects.profile_manager import DEFAULT_PROJECT, ProfileManager
 from data.audit import AuditLogger
 from data.db import Database
 
@@ -292,11 +292,11 @@ def test_register_failure_leaves_state_untouched(env):
 
 
 def test_register_rejects_non_https_url_before_any_call(env, monkeypatch):
-    from core.central_sync import default_client_factory
+    from sync.central_sync import default_client_factory
 
     def no_network(*a, **k):
         raise AssertionError("a transport/opener was built for a non-https URL")
-    monkeypatch.setattr("core.central_client.urllib.request.build_opener",
+    monkeypatch.setattr("sync.central_client.urllib.request.build_opener",
                         no_network)
     env.svc._client_factory = default_client_factory
     with pytest.raises(ValueError):
@@ -754,7 +754,7 @@ def test_after_enrollment_and_restart_the_pipeline_keeps_the_pcs_delivery_settin
 
 
 def test_failing_file_write_for_one_project_is_reported_others_apply(env, monkeypatch):
-    import core.profile_manager as profile_manager
+    import projects.profile_manager as profile_manager
     monkeypatch.setattr(profile_manager, "REPLACE_RETRY_DELAY", 0.0)
     real_replace = profile_manager.os.replace
 

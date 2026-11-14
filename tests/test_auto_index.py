@@ -25,7 +25,7 @@ def fake_ocr(region):
 
 
 def run_batch(tmp_path, db, profile, specs, batch_id="batch-1"):
-    from core.job_queue import Pipeline
+    from pipeline.job_queue import Pipeline
     from delivery.local_folder import LocalFolderChannel
     from export.batch_exporter import export_document
     pipeline = Pipeline(
@@ -97,7 +97,7 @@ def test_full_page_mode_populates_extracted_fields(tmp_path, db):
     profile["ocr"]["zones"] = [
         {"name": "invoice_no", "regex": r"Invoice No:\s*(\S+)"}]
     profile["ocr"]["confidence_threshold"] = 0.75
-    from core.job_queue import Pipeline
+    from pipeline.job_queue import Pipeline
     from delivery.local_folder import LocalFolderChannel
     from export.batch_exporter import export_document
     pipeline = Pipeline(
@@ -129,7 +129,7 @@ def test_full_page_mode_low_confidence_flagged(tmp_path, db):
     profile["ocr"]["zones"] = [
         {"name": "invoice_no", "regex": r"Invoice No:\s*(\S+)"}]
     profile["ocr"]["confidence_threshold"] = 0.99  # above fake's 0.88
-    from core.job_queue import Pipeline
+    from pipeline.job_queue import Pipeline
     from delivery.local_folder import LocalFolderChannel
     from export.batch_exporter import export_document
     pipeline = Pipeline(
@@ -172,7 +172,7 @@ def test_full_page_mode_ocrs_each_page_exactly_once(tmp_path, db):
         {"name": "invoice_no", "regex": r"Invoice No:\s*(\S+)"},
         {"name": "unmatched", "regex": r"Nope:\s*(\S+)"}]
     profile["ocr"]["confidence_threshold"] = 0.75
-    from core.job_queue import Pipeline
+    from pipeline.job_queue import Pipeline
     from delivery.local_folder import LocalFolderChannel
     from export.batch_exporter import export_document
     pipeline = Pipeline(
@@ -261,7 +261,7 @@ def test_duplicate_check_off_no_link(tmp_path, db):
 # ---- master key export --------------------------------------------------------------
 
 def test_key_export_writes_hex_and_audits(qtbot, db, tmp_path, monkeypatch):
-    from core.rbac import User
+    from security.rbac import User
     from data.backup import BackupService
     from ui.admin_panel import BackupTab
 
@@ -298,7 +298,7 @@ def test_key_export_writes_hex_and_audits(qtbot, db, tmp_path, monkeypatch):
 
 
 def test_key_export_disabled_for_non_admin(qtbot, db, tmp_path):
-    from core.rbac import User
+    from security.rbac import User
     from data.backup import BackupService
     from ui.admin_panel import BackupTab
     svc = BackupService(db, [], tmp_path / "b", b"k" * 32)
@@ -321,7 +321,7 @@ def _count_ocr_calls(tmp_path, db, strategy, specs, batch_id):
     profile["ocr"]["mode"] = "full_page"
     profile["ocr"]["zones"] = [{"name": "invoice_no",
                                 "regex": r"Invoice No:\s*(\S+)"}]
-    from core.job_queue import Pipeline
+    from pipeline.job_queue import Pipeline
     from delivery.local_folder import LocalFolderChannel
     from export.batch_exporter import export_document
     pipeline = Pipeline(

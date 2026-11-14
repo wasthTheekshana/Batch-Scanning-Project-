@@ -6,8 +6,8 @@ import json
 import cv2
 import pytest
 
-import core.job_queue as jq
-from core.job_queue import Pipeline
+import pipeline.job_queue as jq
+from pipeline.job_queue import Pipeline
 from custody.bundle_manager import create_bundle
 from data.db import Database
 from delivery.local_folder import LocalFolderChannel
@@ -111,9 +111,9 @@ def test_a_batch_that_makes_no_documents_tells_the_operator(tmp_path, db, monkey
 def test_the_window_explains_an_empty_batch(qtbot, tmp_path, monkeypatch):
     from PyQt6.QtWidgets import QMessageBox
 
-    from core.event_bus import EventBus
-    from core.profile_manager import ProfileManager
-    from core.rbac import Session
+    from ui.event_bus import EventBus
+    from projects.profile_manager import ProfileManager
+    from security.rbac import Session
     from ui.main_window import MainWindow
     d = Database(tmp_path / "w.db")
     Session.login("admin", "admin", d)

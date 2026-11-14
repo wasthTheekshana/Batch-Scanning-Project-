@@ -1,6 +1,6 @@
 """Admin panel — user management + backup settings (HLD §16, Phase 2).
 
-All actions go through core.rbac helpers, which enforce user.manage /
+All actions go through security.rbac helpers, which enforce user.manage /
 config.backup permissions and write audit rows.
 """
 from __future__ import annotations
@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
                              QTableWidgetItem, QTabWidget, QVBoxLayout,
                              QWidget)
 
-from core.rbac import (ROLE_PERMISSIONS, AuthError, create_user, is_locked,
+from security.rbac import (ROLE_PERMISSIONS, AuthError, create_user, is_locked,
                        reset_password, set_user_active, set_user_role, unlock_user)
 
 log = logging.getLogger(__name__)
@@ -297,7 +297,7 @@ class BurnTab(QWidget):
     # -- which projects burn discs -------------------------------------------------
     def reload_projects(self) -> None:
         """Projects whose settings turn CD/DVD on and are complete enough to burn."""
-        from core.project_store import readable_projects
+        from projects.project_store import readable_projects
         from delivery.cddvd_channel import CDDVDChannel
         keep = self.project_combo.currentData()
         self.project_combo.blockSignals(True)

@@ -4,14 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from core.profile_manager import ProfileManager
-from core.template_manager import TemplateManager
+from projects.profile_manager import ProfileManager
+from projects.template_manager import TemplateManager
 from data.db import Database
 from ocr.doc_types import all_zones, page_zones
 from ocr.zone_extractor import extract_fields_from_text
 from separation.splitter import split_documents
 
-TEMPLATE = json.loads((Path(__file__).parent.parent / "core" / "templates"
+TEMPLATE = json.loads((Path(__file__).parent.parent / "projects" / "templates"
                        / "bank_customer_file.json").read_text(encoding="utf-8"))
 OCR = TEMPLATE["config"]["ocr"]
 
@@ -152,7 +152,7 @@ def test_a_plain_letter_with_a_reference_number_is_not_taken_for_a_card():
 
 def test_the_demo_template_reads_only_account_number_nic_and_branch():
     import json
-    path = Path(__file__).parent.parent / "core" / "templates" / "bank_demo_index.json"
+    path = Path(__file__).parent.parent / "projects" / "templates" / "bank_demo_index.json"
     demo = json.loads(path.read_text(encoding="utf-8"))
     assert demo["name"] == "Bank - Demo (account, NIC, branch)"
     types = demo["config"]["ocr"]["document_types"]

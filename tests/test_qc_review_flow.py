@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from PyQt6.QtCore import Qt
 
-from core.job_queue import Pipeline
-from core.rbac import User
+from pipeline.job_queue import Pipeline
+from security.rbac import User
 from data.db import Database
 from delivery.local_folder import LocalFolderChannel
 from export.batch_exporter import export_document
@@ -122,7 +122,7 @@ def test_reject_does_not_export(qtbot, held_doc_env):
 
 def _approve_env(held_doc_env):
     db, profile, tmp_path = held_doc_env
-    from core.project_runtime import RuntimeResolver
+    from pipeline.project_runtime import RuntimeResolver
     from data.audit import AuditLogger
     audit = AuditLogger(db, tmp_path / "audit-logs")
     pipeline = Pipeline(db, profile,

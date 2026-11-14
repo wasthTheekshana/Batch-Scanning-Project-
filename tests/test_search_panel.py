@@ -1,7 +1,7 @@
 """The Search tab: finding documents, who may see what, the result actions."""
 import pytest
 
-from core.rbac import Session, hash_password
+from security.rbac import Session, hash_password
 from data.db import Database
 from ui.search_panel import SearchPanel
 
@@ -154,8 +154,8 @@ def test_history_dialog_lists_the_document_trail(qtbot, db, monkeypatch):
 
 
 def test_main_window_has_a_search_tab_that_opens_the_index(qtbot, db, tmp_path):
-    from core.event_bus import EventBus
-    from core.profile_manager import ProfileManager
+    from ui.event_bus import EventBus
+    from projects.profile_manager import ProfileManager
     from ui.main_window import MainWindow
     login_as(db, "admin")
     win = MainWindow(db, ProfileManager(tmp_path / "profiles"), EventBus(), staging_dir=tmp_path / "staging")

@@ -4,8 +4,8 @@ import threading
 
 import pytest
 
-import core.profile_manager as profile_manager
-from core.profile_manager import ProfileManager
+import projects.profile_manager as profile_manager
+from projects.profile_manager import ProfileManager
 
 REAL_REPLACE = os.replace
 

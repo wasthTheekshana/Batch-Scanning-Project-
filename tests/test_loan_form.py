@@ -64,7 +64,7 @@ def test_boxed_fields_are_read_with_enough_confidence_not_to_need_review(read):
 
 def test_the_page_is_recognised_as_this_form_from_its_title(filled):
     import json
-    ocr_cfg = json.loads((ROOT / "core" / "templates"
+    ocr_cfg = json.loads((ROOT / "projects" / "templates"
                           / "bank_customer_file.json").read_text(
         encoding="utf-8"))["config"]["ocr"]
     groups, name = page_zone_groups(ocr_cfg, ocr_page(render(filled)).text)
@@ -75,7 +75,7 @@ def test_the_page_is_recognised_as_this_form_from_its_title(filled):
 
 def test_the_templates_form_zones_are_the_ones_tested_here():
     import json
-    template = json.loads((ROOT / "core" / "templates"
+    template = json.loads((ROOT / "projects" / "templates"
                            / "bank_customer_file.json").read_text(encoding="utf-8"))
     types = {t["name"]: t for t in template["config"]["ocr"]["document_types"]}
     shipped = {k: v for k, v in types["Education loan application"].items() if k != "starts_document"}

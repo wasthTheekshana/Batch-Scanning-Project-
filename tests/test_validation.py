@@ -1,7 +1,7 @@
 """Format checks on index values."""
 import pytest
 
-from core.validation import kind_for, validate
+from pipeline.validation import kind_for, validate
 
 
 @pytest.mark.parametrize("value", ["856789012V", "856789012x", "199012345678", "855011234V",
@@ -114,7 +114,7 @@ def test_a_wrong_format_outranks_the_low_confidence_mark(editor):
 def test_the_pipeline_records_which_fields_were_read_with_low_confidence(tmp_path):
     import json
 
-    from core.job_queue import Pipeline
+    from pipeline.job_queue import Pipeline
     from data.db import Database
     from delivery.local_folder import LocalFolderChannel
     from export.batch_exporter import export_document

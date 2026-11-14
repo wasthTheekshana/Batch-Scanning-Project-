@@ -2,7 +2,7 @@
 
 The operator sees the pages as thumbnails, selects the page where a new document should
 start (split), or picks a neighbouring document to join (merge). The result goes back to
-the QC review queue for acceptance (core.doc_edit).
+the QC review queue for acceptance (pipeline.doc_edit).
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, 
                              QListView, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
                              QVBoxLayout)
 
-from core.doc_edit import (DocumentEditError, EditResult, merge_documents, page_numbers,
+from pipeline.doc_edit import (DocumentEditError, EditResult, merge_documents, page_numbers,
                            split_document, why_not_editable)
 from ui.theme import fit_to_screen, mark
 

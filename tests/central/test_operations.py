@@ -194,8 +194,8 @@ def test_a_deleted_document_is_not_accepted_again_and_the_station_drops_it(world
     from datetime import datetime, timezone
     from types import SimpleNamespace
 
-    from core.central_client import CentralClient
-    from core.central_documents import DocumentPusher
+    from sync.central_client import CentralClient
+    from sync.central_documents import DocumentPusher
     from data.db import Database
     world.meta()
     world.index()

@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from core.models import new_id
+from shared.models import new_id
 from custody.bundle_manager import create_bundle, record_checkpoint
 from custody.timeline import (batch_timeline, bundle_timeline,
                               document_timeline, write_timeline_csv,
@@ -166,7 +166,7 @@ def test_export_timeline_picks_format_by_suffix(db, lifecycle, tmp_path):
 # ---- UI --------------------------------------------------------------------------
 
 def _panel_user():
-    from core.rbac import User
+    from security.rbac import User
     return User("u1", "alice", "admin")
 
 
@@ -224,7 +224,7 @@ def test_reports_panel_exports_batch_timeline(
 
 def test_custody_export_requires_report_export_permission(
         qtbot, db, audit, lifecycle):
-    from core.rbac import User
+    from security.rbac import User
     from ui.custody_panel import CustodyPanel
     operator = CustodyPanel(db, audit, User("u2", "op", "operator"))
     qtbot.addWidget(operator)
@@ -239,7 +239,7 @@ def test_custody_export_requires_report_export_permission(
 
 def test_export_method_itself_refuses_without_permission(
         qtbot, db, audit, lifecycle, tmp_path, monkeypatch):
-    from core.rbac import User
+    from security.rbac import User
     from ui.custody_panel import CustodyPanel
     out = tmp_path / "x.csv"
     monkeypatch.setattr(

@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import pytest
 
-from core.rbac import Session, hash_password
+from security.rbac import Session, hash_password
 from custody.backfill import link_earlier_documents
 from custody.bundle_manager import (bundle_summary, create_bundle, link_document,
                                     reconciliation_summary, record_checkpoint)

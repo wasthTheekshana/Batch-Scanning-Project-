@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from core.central_state import (DEFAULT_POLL, MAX_POLL, MIN_POLL, CentralState,
+from sync.central_state import (DEFAULT_POLL, MAX_POLL, MIN_POLL, CentralState,
                                 clamp_poll)
 from data.keystore import KeyStore, ProtectedBlob, protect_bytes, unprotect_bytes
 

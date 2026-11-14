@@ -2,7 +2,7 @@
 table heading is never clipped."""
 import pytest
 
-from core.rbac import Session, hash_password
+from security.rbac import Session, hash_password
 from custody.bundle_manager import create_bundle
 from data.db import Database
 

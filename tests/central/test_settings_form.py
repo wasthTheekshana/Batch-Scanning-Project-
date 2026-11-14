@@ -122,7 +122,7 @@ def test_duplicate_and_blank_field_names_are_explained():
 
 
 def test_a_form_made_config_passes_the_projects_own_schema(tmp_path):
-    from core.profile_manager import ProfileManager
+    from projects.profile_manager import ProfileManager
     base = ProfileManager(tmp_path / "pm").create("Seed")
     f = form_of(base)
     f.update(strategies=["barcode", "blank_page"], barcode_role="cover_sheet",

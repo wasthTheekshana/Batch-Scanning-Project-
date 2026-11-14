@@ -1,8 +1,8 @@
 import pytest
 from PyQt6.QtWidgets import QLabel
 
-from core.profile_manager import ProfileManager
-from core.rbac import User
+from projects.profile_manager import ProfileManager
+from security.rbac import User
 from data.db import Database
 from ui.workflow_designer import WorkflowDesigner
 

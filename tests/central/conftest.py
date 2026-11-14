@@ -84,5 +84,5 @@ else:
 
     @pytest.fixture()
     def project_config(tmp_path):
-        from core.profile_manager import ProfileManager
+        from projects.profile_manager import ProfileManager
         return ProfileManager(tmp_path / "pm").create("Seed")

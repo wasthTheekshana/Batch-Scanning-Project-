@@ -1,5 +1,5 @@
 """A stack with no barcodes is cut into documents at each form's title page."""
-from core.job_queue import _starts_document
+from pipeline.job_queue import _starts_document
 from separation.splitter import split_documents
 
 CFG = {"ocr": {"document_types": [
@@ -59,7 +59,7 @@ def test_the_dialog_remembers_the_flag(qtbot):
 # -- through the real pipeline -------------------------------------------------------
 def test_the_pipeline_cuts_a_barcodeless_stack_at_each_title_page(tmp_path):
 
-    from core.job_queue import Pipeline
+    from pipeline.job_queue import Pipeline
     from data.audit import AuditLogger
     from data.db import Database
     from delivery.local_folder import LocalFolderChannel

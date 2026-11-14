@@ -1,9 +1,9 @@
 import fitz
 import pytest
 
-from core.event_bus import EventBus
-from core.profile_manager import ProfileManager
-from core.rbac import Session, User
+from ui.event_bus import EventBus
+from projects.profile_manager import ProfileManager
+from security.rbac import Session, User
 from data.audit import AuditLogger
 from data.db import Database
 from ui.cover_sheet_dialog import CoverSheetDialog

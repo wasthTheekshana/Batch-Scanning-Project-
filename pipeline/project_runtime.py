@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 import jsonschema
 
-from core.profile_manager import ProfileManager, ProjectConfigError
+from projects.profile_manager import ProfileManager, ProjectConfigError
 from delivery.registry import active_channels
 
 log = logging.getLogger(__name__)

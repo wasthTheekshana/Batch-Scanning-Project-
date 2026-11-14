@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-import core.job_queue as job_queue
+import pipeline.job_queue as job_queue
 from data.db import Database
 from imaging.enhance import ENHANCEMENT_PRESETS, preset_name
 from ocr.doc_types import enhancement_for
@@ -49,7 +49,7 @@ def test_presets_round_trip_through_their_stored_form():
 
 def test_the_schema_accepts_the_override_and_rejects_nonsense():
     import jsonschema
-    schema = json.load(open("core/project_schema.json", encoding="utf-8"))
+    schema = json.load(open("projects/project_schema.json", encoding="utf-8"))
     item = schema["properties"]["ocr"]["properties"]["document_types"]["items"]
     jsonschema.validate({"name": "T", "enhancement_profile": GENTLE}, item)
     with pytest.raises(jsonschema.ValidationError):
@@ -69,7 +69,7 @@ def test_the_document_type_dialog_offers_and_stores_the_choice(qtbot):
 
 def test_the_bank_forms_default_to_the_gentle_setting():
     from pathlib import Path
-    template = json.loads((Path(__file__).parent.parent / "core" / "templates"
+    template = json.loads((Path(__file__).parent.parent / "projects" / "templates"
                            / "bank_customer_file.json").read_text(encoding="utf-8"))
     types = {t["name"]: t for t in template["config"]["ocr"]["document_types"]}
     for name in ("Credit card application", "Personal loan application",

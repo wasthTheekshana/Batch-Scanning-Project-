@@ -51,7 +51,7 @@ def to_gray(img):
 
 
 def enhance_step(img, profile=PROFILE):
-    """What core/job_queue.py's enhance worker does to a page."""
+    """What pipeline/job_queue.py's enhance worker does to a page."""
     out = img
     if profile.get("deskew"):
         out, _ = deskew(out)
@@ -63,7 +63,7 @@ def enhance_step(img, profile=PROFILE):
 def pipeline(img, dpi=300):
     """Enhance step, then QC (its colour/advanced stages filter again)."""
     out = enhance_step(img)
-    fixed, _verdict = run_qc(out, QC, {"dpi": dpi, "enhanced": True})   # as core/job_queue.py does
+    fixed, _verdict = run_qc(out, QC, {"dpi": dpi, "enhanced": True})   # as pipeline/job_queue.py does
     return fixed
 
 

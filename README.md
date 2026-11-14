@@ -56,7 +56,12 @@ The same checks run in CI (`.github/workflows/ci.yml`).
 
 | Package | Purpose |
 |---|---|
-| `core/` | the pipeline (`job_queue.py` and its mixins), project settings, users and roles, document split/merge |
+| `pipeline/` | the processing pipeline: job queue and its stages, hot folder, split/merge, validation |
+| `projects/` | project settings: schema, versions, templates (`templates/*.json`), central overlay, repair |
+| `security/` | users, roles, sign-in |
+| `search/` | searching documents and exporting results |
+| `sync/` | the connection to the central service: client, state, background sync, document reporting |
+| `shared/` | small things every layer uses: safe file paths, data classes, the crash guard |
 | `data/` | the encrypted SQLite layer, backup, key store, audit log |
 | `scanning/` | scanners (TWAIN, WIA, vendor SDK stubs), file import, hot folder |
 | `imaging/` | deskew, crop, enhancement, blank-page detection |
@@ -66,7 +71,7 @@ The same checks run in CI (`.github/workflows/ci.yml`).
 | `export/` | PDF/TIFF writers, file names, index files |
 | `delivery/` | local folder, SFTP, CD/DVD |
 | `custody/` | chain-of-custody bundles and timeline |
-| `ui/` | the PyQt6 screens |
+| `ui/` | the PyQt6 screens and the event bus that carries pipeline events to them |
 | `central/` | the central service (API, dashboard, migrations, deployment files) |
 | `scripts/` | build, release, measuring and one-off tools |
 | `installer/` | the Inno Setup script |
@@ -90,3 +95,10 @@ well but not perfectly and needs the bank's own branch list; only some bank form
 positions; no automatic data retention; no code-signing certificate; multi-site consolidation, a mobile
 client and Sinhala/Tamil recognition are not built. Phase 4 (an on-premise assistant and client web portal)
 is out of scope for this release.
+
+## Layering
+
+Dependencies point one way: `ui` and `main.py` use `pipeline`, `search`, `sync`, `security` and `projects`;
+`pipeline` uses the processing packages (`scanning`, `imaging`, `separation`, `qc`, `ocr`, `export`, `delivery`,
+`custody`) and `projects`; those use only `shared` (and each other where they must). Nothing below `ui` imports
+`ui`, and no processing package imports `pipeline`. `scripts/check_layers.py` enforces this (and CI runs it).

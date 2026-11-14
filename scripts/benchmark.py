@@ -20,8 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import cv2  # noqa: E402
 
-from core.job_queue import Pipeline  # noqa: E402
-from core.models import ScanJob  # noqa: E402
+from pipeline.job_queue import Pipeline  # noqa: E402
+from shared.models import ScanJob  # noqa: E402
 from data.db import Database  # noqa: E402
 from delivery.local_folder import LocalFolderChannel  # noqa: E402
 from export.batch_exporter import export_document  # noqa: E402

@@ -25,6 +25,7 @@ jobs:
       - run: pip install ruff mypy
       - run: ruff check .
       - run: mypy
+      - run: python scripts/check_layers.py
       - name: Version, installer script and changelog agree
         run: python scripts/release.py --check
 

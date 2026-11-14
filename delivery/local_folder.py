@@ -5,7 +5,7 @@ import hashlib
 import shutil
 from pathlib import Path
 
-from core.safe_paths import safe_join
+from shared.safe_paths import safe_join
 from delivery.base import BaseDeliveryChannel, DeliveryResult
 
 

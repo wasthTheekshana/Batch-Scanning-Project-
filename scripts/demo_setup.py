@@ -40,9 +40,9 @@ def setup(base: Path) -> Path:
     sys.path.insert(0, str(REPO))
     os.environ["LOCALAPPDATA"] = str(base)       # main.data_dir() reads this
     import main as app_main
-    from core.profile_manager import ProfileManager
-    from core.rbac import Session
-    from core.template_manager import TemplateManager
+    from projects.profile_manager import ProfileManager
+    from security.rbac import Session
+    from projects.template_manager import TemplateManager
     from data.keystore import KeyStore
 
     root = app_main.data_dir()

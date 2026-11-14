@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (QComboBox, QCompleter, QFormLayout, QGroupBox, QHBo
                              QLabel, QLineEdit, QListWidget, QListWidgetItem,
                              QMessageBox, QPushButton, QSplitter, QVBoxLayout, QWidget)
 
-from core.validation import kind_for, validate
+from pipeline.validation import kind_for, validate
 from ui.image_viewer import ImageView
 from ui.theme import STATUS_COLORS, mark, scroll_column, tidy_list, two_lines
 

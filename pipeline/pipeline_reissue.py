@@ -1,7 +1,7 @@
 """Re-delivery after an operator corrects a document: its index values or its page types.
 
 The exported PDF's bookmarks and the index file are rewritten and sent again to the channels the
-document already reached. Methods of Pipeline (core/job_queue.py), kept here so that file stays
+document already reached. Methods of Pipeline (pipeline/job_queue.py), kept here so that file stays
 about the six processing stages. They run on the delivery thread."""
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import json
 import logging
 from pathlib import Path
 
-from core.project_runtime import ProjectUnavailable
+from pipeline.project_runtime import ProjectUnavailable
 
 log = logging.getLogger(__name__)
 

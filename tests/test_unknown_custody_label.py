@@ -27,9 +27,9 @@ def test_a_known_custody_label_still_logs_its_checkpoint(tmp_path, db, monkeypat
 
 
 def test_the_operator_is_warned_once_per_batch(qtbot, tmp_path, monkeypatch):
-    from core.event_bus import EventBus
-    from core.profile_manager import ProfileManager
-    from core.rbac import Session
+    from ui.event_bus import EventBus
+    from projects.profile_manager import ProfileManager
+    from security.rbac import Session
     from data.db import Database
     from ui.main_window import MainWindow
     d = Database(tmp_path / "w.db")
@@ -53,9 +53,9 @@ def test_the_operator_is_warned_once_per_batch(qtbot, tmp_path, monkeypatch):
 
 
 def test_unreadable_projects_are_reported_at_startup(qtbot, tmp_path, monkeypatch):
-    from core.event_bus import EventBus
-    from core.profile_manager import ProfileManager
-    from core.rbac import Session
+    from ui.event_bus import EventBus
+    from projects.profile_manager import ProfileManager
+    from security.rbac import Session
     from data.db import Database
     from ui.main_window import MainWindow
     d = Database(tmp_path / "u.db")

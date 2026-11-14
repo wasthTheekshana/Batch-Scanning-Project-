@@ -3,10 +3,10 @@ import json
 
 import pytest
 
-from core.profile_manager import ProfileManager
-from core.project_repair import describe, find_intact_copy, repair, unreadable_rows
-from core.project_store import readable_projects
-from core.rbac import Session, User
+from projects.profile_manager import ProfileManager
+from projects.project_repair import describe, find_intact_copy, repair, unreadable_rows
+from projects.project_store import readable_projects
+from security.rbac import Session, User
 from data.db import Database
 
 
@@ -137,11 +137,11 @@ def test_the_dialog_asks_before_resetting_to_default(qtbot, env, monkeypatch):
 def test_the_startup_notice_offers_repair_to_someone_who_may_edit_projects(qtbot, env, monkeypatch):
     from PyQt6.QtWidgets import QMessageBox
 
-    from core.event_bus import EventBus
+    from ui.event_bus import EventBus
     from ui.main_window import MainWindow
     damage_row(env.db, env.cfg["project_id"])
     env.db.insert_user("u-a", "adm", "x", "admin")
-    from core.rbac import hash_password
+    from security.rbac import hash_password
     env.db.conn.execute("update users set password_hash=? where username='adm'", (hash_password("pw"),))
     env.db.conn.commit()
     Session.login("adm", "pw", env.db)
@@ -166,8 +166,8 @@ def test_the_startup_notice_offers_repair_to_someone_who_may_edit_projects(qtbot
 def test_a_viewer_is_not_offered_the_repair(qtbot, env, monkeypatch):
     from PyQt6.QtWidgets import QMessageBox
 
-    from core.event_bus import EventBus
-    from core.rbac import hash_password
+    from ui.event_bus import EventBus
+    from security.rbac import hash_password
     from ui.main_window import MainWindow
     damage_row(env.db, env.cfg["project_id"])
     env.db.insert_user("u-v", "view", hash_password("pw"), "viewer")

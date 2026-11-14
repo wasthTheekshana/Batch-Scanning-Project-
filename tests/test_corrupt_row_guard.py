@@ -13,16 +13,16 @@ import pytest
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QInputDialog, QMessageBox
 
-from core.central_client import PullResult
-from core.central_state import CentralState
-from core.central_sync import CentralSyncService, choose_pipeline_profile
-from core.event_bus import EventBus
-from core.job_queue import Pipeline
-from core.profile_manager import ProfileManager
-from core.project_runtime import RuntimeResolver
-from core.project_store import load_config
-from core.rbac import Session, User
-from core.template_manager import TemplateManager
+from sync.central_client import PullResult
+from sync.central_state import CentralState
+from sync.central_sync import CentralSyncService, choose_pipeline_profile
+from ui.event_bus import EventBus
+from pipeline.job_queue import Pipeline
+from projects.profile_manager import ProfileManager
+from pipeline.project_runtime import RuntimeResolver
+from projects.project_store import load_config
+from security.rbac import Session, User
+from projects.template_manager import TemplateManager
 from data.audit import AuditLogger
 from data.db import Database
 from delivery.local_folder import LocalFolderChannel

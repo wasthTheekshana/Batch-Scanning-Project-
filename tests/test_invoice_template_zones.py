@@ -3,7 +3,7 @@ from pathlib import Path
 
 from ocr.zone_extractor import extract_fields_from_text
 
-ZONES = json.loads((Path(__file__).parent.parent / "core" / "templates"
+ZONES = json.loads((Path(__file__).parent.parent / "projects" / "templates"
                     / "invoices.json").read_text(encoding="utf-8")
                    )["config"]["ocr"]["zones"]
 

@@ -4,7 +4,7 @@ import json
 import cv2
 import pytest
 
-from core.rbac import User
+from security.rbac import User
 from data.audit import AuditLogger
 from data.db import Database
 from ocr.tesseract_engine import OCRResult
@@ -383,7 +383,7 @@ def test_zone_dialog_shows_real_geometry(qtbot):
 
 
 def test_designer_zones_round_trip(qtbot, tmp_path):
-    from core.profile_manager import ProfileManager
+    from projects.profile_manager import ProfileManager
     from ui.workflow_designer import WorkflowDesigner
     db = Database(tmp_path / "dz.db")
     pm = ProfileManager(tmp_path / "projects", db)

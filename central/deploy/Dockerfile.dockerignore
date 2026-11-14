@@ -3,9 +3,9 @@
 # Dockerfile copies: central/ and the three core files it imports.
 *
 !central
-!core/__init__.py
-!core/profile_manager.py
-!core/project_schema.json
+!projects/__init__.py
+!projects/profile_manager.py
+!projects/project_schema.json
 
 # ... and inside central/: no caches, no deployment files, no dashboard test output
 **/__pycache__

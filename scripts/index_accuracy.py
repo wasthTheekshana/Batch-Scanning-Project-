@@ -46,7 +46,7 @@ def norm(field: str, value: str) -> str:
 
 def template_cfg() -> dict:
     import json
-    path = Path(__file__).resolve().parents[1] / "core" / "templates" / "bank_customer_file.json"
+    path = Path(__file__).resolve().parents[1] / "projects" / "templates" / "bank_customer_file.json"
     return json.loads(path.read_text(encoding="utf-8"))["config"]["ocr"]
 
 

@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.central_client import CentralAuthError, CentralRejected, CentralUnavailable
-from core.central_documents import BACKOFF_START, DocumentPusher, build_payload
+from sync.central_client import CentralAuthError, CentralRejected, CentralUnavailable
+from sync.central_documents import BACKOFF_START, DocumentPusher, build_payload
 from data.db import Database
 
 T0 = datetime(2026, 10, 18, 9, 0, tzinfo=timezone.utc)

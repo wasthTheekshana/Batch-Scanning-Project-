@@ -16,9 +16,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from PyQt6.QtWidgets import QApplication
 
-from core.event_bus import EventBus
-from core.profile_manager import ProfileManager
-from core.rbac import Session, User
+from ui.event_bus import EventBus
+from projects.profile_manager import ProfileManager
+from security.rbac import Session, User
 from data.db import Database
 from data.keystore import KeyStore
 from ui.main_window import MainWindow

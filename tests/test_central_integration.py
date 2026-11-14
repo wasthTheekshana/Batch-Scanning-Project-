@@ -21,10 +21,10 @@ import central.security  # noqa: E402
 from central.app import create_app  # noqa: E402
 from central.manage import create_admin  # noqa: E402
 from central.settings import Settings  # noqa: E402
-from core.central_client import CentralClient, CentralUnavailable  # noqa: E402
-from core.central_state import CentralState  # noqa: E402
-from core.central_sync import CentralSyncService  # noqa: E402
-from core.profile_manager import ProfileManager  # noqa: E402
+from sync.central_client import CentralClient, CentralUnavailable  # noqa: E402
+from sync.central_state import CentralState  # noqa: E402
+from sync.central_sync import CentralSyncService  # noqa: E402
+from projects.profile_manager import ProfileManager  # noqa: E402
 from data.db import Database  # noqa: E402
 
 BASE = "https://central.test"

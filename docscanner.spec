@@ -12,9 +12,9 @@ block_cipher = None
 datas = [
     # module-adjacent JSON loaded via Path(__file__).parent at import time -
     # PyInstaller only auto-detects Python imports, not data files.
-    ("core/project_schema.json", "core"),
+    ("projects/project_schema.json", "projects"),
     ("separation/rule_schema.json", "separation"),
-    ("core/templates", "core/templates"),
+    ("projects/templates", "projects/templates"),
     ("ocr/digit_model.npz", "ocr"),     # handwritten-digit model (ocr/digits.py)
     ("ocr/digit_model28.npz", "ocr"),   # the MNIST-trained one it prefers
     ("ocr/digit_cnn.onnx", "ocr"),      # the small convolutional digit network it prefers over both

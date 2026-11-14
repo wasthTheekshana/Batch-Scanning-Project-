@@ -33,8 +33,8 @@ rules those files implement.
   `client_max_body_size 1m;`). The service's 256 KB config cap applies only
   after the body has been parsed, so it does not protect against oversized
   uploads on its own.
-- The deployment MUST include `core/profile_manager.py` and
-  `core/project_schema.json`: `central` imports them to validate project
+- The deployment MUST include `projects/profile_manager.py` and
+  `projects/project_schema.json`: `central` imports them to validate project
   configs. Shipping `central/` alone fails at import time.
 - The schema is managed by Alembic migrations (`central/migrations/`). Starting the service brings the
   database to the latest one: an empty database gets every migration, a database made by the earlier

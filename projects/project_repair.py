@@ -15,8 +15,8 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from core.profile_manager import DEFAULT_PROJECT, ProfileManager
-from core.project_store import load_config
+from projects.profile_manager import DEFAULT_PROJECT, ProfileManager
+from projects.project_store import load_config
 
 log = logging.getLogger(__name__)
 

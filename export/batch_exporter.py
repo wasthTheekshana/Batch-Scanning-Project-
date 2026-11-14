@@ -11,7 +11,7 @@ import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
-from core.safe_paths import contained_file, safe_join
+from shared.safe_paths import contained_file, safe_join
 from ocr.doc_types import type_runs
 from export.filename import render
 from export.pdf_writer import write_image_pdf, write_searchable_pdf

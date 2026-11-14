@@ -4,8 +4,8 @@ import sys
 
 import pytest
 
-from core.profile_manager import ProfileManager
-from core.rbac import User
+from projects.profile_manager import ProfileManager
+from security.rbac import User
 from data.db import Database
 from delivery.cddvd_channel import CDDVDChannel
 from ui.admin_panel import BurnTab

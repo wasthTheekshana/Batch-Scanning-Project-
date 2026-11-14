@@ -11,9 +11,9 @@ from pathlib import Path
 import cv2
 import pytest
 
-from core.job_queue import Pipeline
-from core.models import ScanJob
-from core.profile_manager import ProfileManager
+from pipeline.job_queue import Pipeline
+from shared.models import ScanJob
+from projects.profile_manager import ProfileManager
 from data.audit import AuditLogger
 from data.db import Database
 from delivery.registry import active_channels

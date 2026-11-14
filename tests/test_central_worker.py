@@ -5,14 +5,14 @@ import threading
 import pytest
 from PyQt6.QtCore import QObject, pyqtSlot
 
-import core.central_sync
-from core.central_state import CentralState
-from core.central_sync import (RETRY_AFTER_FAILURE, CentralSyncService,
+import sync.central_sync
+from sync.central_state import CentralState
+from sync.central_sync import (RETRY_AFTER_FAILURE, CentralSyncService,
                                SyncResult, SyncWorker, build_central,
                                choose_pipeline_profile, shutdown_central,
                                startup_sync)
-from core.event_bus import EventBus
-from core.profile_manager import DEFAULT_PROJECT, ProfileManager
+from ui.event_bus import EventBus
+from projects.profile_manager import DEFAULT_PROJECT, ProfileManager
 from data.db import Database
 
 
@@ -300,7 +300,7 @@ def test_first_unavailable_result_waits_at_most_two_minutes_even_with_long_inter
 
 
 def test_unavailable_first_result_triggers_a_retry_without_sync_now(state, monkeypatch):
-    monkeypatch.setattr(core.central_sync, "RETRY_AFTER_FAILURE", 0.05)
+    monkeypatch.setattr(sync.central_sync, "RETRY_AFTER_FAILURE", 0.05)
     svc = FakeService([SyncResult("ok")])
     w = worker(svc, state)
     w.start(initial_sync=False, first_result=SyncResult("unavailable"))
@@ -312,7 +312,7 @@ def test_unavailable_first_result_triggers_a_retry_without_sync_now(state, monke
 
 @pytest.mark.parametrize("first", [None, SyncResult("ok")], ids=["none", "ok"])
 def test_no_first_result_or_ok_result_keeps_waiting_for_the_interval(state, monkeypatch, first):
-    monkeypatch.setattr(core.central_sync, "RETRY_AFTER_FAILURE", 0.05)
+    monkeypatch.setattr(sync.central_sync, "RETRY_AFTER_FAILURE", 0.05)
     svc = FakeService([SyncResult("ok")])
     w = worker(svc, state)
     w.start(initial_sync=False, first_result=first)
@@ -353,8 +353,8 @@ def test_build_central_failure_returns_nones_and_logs(tmp_path, pm_db, monkeypat
 
     def boom(*a, **k):
         raise OSError("disk on fire")
-    monkeypatch.setattr(core.central_sync, target, boom)
-    with caplog.at_level(logging.ERROR, logger="core.central_sync"):
+    monkeypatch.setattr(sync.central_sync, target, boom)
+    with caplog.at_level(logging.ERROR, logger="sync.central_sync"):
         assert build_central(db, pm, tmp_path, None, BusStub(), lambda: "") ==             (None, None, None)
     assert "central sync disabled this session" in caplog.text
 

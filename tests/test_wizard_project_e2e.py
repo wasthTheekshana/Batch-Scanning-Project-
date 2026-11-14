@@ -10,11 +10,11 @@ import copy
 import cv2
 import pytest
 
-from core.event_bus import EventBus
-from core.job_queue import Pipeline
-from core.profile_manager import ProfileManager
-from core.project_runtime import RuntimeResolver
-from core.rbac import Session, User
+from ui.event_bus import EventBus
+from pipeline.job_queue import Pipeline
+from projects.profile_manager import ProfileManager
+from pipeline.project_runtime import RuntimeResolver
+from security.rbac import Session, User
 from data.audit import AuditLogger
 from data.db import Database
 from delivery.local_folder import LocalFolderChannel

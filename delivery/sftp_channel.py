@@ -18,7 +18,7 @@ import posixpath
 import time
 from pathlib import Path
 
-from core.safe_paths import is_safe_relative_subpath
+from shared.safe_paths import is_safe_relative_subpath
 from delivery.base import BaseDeliveryChannel, DeliveryResult
 
 log = logging.getLogger(__name__)

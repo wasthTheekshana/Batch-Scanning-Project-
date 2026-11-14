@@ -13,16 +13,16 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import QApplication
 
-from core.central_sync import (build_central, choose_pipeline_profile,
+from sync.central_sync import (build_central, choose_pipeline_profile,
                                shutdown_central, start_document_sync, startup_sync)
-from core.event_bus import EventBus
-from core.hot_folder import HotFolderService
-from core.job_queue import Pipeline
-from core.profile_manager import ProfileManager
-from core.project_runtime import RuntimeResolver
-from core.project_store import load_config
-from core.rbac import Session
-from core.template_manager import TemplateManager
+from ui.event_bus import EventBus
+from pipeline.hot_folder import HotFolderService
+from pipeline.job_queue import Pipeline
+from projects.profile_manager import ProfileManager
+from pipeline.project_runtime import RuntimeResolver
+from projects.project_store import load_config
+from security.rbac import Session
+from projects.template_manager import TemplateManager
 from data.audit import AuditLogger
 from data.backup import BackupService
 from data.db import Database, is_encrypted, migrate_to_encrypted
@@ -138,7 +138,7 @@ def selftest() -> int:
         return "text layer found"
 
     def passwords():
-        from core.rbac import hash_password, verify_password
+        from security.rbac import hash_password, verify_password
         if not verify_password("a-long-password", hash_password("a-long-password")):
             raise RuntimeError("bcrypt check failed")
         return "bcrypt works"
@@ -254,7 +254,7 @@ def main() -> int:
     apply_theme(app)
 
     from PyQt6.QtWidgets import QMessageBox
-    from core.crash_guard import install as install_crash_guard
+    from shared.crash_guard import install as install_crash_guard
     install_crash_guard(root / "logs", show=lambda title, text: QMessageBox.critical(
         None, title, text))
 

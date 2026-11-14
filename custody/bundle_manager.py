@@ -20,7 +20,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
-from core.models import new_id
+from shared.models import new_id
 
 QR_PREFIX = "DOK-BUNDLE-"          # every custody label QR value starts with this
 

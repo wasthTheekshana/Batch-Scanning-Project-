@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-import core.profile_manager
-from core.profile_manager import (DEFAULT_PROJECT, ProfileManager,
+import projects.profile_manager
+from projects.profile_manager import (DEFAULT_PROJECT, ProfileManager,
                                   ProjectConfigError)
 
 
@@ -65,7 +65,7 @@ def test_rollback_missing_version_raises(pm):
 def _fail_replace(monkeypatch):
     def boom(src, dst):
         raise OSError("simulated exit mid-write")
-    monkeypatch.setattr(core.profile_manager.os, "replace", boom)
+    monkeypatch.setattr(projects.profile_manager.os, "replace", boom)
 
 
 def test_failed_write_leaves_the_original_project_file_intact(pm, monkeypatch):

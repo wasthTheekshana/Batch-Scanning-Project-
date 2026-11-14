@@ -42,7 +42,7 @@ def test_the_anchors_are_printed_words_only():
 
 def test_the_title_picks_this_form_not_the_generic_application_type():
     import json
-    ocr_cfg = json.loads((ROOT / "core" / "templates" / "bank_customer_file.json")
+    ocr_cfg = json.loads((ROOT / "projects" / "templates" / "bank_customer_file.json")
                          .read_text(encoding="utf-8"))["config"]["ocr"]
     doc_type, reads = match_page("COMMERCIAL BANK HOME LOAN APPLICATION (SRI LANKAN RUPEE)", ocr_cfg)
     assert doc_type["name"] == "Home loan application" and reads
@@ -91,7 +91,7 @@ def test_a_letter_can_only_close_a_nic_and_a_12_box_number_has_no_letter(monkeyp
 def test_a_second_page_is_taken_for_its_own_form_not_for_the_personal_loan():
     """The loan forms share "Loan Details" and "Monthly Financial Details"; only each form's own words may decide."""
     import json
-    ocr_cfg = json.loads((ROOT / "core" / "templates" / "bank_customer_file.json")
+    ocr_cfg = json.loads((ROOT / "projects" / "templates" / "bank_customer_file.json")
                          .read_text(encoding="utf-8"))["config"]["ocr"]
     home = "Loan Details Loan Amount Purpose of the loan Purchase of land Purchase of house Construction / Renovation Monthly Financial Details"
     education = "Loan Details Required loan amount Course Details Study Programme Monthly Financial Details"

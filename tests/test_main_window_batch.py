@@ -6,13 +6,13 @@ import logging
 import cv2
 import pytest
 
-from core.event_bus import EventBus
-from core.profile_manager import ProfileManager
-from core.project_runtime import ProjectUnavailable
-from core.rbac import Session, User
+from ui.event_bus import EventBus
+from projects.profile_manager import ProfileManager
+from pipeline.project_runtime import ProjectUnavailable
+from security.rbac import Session, User
 from data.audit import AuditLogger
 from data.db import Database
-from core.models import ScanJob
+from shared.models import ScanJob
 from tests.conftest import make_text_page
 from ui.main_window import MainWindow
 from ui.scan_wizard import ScanWizard
@@ -197,8 +197,8 @@ def test_report_refused_batches_caps_a_long_list(
 def test_a_secret_in_a_broken_config_never_reaches_the_recovery_box(
         qtbot, window_factory, monkeypatch, tmp_path):
     """End to end: broken stored config -> real Pipeline.recover() -> box."""
-    from core.job_queue import Pipeline
-    from core.project_runtime import RuntimeResolver
+    from pipeline.job_queue import Pipeline
+    from pipeline.project_runtime import RuntimeResolver
     from export.batch_exporter import export_document
     from tests.test_project_runtime import valid_profile
     shown = _capture_warning(monkeypatch)

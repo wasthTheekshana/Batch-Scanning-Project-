@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (QComboBox, QFileDialog, QLabel, QListWidget,
                              QMessageBox, QPushButton, QVBoxLayout, QWizard,
                              QWizardPage)
 
-from core.models import ScanJob
+from shared.models import ScanJob
 from scanning.base import ScannerUnavailable
 from scanning.file_import import import_files
 from scanning.sources import preferred_choice

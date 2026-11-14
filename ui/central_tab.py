@@ -19,8 +19,8 @@ from PyQt6.QtWidgets import (QFormLayout, QHBoxLayout, QHeaderView, QLabel,
                              QLineEdit, QMessageBox, QPushButton, QTableWidget,
                              QTableWidgetItem, QVBoxLayout, QWidget)
 
-from core.central_client import (CentralRegistrationError, CentralUnavailable)
-from core.central_sync import SyncResult
+from sync.central_client import (CentralRegistrationError, CentralUnavailable)
+from sync.central_sync import SyncResult
 from ui.theme import mark
 
 log = logging.getLogger(__name__)

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from core import crash_guard
+from shared import crash_guard
 
 SECRET = "S3CRET-VALUE-123"
 
@@ -154,7 +154,7 @@ def test_a_qt_button_whose_handler_raises_no_longer_aborts_the_program(tmp_path)
         "import sys\n"
         f"sys.path.insert(0, {str(Path(__file__).parent.parent)!r})\n"
         "from PyQt6.QtWidgets import QApplication, QPushButton\n"
-        "from core import crash_guard\n"
+        "from shared import crash_guard\n"
         "app = QApplication([])\n"
         f"crash_guard.install({str(tmp_path)!r}, show=lambda t, m: print('SHOWN', m[:30]))\n"
         "def slot():\n"

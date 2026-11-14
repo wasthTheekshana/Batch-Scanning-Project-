@@ -141,7 +141,7 @@ def _run(tmp_path, db, separation, barcodes_by_page, specs, monkeypatch,
     page number to the barcode values 'found' on it. Each page file is
     stamped with its number so the fake works whatever order the pipeline
     threads handle the pages in."""
-    import core.job_queue as jq
+    import pipeline.job_queue as jq
     from tests.test_pipeline import (build_pipeline, make_profile, wait_for,
                                      write_pages)
     profile = make_profile(tmp_path)
@@ -305,7 +305,7 @@ def test_through_the_pipeline_a_sparse_page_is_kept_and_read(tmp_path, db, monke
 def test_every_page_left_out_of_a_document_is_audited_with_its_reason():
     import types
 
-    from core.job_queue import Pipeline
+    from pipeline.job_queue import Pipeline
 
     class Audit:
         def __init__(self):
@@ -333,7 +333,7 @@ def test_every_page_left_out_of_a_document_is_audited_with_its_reason():
 def test_nothing_is_audited_when_every_page_is_in_a_document():
     import types
 
-    from core.job_queue import Pipeline
+    from pipeline.job_queue import Pipeline
     audit = types.SimpleNamespace(log=lambda *a, **k: (_ for _ in ()).throw(AssertionError))
     pages = [{"page_no": 1, "barcodes": [], "is_custody_label": False}]
     Pipeline._audit_excluded_pages(types.SimpleNamespace(audit=audit), "b1", pages,

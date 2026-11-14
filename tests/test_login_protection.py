@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from PyQt6.QtWidgets import QDialog
 
-from core.rbac import (LOCK_SECONDS, MAX_FAILED_LOGINS, AccountLocked, AuthError, Session,
+from security.rbac import (LOCK_SECONDS, MAX_FAILED_LOGINS, AccountLocked, AuthError, Session,
                        User, create_user, is_locked, unlock_user, verify_session_password)
 from data.db import Database
 from ui.idle_lock import IdleGuard, UnlockDialog
@@ -18,7 +18,7 @@ def cheap_bcrypt(monkeypatch):
     """Cost 12 makes every sign-in take a quarter of a second; the logic under test does not care."""
     import bcrypt
     real = bcrypt.gensalt
-    monkeypatch.setattr("core.rbac._bcrypt.gensalt", lambda rounds=12, prefix=b"2b": real(4, prefix))
+    monkeypatch.setattr("security.rbac._bcrypt.gensalt", lambda rounds=12, prefix=b"2b": real(4, prefix))
 
 
 @pytest.fixture()
@@ -140,8 +140,8 @@ def test_wrong_unlock_attempts_count_towards_the_account_lock(db):
 
 
 def test_the_main_window_locks_and_signs_out_after_a_failed_unlock(qtbot, tmp_path, monkeypatch):
-    from core.event_bus import EventBus
-    from core.profile_manager import ProfileManager
+    from ui.event_bus import EventBus
+    from projects.profile_manager import ProfileManager
     from ui.main_window import MainWindow
     d = Database(tmp_path / "w.db")
     Session.login("admin", "admin", d)
@@ -163,8 +163,8 @@ def test_the_main_window_locks_and_signs_out_after_a_failed_unlock(qtbot, tmp_pa
 
 def test_signing_out_tells_the_program_to_show_the_sign_in_page_but_closing_the_window_quits(qtbot, tmp_path):
     """The program keeps running after Sign out (main.py shows the sign-in page again); only a plain close quits."""
-    from core.event_bus import EventBus
-    from core.profile_manager import ProfileManager
+    from ui.event_bus import EventBus
+    from projects.profile_manager import ProfileManager
     from ui.main_window import MainWindow
     d = Database(tmp_path / "so.db")
     pm = ProfileManager(tmp_path / "projects", d)
@@ -192,8 +192,8 @@ def test_a_closed_window_is_not_touched_by_later_pipeline_events(qtbot, tmp_path
     """After Sign out the old window is deleted; a document finishing QC afterwards must not reach its deleted panel
     (a lambda connected to the bus did, and raised RuntimeError in refresh)."""
     from PyQt6.QtCore import QCoreApplication, QEvent
-    from core.event_bus import EventBus
-    from core.profile_manager import ProfileManager
+    from ui.event_bus import EventBus
+    from projects.profile_manager import ProfileManager
     from ui.main_window import MainWindow
     d = Database(tmp_path / "del.db")
     bus = EventBus()

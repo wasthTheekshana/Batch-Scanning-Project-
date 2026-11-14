@@ -269,8 +269,8 @@ class RecordingChannel(BaseDeliveryChannel):
 
 def test_pipeline_multi_channel_and_trigger(tmp_path):
     import cv2
-    from core.job_queue import Pipeline
-    from core.models import ScanJob
+    from pipeline.job_queue import Pipeline
+    from shared.models import ScanJob
     from data.db import Database
     from tests.conftest import make_text_page
     from tests.test_pipeline import make_profile, wait_for

@@ -9,10 +9,10 @@ import pytest
 from PyQt6.QtCore import QThread
 from PyQt6.QtTest import QSignalSpy
 
-from core.central_sync import SyncResult
-from core.event_bus import EventBus
-from core.profile_manager import DEFAULT_PROJECT, ProfileManager
-from core.rbac import User
+from sync.central_sync import SyncResult
+from ui.event_bus import EventBus
+from projects.profile_manager import DEFAULT_PROJECT, ProfileManager
+from security.rbac import User
 from data.db import Database
 from ui.workflow_designer import WorkflowDesigner
 

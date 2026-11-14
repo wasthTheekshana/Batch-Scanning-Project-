@@ -30,7 +30,7 @@ sys.path.insert(0, str(REPO))
 DEFAULT_ROOT = Path.home() / "AppData" / "Local" / "DOKScanner"
 WIPE_TABLES = ("custody_events", "bundle_documents", "documents", "jobs", "batches", "audit_log", "sync_outbox")
 WIPE_FOLDERS = ("output", "delivered", "staging")
-DEMO_TEMPLATE = REPO / "core" / "templates" / "bank_demo_index.json"
+DEMO_TEMPLATE = REPO / "projects" / "templates" / "bank_demo_index.json"
 
 
 def app_running() -> bool:
@@ -54,8 +54,8 @@ def open_db(root: Path):
 
 def index_only(root: Path, db, name: str) -> str:
     """New version of the project `name` that reads only the three index fields."""
-    from core.profile_manager import ProfileManager
-    from core.project_store import load_config
+    from projects.profile_manager import ProfileManager
+    from projects.project_store import load_config
     row = next((r for r in db.list_projects("active") if r["name"] == name), None)
     if row is None:
         raise SystemExit(f"no active project named {name!r}")

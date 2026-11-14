@@ -4,8 +4,8 @@ from pathlib import Path
 import cv2
 import pytest
 
-from core.job_queue import Pipeline
-from core.models import ScanJob
+from pipeline.job_queue import Pipeline
+from shared.models import ScanJob
 from data.db import Database
 from delivery.local_folder import LocalFolderChannel
 from export.batch_exporter import export_document
@@ -197,7 +197,7 @@ def test_scanning_a_bundle_qr_sheet_auto_logs_custody_checkpoint(tmp_path, db):
     profile = make_profile(tmp_path)
     profile["separation"]["strategy"] = ["barcode"]
     pipeline = build_pipeline(tmp_path, db, profile)
-    import core.job_queue as jq
+    import pipeline.job_queue as jq
     original = jq.decode_barcodes
     jq.decode_barcodes = fake_decode
     try:
@@ -227,7 +227,7 @@ def test_bundle_qr_sheet_is_dropped_from_the_exported_document(tmp_path, db):
     profile = make_profile(tmp_path)
     profile["separation"]["strategy"] = ["barcode"]
     pipeline = build_pipeline(tmp_path, db, profile)
-    import core.job_queue as jq
+    import pipeline.job_queue as jq
     original = jq.decode_barcodes
     jq.decode_barcodes = fake_decode
     try:

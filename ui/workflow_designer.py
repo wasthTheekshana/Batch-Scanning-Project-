@@ -16,9 +16,9 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFormLayout, QGroupB
                              QListWidgetItem, QMessageBox, QPushButton,
                              QScrollArea, QSpinBox, QVBoxLayout, QWidget)
 
-from core.config_overlay import LOCAL_ONLY_KEYS
-from core.profile_manager import ProjectConfigError
-from core.project_store import config_error_path
+from projects.config_overlay import LOCAL_ONLY_KEYS
+from projects.profile_manager import ProjectConfigError
+from projects.project_store import config_error_path
 from separation.rule_engine import RuleEngine, RuleSetError
 from ui.rule_dialog import ACTIONS, OPERATORS, RuleDialog  # noqa: F401  (re-exported for existing callers)
 
@@ -926,7 +926,7 @@ class WorkflowDesigner(QWidget):
             self.refresh_projects()
 
     def new_from_template(self) -> None:
-        from core.template_manager import TemplateManager
+        from projects.template_manager import TemplateManager
         tm = TemplateManager(self.db)
         templates = tm.list_templates()
         if not templates:
@@ -973,7 +973,7 @@ class WorkflowDesigner(QWidget):
                                             "Category:")
         if not (ok and category.strip()):
             return
-        from core.template_manager import TemplateManager
+        from projects.template_manager import TemplateManager
         cfg = self.collect_config()
         TemplateManager(self.db).save_as_template(
             cfg, name.strip(), category.strip())

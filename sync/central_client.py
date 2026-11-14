@@ -168,7 +168,7 @@ class CentralClient:
         return RegisterResult(pc_id, key, _clamp(poll))
 
     def heartbeat(self, pc_id: str, api_key: str, report: dict) -> None:
-        """Tell the server this PC is alive and what it runs (core.central_report). Raises
+        """Tell the server this PC is alive and what it runs (sync.central_report). Raises
         CentralAuthError when the key is no longer accepted, CentralUnavailable otherwise."""
         status, _data = self._transport(
             "POST", f"{self.base}/pcs/{quote(pc_id, safe='')}/heartbeat",

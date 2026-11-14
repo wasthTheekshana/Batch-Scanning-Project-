@@ -8,7 +8,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 import ocr_benchmark as bm  # noqa: E402
 
-from core.validation import validate  # noqa: E402
+from pipeline.validation import validate  # noqa: E402
 
 
 def test_edit_distance_and_character_accuracy():

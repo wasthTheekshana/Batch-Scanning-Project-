@@ -4,11 +4,11 @@ from datetime import datetime, timezone
 
 import pytest
 
-from core.central_client import CentralAuthError, CentralClient, CentralUnavailable, PullResult
-from core.central_report import build_report
-from core.central_state import CentralState
-from core.central_sync import CentralSyncService
-from core.profile_manager import ProfileManager
+from sync.central_client import CentralAuthError, CentralClient, CentralUnavailable, PullResult
+from sync.central_report import build_report
+from sync.central_state import CentralState
+from sync.central_sync import CentralSyncService
+from projects.profile_manager import ProfileManager
 from data.db import Database
 from tests.test_central_sync import PID, FakeClient, project_entry
 from version import __version__

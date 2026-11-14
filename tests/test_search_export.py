@@ -3,9 +3,9 @@ import csv
 
 import pytest
 
-from core.rbac import Session, hash_password
-from core.search import SearchQuery
-from core.search_export import FIXED, build_rows, export_csv
+from security.rbac import Session, hash_password
+from search.search import SearchQuery
+from search.search_export import FIXED, build_rows, export_csv
 from data.db import Database
 from ui.search_panel import SearchPanel
 
@@ -64,7 +64,7 @@ def test_formulas_are_neutralised_and_a_field_cannot_overwrite_a_fixed_column(db
 
 
 def test_more_than_one_page_of_results_is_all_exported(db, tmp_path, monkeypatch):
-    import core.search_export as se
+    import search.search_export as se
     monkeypatch.setattr(se, "MAX_LIMIT", 2)                          # pages of 2: 3 docs = 2 pages
     cols, rows, truncated = build_rows(db, SearchQuery())
     assert len(rows) == 3 and not truncated

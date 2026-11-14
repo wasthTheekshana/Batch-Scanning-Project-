@@ -24,10 +24,10 @@ from pathlib import Path
 
 import cv2
 
-from core.models import PageRecord, ScanJob, new_id
-from core.pipeline_custody import CUSTODY_SHEET_MAX_CHARS, CustodyMixin  # noqa: F401
-from core.pipeline_reissue import ReissueMixin
-from core.project_runtime import ProjectRuntime, ProjectUnavailable
+from shared.models import PageRecord, ScanJob, new_id
+from pipeline.pipeline_custody import CUSTODY_SHEET_MAX_CHARS, CustodyMixin  # noqa: F401
+from pipeline.pipeline_reissue import ReissueMixin
+from pipeline.project_runtime import ProjectRuntime, ProjectUnavailable
 from imaging.blank_detect import ink_density, is_blank
 from imaging.crop import auto_crop
 from imaging.deskew import deskew

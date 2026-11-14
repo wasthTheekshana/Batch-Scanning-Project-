@@ -1,6 +1,6 @@
 """Merge a project pulled from central with this PC's local-only sections.
 
-Mirrors _LIVE_ONLY_TOP_KEYS in core/template_manager.py: central owns the
+Mirrors _LIVE_ONLY_TOP_KEYS in projects/template_manager.py: central owns the
 processing settings; the PC owns where it scans from and where output goes.
 Nothing under LOCAL_ONLY_KEYS is ever taken from a pulled config.
 """
@@ -9,8 +9,8 @@ from __future__ import annotations
 import copy
 from pathlib import Path
 
-from core.profile_manager import DEFAULT_PROJECT, is_safe_project_id
-from core.safe_paths import is_safe_file_name, is_safe_relative_subpath
+from projects.profile_manager import DEFAULT_PROJECT, is_safe_project_id
+from shared.safe_paths import is_safe_file_name, is_safe_relative_subpath
 
 LOCAL_ONLY_KEYS = ("scanner", "export", "delivery")
 

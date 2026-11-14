@@ -15,7 +15,7 @@ import threading
 import uuid
 from pathlib import Path
 
-from core.project_store import readable_projects
+from projects.project_store import readable_projects
 from scanning.file_import import import_files
 from scanning.folder_watcher import FolderWatchSource
 

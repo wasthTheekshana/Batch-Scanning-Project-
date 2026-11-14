@@ -2,7 +2,7 @@ import copy
 
 import pytest
 
-from core.profile_manager import (DEFAULT_PROJECT, ProfileManager,
+from projects.profile_manager import (DEFAULT_PROJECT, ProfileManager,
                                   ProjectConfigError, is_safe_project_id)
 from data.db import Database
 

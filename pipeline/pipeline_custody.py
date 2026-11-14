@@ -1,13 +1,13 @@
 """How the processing stages deal with custody-bundle label sheets.
 
 A page carrying a custody QR is either a label sheet (left out of the documents) or a document
-that merely carries the label; see _decide_custody_sheet. Methods of Pipeline (core/job_queue.py)."""
+that merely carries the label; see _decide_custody_sheet. Methods of Pipeline (pipeline/job_queue.py)."""
 from __future__ import annotations
 
 import logging
 import re
 
-from core.models import PageRecord
+from shared.models import PageRecord
 
 log = logging.getLogger(__name__)
 

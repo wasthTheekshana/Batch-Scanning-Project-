@@ -15,7 +15,7 @@ assessments apply to which component, and on what cadence."
 | Core application (`core/`, `data/`, `imaging/`, `ocr/`, `qc/`, `separation/`, `export/`, `delivery/`, `scanning/`, `ui/`) | The Windows desktop application — the entire product surface today |
 | Packaging (`docscanner.spec`, installer) | The build/distribution pipeline that turns source into a shipped executable |
 | Custody module (`custody/`) | Physical bundle tracking, added this session |
-| Templates module (`core/template_manager.py`) | Project-template system, added this session |
+| Templates module (`projects/template_manager.py`) | Project-template system, added this session |
 
 **Not yet in scope, because they don't exist yet:** any network-facing API,
 web dashboard, or multi-site aggregation service — these are deferred per

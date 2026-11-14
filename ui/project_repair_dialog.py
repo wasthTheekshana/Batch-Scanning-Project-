@@ -1,4 +1,4 @@
-"""Repair projects whose stored settings cannot be read (see core.project_repair)."""
+"""Repair projects whose stored settings cannot be read (see projects.project_repair)."""
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (QDialog, QHBoxLayout, QLabel, QListWidget,
                              QListWidgetItem, QMessageBox, QPushButton,
                              QVBoxLayout)
 
-from core.project_repair import describe, repair, unreadable_rows
+from projects.project_repair import describe, repair, unreadable_rows
 
 
 class ProjectRepairDialog(QDialog):

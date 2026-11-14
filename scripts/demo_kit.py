@@ -153,7 +153,7 @@ def run() -> int:
         import json
         import uuid
 
-        from core.profile_manager import DEFAULT_PROJECT, ProfileManager
+        from projects.profile_manager import DEFAULT_PROJECT, ProfileManager
         from custody.bundle_manager import create_bundle, generate_label_sheet
         from scanning.file_import import import_files
 
@@ -340,8 +340,8 @@ def run_bank() -> int:
 
         import fitz
 
-        from core.profile_manager import ProfileManager
-        from core.template_manager import TemplateManager
+        from projects.profile_manager import ProfileManager
+        from projects.template_manager import TemplateManager
         from scanning.file_import import import_files
 
         root = Path(os.environ["LOCALAPPDATA"]) / "DOKScanner"

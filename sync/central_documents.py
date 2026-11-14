@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
-from core.central_client import (CentralAuthError, CentralClient, CentralError, CentralRejected,
+from sync.central_client import (CentralAuthError, CentralClient, CentralError, CentralRejected,
                                  allow_loopback_http)
 
 log = logging.getLogger(__name__)

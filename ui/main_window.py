@@ -8,9 +8,9 @@ from PyQt6.QtCore import QSize, Qt, pyqtSlot, pyqtSignal
 from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QMainWindow, QMessageBox,
                              QPushButton, QVBoxLayout, QWidget)
 
-from core.project_runtime import ProjectUnavailable
-from core.project_store import load_config, readable_projects
-from core.rbac import Session
+from pipeline.project_runtime import ProjectUnavailable
+from projects.project_store import load_config, readable_projects
+from security.rbac import Session
 from ocr.doc_types import all_zones
 from ui.admin_panel import AdminPanel
 from ui.image_viewer import ImageViewer

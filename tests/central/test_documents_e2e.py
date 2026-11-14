@@ -11,8 +11,8 @@ from central.crypto import DataKey, generate_key
 from central.manage import create_admin
 from central.models import PcAssignment, Project
 from central.settings import Settings
-from core.central_client import CentralClient, CentralUnavailable
-from core.central_documents import DocumentPusher
+from sync.central_client import CentralClient, CentralUnavailable
+from sync.central_documents import DocumentPusher
 from data.db import Database
 
 NIC = "553216789V"

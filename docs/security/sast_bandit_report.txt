@@ -5,7 +5,7 @@ Test results:
    Severity: Low   Confidence: Medium
    CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
    More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
-   Location: .\core\profile_manager.py:68:8
+   Location: .\projects\profile_manager.py:68:8
 67	        "dpi_fail": 150,
 68	        "pass_score": 80,
 69	    },

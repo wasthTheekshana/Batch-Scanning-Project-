@@ -6,7 +6,7 @@ import cv2
 import fitz
 import pytest
 
-from core.job_queue import Pipeline
+from pipeline.job_queue import Pipeline
 from data.db import Database
 from delivery.local_folder import LocalFolderChannel
 from export.batch_exporter import export_document
@@ -44,7 +44,7 @@ def db(tmp_path):
 
 def run(tmp_path, db, monkeypatch, ocr_cfg=OCR_CFG, pages=(2, 3, 4, 5, 6),
         auto_index=True):
-    import core.job_queue as jq
+    import pipeline.job_queue as jq
     profile = make_profile(tmp_path)
     profile["separation"] = {"strategy": ["barcode"], "barcode_role": "cover_sheet",
                              "blank_threshold": 0.02}
@@ -137,7 +137,7 @@ def test_a_type_can_read_regions_while_the_rest_of_the_project_reads_text(tmp_pa
             return OCRResult(text="0012345678", confidence=0.95)
         return OCRResult(text=TEXT.get(int(image[5, 5]) - 100, ""), confidence=0.95)
 
-    import core.job_queue as jq
+    import pipeline.job_queue as jq
     profile = make_profile(tmp_path)
     profile["separation"] = {"strategy": ["barcode"], "barcode_role": "cover_sheet",
                              "blank_threshold": 0.02}

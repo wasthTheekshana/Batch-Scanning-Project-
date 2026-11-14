@@ -3,7 +3,7 @@ import importlib
 
 import pytest
 
-PACKAGES = ["core", "data", "scanning", "imaging", "separation",
+PACKAGES = ["shared", "projects", "pipeline", "sync", "security", "search", "data", "scanning", "imaging", "separation",
             "qc", "ocr", "export", "delivery", "ui"]
 
 

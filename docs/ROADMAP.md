@@ -106,7 +106,7 @@ and open its PDF.
 - Code-signing certificate; install and silent-deploy test on a clean PC.
 - Operator manual, admin guide, installation guide.
 - Real-scanner rehearsal (`scripts/rehearsal.py scan`) and client UAT.
-- ~~The hot-folder watcher is not connected~~ DONE 2026-10-15 (`core/hot_folder.py`;
+- ~~The hot-folder watcher is not connected~~ DONE 2026-10-15 (`pipeline/hot_folder.py`;
   per-project folder in the Designer's Scanner group; handled files move to
   processed/ or failed/; batches run as operator "hot-folder", so only roles
   that see all batches can search them). Untested with a real network scanner.

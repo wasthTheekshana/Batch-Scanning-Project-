@@ -3,9 +3,9 @@ its QR label, and what stage the bundle is at as they go through QC."""
 import cv2
 import pytest
 
-import core.job_queue as jq
-from core.job_queue import Pipeline
-from core.rbac import Session, hash_password
+import pipeline.job_queue as jq
+from pipeline.job_queue import Pipeline
+from security.rbac import Session, hash_password
 from custody.bundle_manager import (bundle_summary, create_bundle, link_document,
                                     record_checkpoint, refresh_for_document,
                                     refresh_stage)

@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import pytest
 
-from core.rbac import User
+from security.rbac import User
 from data.audit import AuditLogger
 from data.db import Database
 from ui.image_viewer import PageNav, document_pages

@@ -4,8 +4,8 @@ import json
 import pytest
 from PyQt6.QtWidgets import QMessageBox
 
-from core.doc_edit import DocumentEditError, merge_documents, split_document, why_not_editable
-from core.rbac import Session
+from pipeline.doc_edit import DocumentEditError, merge_documents, split_document, why_not_editable
+from security.rbac import Session
 from data.db import Database
 
 
@@ -161,7 +161,7 @@ def test_the_dialog_refuses_a_rejected_document(qtbot, db):
 
 
 def test_qc_review_has_the_split_merge_button_for_reviewers_only(qtbot, db):
-    from core.rbac import User
+    from security.rbac import User
     from ui.qc_review import QCReviewPanel
     reviewer = QCReviewPanel(db, None, User("u", "qc", "qc_officer"))
     viewer = QCReviewPanel(db, None, User("v", "view", "viewer"))

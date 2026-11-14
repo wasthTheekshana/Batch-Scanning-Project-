@@ -3,8 +3,8 @@ import pytest
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QListWidgetItem
 
-from core.profile_manager import ProfileManager
-from core.rbac import Session, User, hash_password
+from projects.profile_manager import ProfileManager
+from security.rbac import Session, User, hash_password
 from data.backup import BackupService
 from data.db import Database
 from scanning.alaris_source import AlarisSource
@@ -115,7 +115,7 @@ def test_qc_strictness_preset_starts_on_custom_for_nonstandard_project(qtbot, db
     hand-tuned before this feature existed) must not silently get
     relabeled - the preset combo should reflect reality, not force a
     choice onto existing data."""
-    from core.profile_manager import ProfileManager
+    from projects.profile_manager import ProfileManager
     from ui.workflow_designer import WorkflowDesigner
     pm = ProfileManager(tmp_path / "projects_custom", db)
     cfg = pm.create("Custom QC Project")
@@ -206,7 +206,7 @@ def test_new_from_template_zone_can_be_positioned_and_saved(designer, monkeypatc
     ZoneDialog (must not crash - this is what broke before the fix round),
     simulate the admin positioning it, and confirm the position survives
     a real save."""
-    from core.template_manager import TemplateManager
+    from projects.template_manager import TemplateManager
     from PyQt6.QtCore import Qt
     from ui.zone_dialog import ZoneDialog
 
@@ -309,7 +309,7 @@ def test_source_registry_complete():
 # ---- new from template --------------------------------------------------------------
 
 def test_new_from_template_creates_project(designer, monkeypatch):
-    from core.template_manager import TemplateManager
+    from projects.template_manager import TemplateManager
     tm = TemplateManager(designer.db)
     template = tm.save_as_template(
         {"ocr": {"zones": [{"name": "invoice_no", "regex": r"(INV-\d+)"}],
@@ -413,7 +413,7 @@ def test_save_as_template_captures_current_config(designer, monkeypatch):
 
     designer.save_as_template()
 
-    from core.template_manager import TemplateManager
+    from projects.template_manager import TemplateManager
     templates = TemplateManager(designer.db).list_templates()
     assert len(templates) == 1
     assert templates[0]["name"] == "My Template"
@@ -423,12 +423,12 @@ def test_save_as_template_captures_current_config(designer, monkeypatch):
 
 
 def test_save_as_template_noop_with_no_project_loaded(qtbot, db, tmp_path):
-    from core.profile_manager import ProfileManager
+    from projects.profile_manager import ProfileManager
     from ui.workflow_designer import WorkflowDesigner
     pm = ProfileManager(tmp_path / "projects3", db)
     d = WorkflowDesigner(db, pm, ADMIN)
     qtbot.addWidget(d)
     d.config = None
     d.save_as_template()  # must not raise
-    from core.template_manager import TemplateManager
+    from projects.template_manager import TemplateManager
     assert TemplateManager(db).list_templates() == []

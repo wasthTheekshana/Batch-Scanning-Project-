@@ -129,7 +129,7 @@ def test_an_nic_of_ten_boxes_ends_in_a_letter(monkeypatch):
 
 # -- which form a page is -----------------------------------------------------------------------------------------------
 def _cfg():
-    path = Path(__file__).parent.parent / "core" / "templates" / "bank_customer_file.json"
+    path = Path(__file__).parent.parent / "projects" / "templates" / "bank_customer_file.json"
     return json.loads(path.read_text(encoding="utf-8"))["config"]["ocr"]
 
 

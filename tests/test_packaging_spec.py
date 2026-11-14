@@ -1,5 +1,5 @@
 """Guards against the class of bug where a module loads a JSON file
-relative to its own __file__ (core/profile_manager.py, separation/
+relative to its own __file__ (projects/profile_manager.py, separation/
 rule_engine.py) but PyInstaller's Analysis only auto-detects Python
 imports, not data files — the packaged EXE then crashes at import time
 with FileNotFoundError because the file never got bundled."""

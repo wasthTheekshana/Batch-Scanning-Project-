@@ -1,9 +1,9 @@
 # DOK Scanner central service. Build from the REPOSITORY ROOT:
 #   docker build -f central/deploy/Dockerfile -t dokscanner-central .
 #
-# Only what the service needs is copied: central/ plus the two core files it
-# imports to validate project settings (core/profile_manager.py and
-# core/project_schema.json). Nothing of the desktop application is included.
+# Only what the service needs is copied: central/ plus the two project-settings files it
+# imports to validate project settings (projects/profile_manager.py and
+# projects/project_schema.json). Nothing of the desktop application is included.
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
@@ -13,7 +13,7 @@ COPY central/requirements.txt central/requirements.txt
 RUN pip install -r central/requirements.txt
 
 COPY central/ central/
-COPY core/__init__.py core/profile_manager.py core/project_schema.json core/
+COPY projects/__init__.py projects/profile_manager.py projects/project_schema.json projects/
 
 # an unprivileged user: the service never needs root
 RUN useradd --system --no-create-home --uid 10001 dokcentral

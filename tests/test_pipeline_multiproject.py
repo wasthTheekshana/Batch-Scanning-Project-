@@ -8,9 +8,9 @@ import threading
 import cv2
 import pytest
 
-from core.job_queue import Pipeline
-from core.models import ScanJob
-from core.project_runtime import ProjectUnavailable, RuntimeResolver
+from pipeline.job_queue import Pipeline
+from shared.models import ScanJob
+from pipeline.project_runtime import ProjectUnavailable, RuntimeResolver
 from data.db import Database
 from delivery.local_folder import LocalFolderChannel
 from export.batch_exporter import export_document
@@ -153,7 +153,7 @@ def test_project_unavailable_in_a_stage_logs_the_message_but_never_the_cause(env
     events = []
     env.pipeline.subscribe(events.append)
     env.pipeline._rt = unavailable
-    with caplog.at_level(logging.ERROR, logger="core.job_queue"):
+    with caplog.at_level(logging.ERROR, logger="pipeline.job_queue"):
         env.pipeline.submit_batch("susp", make_jobs(env.tmp, "susp", "proj-a", ["text"]))
         assert wait_for(lambda: any(e["status"] == "failed" for e in events))
     assert "stage ingest failed: project 'proj-a': stored config is invalid" in caplog.text
@@ -221,7 +221,7 @@ def test_recovery_fails_a_batch_whose_project_is_unavailable_and_continues(env, 
     _persist_unprocessed(env, "rec-a", "proj-a", "proj-a")
     events = []
     env.pipeline.subscribe(events.append)
-    with caplog.at_level(logging.INFO, logger="core.job_queue"):
+    with caplog.at_level(logging.INFO, logger="pipeline.job_queue"):
         recovered = env.pipeline.recover()                  # must not raise
     assert [j.batch_id for j in recovered] == ["rec-a"]
     assert wait_for(lambda: docs_done(env, "rec-a", 1))
@@ -272,7 +272,7 @@ def test_review_approved_document_in_a_live_batch_uses_the_batchs_snapshot(env):
 def test_resubmit_returns_false_when_the_documents_project_is_unavailable(env, caplog):
     env.db.insert_project("proj-gone", "Gone", {"project_id": "proj-gone"})   # FK target, invalid config
     doc_id = _held_document(env, "held-x", "proj-gone")
-    with caplog.at_level(logging.WARNING, logger="core.job_queue"):
+    with caplog.at_level(logging.WARNING, logger="pipeline.job_queue"):
         assert env.pipeline.resubmit_document(doc_id) is False
     assert "proj-gone" in caplog.text
     assert delivered(env, "A") == [] and delivered(env, "B") == []

@@ -1,10 +1,10 @@
 
 import pytest
 
-import core.profile_manager as profile_manager
-from core.profile_manager import ProfileManager
-from core.rbac import User
-from core.template_manager import TemplateManager
+import projects.profile_manager as profile_manager
+from projects.profile_manager import ProfileManager
+from security.rbac import User
+from projects.template_manager import TemplateManager
 from data.db import Database
 from ui.workflow_designer import WorkflowDesigner
 

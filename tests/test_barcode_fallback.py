@@ -41,7 +41,7 @@ def test_a_decoder_that_is_missing_never_breaks_separation(monkeypatch):
 
 
 def _template(name):
-    return json.loads((ROOT / "core" / "templates" / name).read_text(encoding="utf-8"))["config"]
+    return json.loads((ROOT / "projects" / "templates" / name).read_text(encoding="utf-8"))["config"]
 
 
 @pytest.mark.parametrize("name", ["bank_customer_file.json", "bank_demo_index.json"])

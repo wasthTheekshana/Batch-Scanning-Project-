@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from core.template_manager import TemplateManager
+from projects.template_manager import TemplateManager
 from data.db import Database
 
 
@@ -168,9 +168,9 @@ def test_seed_built_ins_missing_directory_is_a_noop(db, tmp_path):
 
 def test_all_built_in_templates_load_and_seed(db):
     """Guards against a JSON typo in any shipped file - exercises the real
-    core/templates/ directory, not a synthetic one."""
+    projects/templates/ directory, not a synthetic one."""
     tm = TemplateManager(db)
-    tm.seed_built_ins()  # default path: core/templates/ next to this module
+    tm.seed_built_ins()  # default path: projects/templates/ next to this module
     templates = tm.list_templates()
     names = {t["name"] for t in templates}
     assert names == {"Banking", "Insurance", "HR / Personnel",
@@ -239,7 +239,7 @@ def test_every_built_in_template_config_produces_a_valid_project(db):
     """Each built-in must actually be usable: merged onto DEFAULT_PROJECT
     and run through the real schema validator, the same check
     ProfileManager.create() performs."""
-    from core.profile_manager import ProfileManager
+    from projects.profile_manager import ProfileManager
     tm = TemplateManager(db)
     tm.seed_built_ins()
     for t in tm.list_templates():

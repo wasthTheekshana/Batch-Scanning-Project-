@@ -7,7 +7,7 @@ import urllib.request
 
 import pytest
 
-from core.central_client import (LOOPBACK_ENV, MAX_RESPONSE_BYTES,
+from sync.central_client import (LOOPBACK_ENV, MAX_RESPONSE_BYTES,
                                  CentralAuthError, CentralClient,
                                  CentralRegistrationError, CentralUnavailable,
                                  allow_loopback_http, urllib_transport)
