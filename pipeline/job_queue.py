@@ -15,7 +15,6 @@ recover() re-queues anything unfinished (HLD §14.2).
 """
 from __future__ import annotations
 
-import json
 import logging
 import queue
 import threading
@@ -26,6 +25,8 @@ import cv2
 
 from shared.models import PageRecord, ScanJob, new_id
 from pipeline.pipeline_custody import CUSTODY_SHEET_MAX_CHARS, CustodyMixin  # noqa: F401
+from pipeline.delivery_stage import REASON_NO_PAGE_IMAGES, DeliveryMixin  # noqa: F401  (the screens import it from here)
+from pipeline.indexing import IndexingMixin
 from pipeline.pipeline_reissue import ReissueMixin
 from pipeline.project_runtime import ProjectRuntime, ProjectUnavailable
 from imaging.blank_detect import ink_density, is_blank
@@ -33,16 +34,13 @@ from imaging.crop import auto_crop
 from imaging.deskew import deskew
 from imaging.enhance import apply_profile, to_color_mode
 from qc.pipeline import run_qc
-from export.index_export import (append_running_csv, build_record,
-                                 write_index)
-from ocr.doc_types import enhancement_for, inherit_types, match_page, page_zone_groups
+from ocr.doc_types import enhancement_for, inherit_types, match_page
 from ocr.orientation import turn, upright
 from separation.barcode import decode_barcodes, filter_barcodes
 from separation.rule_engine import RuleEngine, RuleSetError
 from separation.splitter import split_documents
 
 log = logging.getLogger(__name__)
-TEXT_LAYER_WORKERS = 4
 
 
 def _starts_document(text: str, ocr_cfg: dict) -> bool:
@@ -51,19 +49,11 @@ def _starts_document(text: str, ocr_cfg: dict) -> bool:
     doc_type, title_page = match_page(text, ocr_cfg)
     return bool(doc_type and title_page and doc_type.get("starts_document"))
 
+
 _SENTINEL = object()
 
-# A field's lookup table only starts rejecting unrecognised values once
-# enough history exists to trust it — otherwise every project's first few
-# documents would flag every field as unknown.
-_LOOKUP_MIN_SAMPLES = 5
 
-# Pipeline.can_resubmit reason for a document whose page images are gone
-# (the one refusal the QC review still lets an approval through).
-REASON_NO_PAGE_IMAGES = "page images unavailable"
-
-
-class Pipeline(ReissueMixin, CustodyMixin):
+class Pipeline(ReissueMixin, CustodyMixin, IndexingMixin, DeliveryMixin):
     """Wires the six workers to a project profile.
 
     Collaborators are injectable for tests:
@@ -336,52 +326,6 @@ class Pipeline(ReissueMixin, CustodyMixin):
             self.enhance_q.put(record)
         self._pump(self.ocr_q, "ocr", handle)
 
-    def _extract_zone_fields(self, record: PageRecord, image, rt) -> None:
-        """Auto-index: extract configured OCR zones into page fields
-        (HLD §4 Layer 5). Values below the confidence threshold are kept
-        but flagged so the operator can correct them in the index editor.
-        ocr.mode selects zone-based extraction (fixed pixel regions,
-        cropped and re-OCR'd) or full-page extraction (label-anchored
-        regex against the page text already OCR'd for record.ocr_text)."""
-        ocr_cfg = rt.profile.get("ocr", {})
-        # a page's zones are the common ones plus those of its document type
-        # (NIC, application, ...); the type also labels the page in the PDF,
-        # and may read its zones differently from the rest of the project
-        groups, record.doc_type = page_zone_groups(ocr_cfg, record.ocr_text)
-        if not groups or not rt.profile.get("features", {}).get("auto_index"):
-            return
-        threshold = float(ocr_cfg.get("confidence_threshold", 0.75))
-        fields: dict = {}
-        for zones, mode in groups:
-            try:
-                if mode == "full_page":
-                    from ocr.zone_extractor import extract_fields_from_text
-                    fields.update(extract_fields_from_text(
-                        record.ocr_text, record.ocr_confidence, zones))
-                else:
-                    from ocr.zone_extractor import extract_fields
-                    fields.update(extract_fields(
-                        image, zones, lang=ocr_cfg.get("lang", "eng"),
-                        ocr_fn=self.ocr_fn, words=record.ocr_words))
-            except Exception as e:
-                log.warning("zone extraction failed for page %s: %s",
-                            record.job.page_no, e)
-        for name, fv in fields.items():
-            record.extracted_fields[name] = fv.value
-            if not fv.value or fv.confidence < threshold:
-                record.low_conf_fields.append(name)
-            elif self._fails_lookup(name, fv.value, rt.project_id):
-                record.low_conf_fields.append(name)
-
-    def _fails_lookup(self, field_name: str, value: str,
-                      project_id: str | None = None) -> bool:
-        """True if the value doesn't match this field's lookup table of
-        previously-indexed values (HLD §4 Layer 5: "validated against
-        lookup tables in SQLite"). Only enforced once the field has
-        enough history to be a trustworthy lookup set. History is the
-        project's own: another project's documents never open the gate."""
-        known = self.db.known_field_values(field_name, project_id)
-        return len(known) >= _LOOKUP_MIN_SAMPLES and value not in known
 
     def _enhance_worker(self) -> None:
         def handle(record: PageRecord):
@@ -584,273 +528,3 @@ class Pipeline(ReissueMixin, CustodyMixin):
         self._pump(self.rule_q, "rule", handle)
 
 
-    def _text_layer(self, images: list[str], texts: list[str]):
-        """Words and text for a searchable PDF, read from the exported page
-        images themselves. The OCR done at ingest saw the page before
-        deskew, crop and QC changed it, so its word boxes would not line up
-        with the final image. A page that cannot be read again keeps the text
-        found at ingest and goes out without word boxes."""
-        words: list[list] = []
-        out_texts: list[str] = []
-
-        def read(pair):
-            path, early = pair
-            page_words, text = [], early
-            if self.ocr_fn is not None:
-                try:
-                    result = self.ocr_fn(cv2.imread(path, cv2.IMREAD_UNCHANGED))
-                    if result is not None:
-                        page_words = list(getattr(result, "words", None) or [])
-                        text = result.text or early
-                except Exception:
-                    log.warning("could not read %s again for the PDF text "
-                                "layer", Path(path).name)
-            return page_words, text
-
-        # each page is a separate Tesseract process: read the pages of a document side by side
-        from concurrent.futures import ThreadPoolExecutor
-        pairs = list(zip(images, texts))
-        with ThreadPoolExecutor(max_workers=max(1, min(TEXT_LAYER_WORKERS, len(pairs)))) as pool:
-            for page_words, text in pool.map(read, pairs):
-                words.append(page_words)
-                out_texts.append(text)
-        return out_texts, words
-
-    def _delivery_worker(self) -> None:
-        def handle(item: dict):
-            if "reissue_index" in item:
-                self._do_reissue_index(item["reissue_index"])
-                return
-            if "reissue_types" in item:
-                self._do_reissue_types(item["reissue_types"])
-                return
-            document, records = item["document"], item["records"]
-            doc_id = document["document_id"]
-
-            if document["validation_status"] != "auto_approved":
-                # WARN/FAIL documents wait in the review queue; the QC
-                # review UI re-submits them for export after approval.
-                self._emit("delivery", "held_for_review", document_id=doc_id)
-                return
-
-            rt = self._rt(document["batch_id"], document.get("project_id"))
-            export_cfg = rt.profile.get("export", {})
-            with self._lock:
-                # setdefault: batch state may be gone after a restart
-                # (e.g. review-approved documents from an old session)
-                state = self._batches.setdefault(
-                    document["batch_id"],
-                    {"expected": 0, "pages": [], "counter": 0,
-                     "operator": "review"})
-                state["counter"] += 1
-                counter = state["counter"]
-            ctx = {"batch_id": document["batch_id"],
-                   "document_id": doc_id,
-                   "counter": counter,
-                   "barcode": document.get("barcode") or "",
-                   "date": __import__("datetime").datetime.now().strftime("%Y%m%d"),
-                   "fields": document["extracted_fields"],
-                   "output_folder": document.get("output_folder", ""),
-                   "dpi": rt.profile.get("scanner", {}).get("dpi", 300),
-                   "page_types": [r.doc_type for r in records]}
-            images = [r.working_path for r in records]
-            texts = [r.ocr_text for r in records]
-            if export_cfg.get("format", "searchable_pdf") in (
-                    "searchable_pdf", "pdf_a"):
-                texts, ctx["ocr_words"] = self._text_layer(images, texts)
-            out_path = self.export_fn(images, export_cfg, ctx, texts)
-            self.db.update_document(doc_id, storage_path=str(out_path))
-            if self.audit:
-                self.audit.log("export", "system", document_id=doc_id,
-                               path=str(out_path))
-            index_path = self._write_index_file(
-                doc_id, out_path, rt, export_cfg.get("index") or {},
-                page_count=len(records), fields=document["extracted_fields"],
-                qc_score=document.get("qc_score"))
-
-            # multi-channel: project-enabled channels + rule-triggered ones
-            targets = list(rt.channels)
-            names = {c.name for c in targets}
-            for trigger in document.get("trigger_channels", []):
-                extra = rt.trigger_pool.get(trigger)
-                if extra is not None and extra.name not in names:
-                    targets.append(extra)
-                    names.add(extra.name)
-
-            delivered_status = None
-            details = {}
-            for channel in targets:
-                result = self._deliver_with_retry(channel, str(out_path),
-                                                  document)
-                details[channel.name] = {"success": result.success,
-                                         "checksum": result.checksum,
-                                         **result.detail}
-                if index_path is not None and result.success:
-                    sent = self._deliver_with_retry(channel, str(index_path),
-                                                    document)
-                    details[channel.name]["index"] = {
-                        "success": sent.success, "checksum": sent.checksum}
-                    if not sent.success and self.audit:
-                        self.audit.log("index_not_delivered", "system",
-                                       document_id=doc_id, channel=channel.name)
-                if result.success:
-                    delivered_status = delivered_status or channel.status_value
-                    if self.audit:
-                        self.audit.log("deliver", "system",
-                                       document_id=doc_id,
-                                       channel=channel.name,
-                                       destination=result.destination)
-            self.db.update_document(
-                doc_id,
-                delivery_status=delivered_status or "pending",
-                delivery_detail=details)
-            self._emit("delivery", "done", document_id=doc_id,
-                       delivery_status=delivered_status or "pending")
-            self._maybe_complete_batch(document["batch_id"])
-        self._pump(self.delivery_q, "delivery", handle)
-
-    def _write_index_file(self, doc_id: str, pdf_path, rt: ProjectRuntime,
-                          index_cfg: dict, page_count: int, fields: dict,
-                          qc_score) -> Path | None:
-        """Write the document's index file next to its PDF when the project
-        asks for one. A failure never fails the document: it is audited (type
-        only, values can be personal data) and the PDF is still delivered."""
-        if not index_cfg.get("enabled"):
-            return None
-        try:
-            row = self.db.get_document(doc_id)
-            batch = self.db.get_batch(row["batch_id"]) if row is not None else None
-            record = build_record(
-                document_id=doc_id, project_name=rt.profile.get("name", ""),
-                batch_id=row["batch_id"] if row is not None else "",
-                operator=(batch["operator_user"] if batch is not None else "") or "",
-                scanned_at=(row["created_at"] if row is not None else "") or "",
-                qc_score=qc_score, page_count=page_count,
-                pdf_path=pdf_path, fields=fields)
-            path = write_index(pdf_path, record, index_cfg.get("format", "csv"))
-            if index_cfg.get("running_csv"):
-                append_running_csv(Path(pdf_path).parent, record)
-            return path
-        except Exception as e:
-            log.warning("index file not written for %s: %s", doc_id,
-                        type(e).__name__)
-            if self.audit:
-                self.audit.log("index_failed", "system", document_id=doc_id,
-                               error=type(e).__name__)
-            return None
-
-    def _check_duplicate(self, document: dict, records: list,
-                         rt: ProjectRuntime) -> dict | None:
-        """Fingerprint the first non-blank page and compare with earlier
-        documents (features.duplicate_check, HLD §4 Layer 5). A match
-        sets duplicate_of + holds the document for review."""
-        if not rt.profile.get("features", {}).get("duplicate_check"):
-            return None
-        first = next((r for r in records if not r.is_empty
-                      and r.working_path), None)
-        if first is None:
-            return None
-        try:
-            from ocr.duplicate import find_duplicate, fingerprint
-            md5, phash = fingerprint(first.working_path)
-        except Exception as e:
-            log.warning("duplicate fingerprint failed: %s", e)
-            return None
-        known = []
-        for row in self.db.list_documents():
-            try:
-                fp = json.loads(row["qc_detail"] or "{}").get("fingerprint")
-            except json.JSONDecodeError:
-                continue
-            if fp:
-                known.append({"document_id": row["document_id"],
-                              "md5": fp.get("md5"), "phash": fp.get("phash"),
-                              "barcode": fp.get("barcode")})
-        dup_id = find_duplicate(md5, phash, known,
-                                barcode=document.get("barcode"))
-        if dup_id:
-            document["duplicate_of"] = dup_id
-            document["validation_status"] = "pending_qc"
-            document["flags"] = sorted(set(document["flags"]) | {"duplicate"})
-            log.info("document %s flagged as duplicate of %s",
-                     document["document_id"], dup_id)
-        return {"md5": md5, "phash": phash,
-                "barcode": document.get("barcode")}
-
-    def _resubmit_inputs(self, document_id: str):
-        """(row, page records, reason). reason is "" when the document can be
-        re-exported, else a short operator-readable refusal (value-free)."""
-        row = self.db.get_document(document_id)
-        if row is None:
-            return None, [], "unknown document"
-        try:
-            self._resolve(row["project_id"])
-        except ProjectUnavailable as e:
-            return row, [], f"project not available: {e}"
-        detail = json.loads(row["qc_detail"] or "{}")
-        pages = detail.get("pages", {})
-        records = []
-        for page_no in sorted(pages, key=int):
-            info = pages[page_no]
-            working = info.get("working_path")
-            if not working or not Path(working).exists():
-                continue
-            job = ScanJob(batch_id=row["batch_id"],
-                          project_id=row["project_id"],
-                          page_no=int(page_no),
-                          image_path=info.get("original_path", working))
-            records.append(PageRecord(job=job, working_path=working,
-                                      ocr_text=info.get("ocr_text", ""),
-                                      doc_type=info.get("doc_type")))
-        if not records:
-            return row, [], REASON_NO_PAGE_IMAGES
-        return row, records, ""
-
-    def can_resubmit(self, document_id: str) -> tuple[bool, str]:
-        """Whether resubmit_document would accept this document, and if not
-        why. No side effects."""
-        _row, _records, reason = self._resubmit_inputs(document_id)
-        return (not reason, reason)
-
-    def resubmit_document(self, document_id: str) -> bool:
-        """Push an operator-approved review document into the delivery
-        stage (QC review 'Accept → export'). Page images come from the
-        paths recorded in qc_detail during QC. Returns False when the
-        document is unknown or predates path recording."""
-        row, records, reason = self._resubmit_inputs(document_id)
-        if reason:
-            log.warning("cannot re-export %s: %s", document_id, reason)
-            return False
-        fields = json.loads(row["extracted_fields"] or "{}")
-        document = {
-            "document_id": document_id,
-            "batch_id": row["batch_id"],
-            "project_id": row["project_id"],
-            "barcode": fields.get("barcode"),
-            "qc_score": row["qc_score"],
-            "validation_status": "auto_approved",  # operator approved
-            "extracted_fields": fields,
-        }
-        self.delivery_q.put({"document": document, "records": records})
-        return True
-
-    def _deliver_with_retry(self, channel, doc_path: str, metadata: dict):
-        """Retry hard failures up to delivery_attempts; a queued result
-        (e.g. CD/DVD staged awaiting burn) is not an error and is
-        returned as-is."""
-        result = None
-        for attempt in range(1, self.delivery_attempts + 1):
-            result = channel.deliver(doc_path, metadata)
-            if result.success or result.detail.get("queued"):
-                return result
-            log.warning("delivery via %s failed (attempt %d/%d): %s",
-                        channel.name, attempt, self.delivery_attempts,
-                        result.detail.get("error"))
-        return result
-
-    def _maybe_complete_batch(self, batch_id: str) -> None:
-        pending = [d for d in self.db.list_documents(batch_id)
-                   if d["validation_status"] == "pending_qc"]
-        if not pending:
-            self.db.update_batch_status(batch_id, "complete")
-            self._emit("batch", "complete", batch_id=batch_id)

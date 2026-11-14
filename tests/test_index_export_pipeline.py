@@ -135,7 +135,7 @@ def test_a_failure_writing_the_index_is_audited_by_type_and_the_pdf_still_goes(e
 
     def broken(*a, **k):
         raise PermissionError("S3CRET-VALUE-123 cannot be written")
-    monkeypatch.setattr("pipeline.job_queue.write_index", broken)
+    monkeypatch.setattr("pipeline.delivery_stage.write_index", broken)
     doc, tmp, _p = run(env, {"enabled": True, "format": "csv"})
     assert doc["delivery_status"] == "delivered_local"
     events = db.conn.execute(

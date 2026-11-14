@@ -10,6 +10,10 @@ All notable changes to DOK Scanner. The newest release is first. The version num
   schema, templates), `security/` (users and roles), `search/`, `sync/` (central connection) and `shared/` (safe paths, data
   classes, crash guard); the event bus lives with the screens in `ui/`. Imports, patch targets and file paths in code,
   tests, build files and docs were updated; the central server's Docker image copies `projects/` instead of `core/`.
+- **Two large classes are split into focused modules.** The database class (`data/db.py`, 822 lines) keeps the connection,
+  schema and migrations and takes its queries from `projects_repo`, `documents_repo`, `custody_repo` and `users_repo`;
+  the pipeline (`pipeline/job_queue.py`, 856 lines) takes the indexing and the last (export and delivery) stage from
+  `indexing.py` and `delivery_stage.py`. The public methods and the logger names are unchanged.
 - **`scripts/check_layers.py`** (also a test and a CI step) fails when a package imports one it must not, so the layering
   described in the README cannot drift back.
 
