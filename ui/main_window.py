@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from PyQt6.QtCore import QSize, Qt, pyqtSlot, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QMainWindow, QMessageBox,
                              QPushButton, QVBoxLayout, QWidget)
 
@@ -16,70 +16,19 @@ from ui.admin_panel import AdminPanel
 from ui.image_viewer import ImageViewer
 from ui.index_editor import IndexEditor
 from ui.job_monitor import JobMonitor
+from ui.main_notices import REENROLL_NOTICE, NoticesMixin
+from ui.main_session import DEFAULT_H, DEFAULT_W, SessionMixin
 from ui.qc_review import QCReviewPanel
 from ui.scan_wizard import ScanWizard
 from ui.sidebar import SideNav
+from ui.sidebar_blocks import ROLE_LABELS, BrandBlock, UserBlock
 from ui.theme import ACCENT, fit_to_screen, icon, mark, nav_icon
 from ui.workflow_designer import WorkflowDesigner
 
 log = logging.getLogger(__name__)
 
-_MAX_REFUSED_LINES = 10
 
-REENROLL_NOTICE = "Central: new enrollment code needed"
-
-ROLE_LABELS = {"admin": "Administrator", "operator": "Operator",
-               "qc_officer": "QC Officer", "viewer": "Viewer"}
-
-
-DEFAULT_W, DEFAULT_H = 1360, 860
-
-
-class BrandBlock(QWidget):
-    """The product name at the top of the sidebar (just the mark when the rail is narrow)."""
-
-    def __init__(self):
-        super().__init__()
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 0, 4, 0)
-        layout.setSpacing(0)
-        self.title = QLabel("DOK Scanner")
-        self.title.setObjectName("HeaderTitle")
-        self.sub = QLabel("Capture · QC · Delivery")
-        self.sub.setObjectName("HeaderSub")
-        layout.addWidget(self.title)
-        layout.addWidget(self.sub)
-
-    def set_compact(self, compact: bool) -> None:
-        self.title.setText("DOK" if compact else "DOK Scanner")
-        self.sub.setVisible(not compact)
-
-
-class UserBlock(QWidget):
-    """Who is signed in, and Sign out, at the bottom of the sidebar."""
-
-    def __init__(self, who: str | None):
-        super().__init__()
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
-        self.chip = QLabel(who or "")
-        self.chip.setObjectName("UserChip")
-        self.chip.setWordWrap(True)
-        self.chip.setVisible(bool(who))
-        self.signout_btn = QPushButton("Sign out")
-        self.signout_btn.setObjectName("SignOut")
-        layout.addWidget(self.chip)
-        layout.addWidget(self.signout_btn)
-        self._who = who
-
-    def set_compact(self, compact: bool) -> None:
-        self.chip.setVisible(bool(self._who) and not compact)
-        self.signout_btn.setText("⏻" if compact else "Sign out")
-        self.signout_btn.setToolTip("Sign out")
-
-
-class MainWindow(QMainWindow):
+class MainWindow(SessionMixin, NoticesMixin, QMainWindow):
     closed = pyqtSignal(bool)           # True when it closed because the user signed out (not to quit the program)
 
     def __init__(self, db, profile_manager, bus, pipeline=None, audit=None,
@@ -235,14 +184,6 @@ class MainWindow(QMainWindow):
             f"({ROLE_LABELS.get(user.role, user.role)})" if user else
             "Not signed in")
 
-    @pyqtSlot(object)
-    def _on_central_synced(self, result) -> None:
-        self._refresh_central_notices()
-
-    def _refresh_central_notices(self) -> None:
-        self.reenroll_label.setVisible(
-            self._central_state is not None
-            and self._central_state.settings.auth_failed)
 
     def _zones_for_project(self, project_id: str):
         """(zones, full_page) of one project's stored config, or None."""
@@ -300,61 +241,10 @@ class MainWindow(QMainWindow):
         elif widget is getattr(self, "search_panel", None):
             self.search_panel.reload_choices()
 
-    def restore_geometry_or_default(self) -> None:
-        """Open where the operator left the window (if that is still on a screen),
-        otherwise at a size that suits this screen; remember it from now on."""
-        from PyQt6.QtCore import QSettings
-        self._remember_geometry = True
-        saved = QSettings("DOKScanner", "DOKScanner").value("window/geometry")
-        if saved is not None and self.restoreGeometry(saved):
-            return
-        fit_to_screen(self, DEFAULT_W, DEFAULT_H, share=0.94)
-
-    def start_idle_lock(self, app, minutes: float | None = None) -> None:
-        """Lock the session after `minutes` without keyboard or mouse use (0 = never)."""
-        from ui.idle_lock import IdleGuard, configured_minutes
-        self._idle = IdleGuard(configured_minutes() if minutes is None else minutes, self)
-        self._idle.idle.connect(self.lock_session)
-        self._idle.start(app)
-
-    def lock_session(self) -> None:
-        """Cover the window until the signed-in user types their password; a wrong
-        password three times, or Sign out, ends the session."""
-        from ui.idle_lock import UnlockDialog
-        user = Session.current_user()
-        if user is None or getattr(self, "_locked", False):
-            return
-        self._locked = True
-        self.db.append_audit(None, user.username, "session_locked", {})
-        try:
-            dialog = UnlockDialog(self.db, user.username, self)
-            ok = dialog.exec() == dialog.DialogCode.Accepted
-        finally:
-            self._locked = False
-        if ok:
-            self.db.append_audit(None, user.username, "session_unlocked", {})
-            if getattr(self, "_idle", None) is not None:
-                self._idle.rearm()
-        else:
-            self.sign_out()
 
     def _on_qc_ready(self, _doc_id: str) -> None:
         self.qc_panel.refresh()
 
-    def closeEvent(self, event) -> None:
-        if getattr(self, "_remember_geometry", False):
-            from PyQt6.QtCore import QSettings
-            QSettings("DOKScanner", "DOKScanner").setValue("window/geometry", self.saveGeometry())
-        super().closeEvent(event)
-        if event.isAccepted():
-            self.closed.emit(self._signed_out)
-
-    def sign_out(self) -> None:
-        """End the session. The program stays open and shows the sign-in page again (see main.py); closing the
-        window any other way quits the program."""
-        Session.logout(self.db)
-        self._signed_out = True
-        self.close()
 
     def show_in_index(self, document_id: str) -> None:
         """Open a document in the Index tab (from a search result)."""
@@ -382,58 +272,6 @@ class MainWindow(QMainWindow):
         elif event.get("stage") == "batch" and event.get("status") == "no_documents":
             self.warn_no_documents(event.get("pages", 0), event.get("reasons") or {})
 
-    _REASON_TEXT = {"custody_label": "custody label sheet",
-                    "separator": "barcode separator sheet",
-                    "blank": "blank page"}
-
-    def warn_no_documents(self, pages: int, reasons: dict) -> None:
-        """A batch whose every page was left out has nothing to review: say so
-        and why, instead of leaving the operator to look for documents."""
-        counts: dict[str, int] = {}
-        for why in reasons.values():
-            counts[why] = counts.get(why, 0) + 1
-        detail = ", ".join(f"{n} {self._REASON_TEXT.get(why, why)}"
-                           for why, n in sorted(counts.items()))
-        box = QMessageBox(
-            QMessageBox.Icon.Warning, "No documents created",
-            f"None of the {pages} scanned page(s) became a document ({detail}). "
-            "Nothing was added to QC Review or exported. If these pages were "
-            "real documents, check the project's separation settings.",
-            parent=self)
-        box.setTextFormat(Qt.TextFormat.PlainText)
-        box.setModal(False)
-        box.show()
-        self._no_documents_box = box
-
-    def warn_unknown_custody_label(self, batch_id: str, page_no,
-                                   left_out: bool = True) -> None:
-        """One non-blocking warning per batch: a custody label QR that no
-        bundle in this database owns was scanned (the page was left out of
-        the documents)."""
-        if batch_id in self._unknown_label_batches:
-            return
-        self._unknown_label_batches.add(batch_id)
-        box = QMessageBox(
-            QMessageBox.Icon.Warning, "Unknown custody label",
-            f"Page {page_no} of the batch you are scanning carries a custody "
-            "label that this system does not know (another PC's bundle, a "
-            "mistyped or reissued sheet). "
-            + ("It was left out of the documents" if left_out
-               else "The page was kept as a document")
-            + " and no custody checkpoint was recorded. Check the bundle in "
-            "the Custody tab.", parent=self)
-        box.setTextFormat(Qt.TextFormat.PlainText)
-        box.setModal(False)
-        box.show()
-        self._unknown_label_box = box
-
-    def report_unreadable_projects(self) -> int:
-        """At startup: tell the operator now about projects that cannot be
-        read, not only when they open the scan wizard. Returns how many."""
-        _readable, unreadable = readable_projects(self.db.list_projects("active"))
-        if unreadable:
-            self._warn_unreadable_projects(unreadable)
-        return len(unreadable)
 
     def open_cover_sheets(self) -> None:
         from ui.cover_sheet_dialog import CoverSheetDialog
@@ -452,49 +290,6 @@ class MainWindow(QMainWindow):
         wizard.batch_ready.connect(self.start_batch)
         wizard.exec()
 
-    def _warn_unreadable_projects(self, names: list[str]) -> None:
-        """ONE warning naming the projects that could not be read (names
-        only, never config content), as plain text."""
-        shown = ", ".join(names[:_MAX_REFUSED_LINES])
-        if len(names) > _MAX_REFUSED_LINES:
-            shown += f" and {len(names) - _MAX_REFUSED_LINES} more"
-        box = QMessageBox(
-            QMessageBox.Icon.Warning, "Projects not listed",
-            f"{len(names)} project(s) are unreadable and are not listed: "
-            f"{shown}. Open the Workflow Designer to repair them.", parent=self)
-        box.setTextFormat(Qt.TextFormat.PlainText)
-        repair_btn = None
-        if self._can_repair_projects():
-            repair_btn = box.addButton("Repair…", QMessageBox.ButtonRole.ActionRole)
-        box.exec()
-        if repair_btn is not None and box.clickedButton() is repair_btn:
-            self.open_project_repair()
-
-    def _can_repair_projects(self) -> bool:
-        user = Session.current_user()
-        return user is not None and user.can("project.edit")             and self.profile_manager is not None
-
-    def open_project_repair(self) -> None:
-        from ui.project_repair_dialog import ProjectRepairDialog
-        dialog = ProjectRepairDialog(self.db, self.profile_manager, self.audit,
-                                     Session.current_user(), self)
-        dialog.exec()
-
-    def report_refused_batches(self, refused: list) -> None:
-        """Tell the operator which interrupted batches were not resumed at
-        startup (Pipeline.refused_batches: (batch_id, message) pairs, both
-        value-free). Shows nothing for an empty list."""
-        if not refused:
-            return
-        lines = [f"{batch_id}: {message}"
-                 for batch_id, message in refused[:_MAX_REFUSED_LINES]]
-        if len(refused) > _MAX_REFUSED_LINES:
-            lines.append(f"and {len(refused) - _MAX_REFUSED_LINES} more")
-        QMessageBox.warning(
-            self, "Batches not recovered",
-            "\n".join(lines) + "\n\nThese batches were interrupted and "
-            "their project is not available, so they were not resumed. Fix "
-            "the project and rescan.")
 
     def start_batch(self, batch_id: str, jobs: list) -> None:
         user = Session.current_user()

@@ -14,6 +14,11 @@ All notable changes to DOK Scanner. The newest release is first. The version num
   schema and migrations and takes its queries from `projects_repo`, `documents_repo`, `custody_repo` and `users_repo`;
   the pipeline (`pipeline/job_queue.py`, 856 lines) takes the indexing and the last (export and delivery) stage from
   `indexing.py` and `delivery_stage.py`. The public methods and the logger names are unchanged.
+- **The two big screens are split too.** The workflow designer (`ui/workflow_designer.py`, 1034 lines) builds its form
+  group box by group box (`designer_form.py`) and takes the project selection, settings, zones and types, saving and
+  rules from `designer_selection`, `designer_config`, `designer_zones`, `designer_save` and `designer_rules`; the main
+  window (`ui/main_window.py`, 524 lines) takes its sidebar blocks, session handling and notices from
+  `sidebar_blocks.py`, `main_session.py` and `main_notices.py`. Names tests and callers import are unchanged.
 - **`scripts/check_layers.py`** (also a test and a CI step) fails when a package imports one it must not, so the layering
   described in the README cannot drift back.
 
