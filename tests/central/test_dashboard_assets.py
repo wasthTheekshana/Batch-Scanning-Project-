@@ -2,6 +2,8 @@
 same locked-down policy, and an auditor is shown no write controls."""
 from pathlib import Path
 
+from tests.central.dash_files import all_js, script_names  # noqa: E402,F401
+
 DASHBOARD = Path(__file__).parents[2] / "central" / "dashboard"
 
 
@@ -20,7 +22,7 @@ def test_other_files_are_still_not_served(client):
 
 
 def test_the_dashboard_hides_write_controls_from_an_auditor():
-    js = (DASHBOARD / "app.js").read_text(encoding="utf-8")
+    js = all_js()
     assert 'role !== "admin" ? null' in js and "(read-only)" in js
     plain = js.replace("wbutton(", "WRITE(")
     for label in ("Add PC", "Delete", "Revoke key", "Assign", "Add admin...", "Save",
@@ -29,7 +31,7 @@ def test_the_dashboard_hides_write_controls_from_an_auditor():
 
 
 def test_the_project_form_exists_and_the_raw_json_is_one_tab_away():
-    js = (DASHBOARD / "app.js").read_text(encoding="utf-8")
+    js = all_js()
     assert "projectDialog" in js and "JSON (advanced)" in js and "window.DokForm" in js
 
 
@@ -38,7 +40,7 @@ import re  # noqa: E402
 
 
 def _js() -> str:
-    return (DASHBOARD / "app.js").read_text(encoding="utf-8")
+    return all_js()
 
 
 def _routes(js: str) -> set[str]:
@@ -68,7 +70,7 @@ def test_nothing_in_the_dashboard_needs_an_inline_style_or_script_or_another_sit
     js = _js()
     assert not re.search(r"""setAttribute\(\s*["']style["']""", js)
     assert not re.search(r"""\bstyle\s*:\s*["'{]""", js)               # h("x", { style: ... })
-    for name in ("app.js", "form.js", "index.html", "style.css"):
+    for name in (*script_names(), "index.html", "style.css"):
         text = (DASHBOARD / name).read_text(encoding="utf-8")
         # the SVG namespace is an identifier, not an address anything is fetched from
         text = text.replace("http://www.w3.org/2000/svg", "")

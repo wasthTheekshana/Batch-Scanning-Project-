@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.central.dash_files import all_js, script_names  # noqa: E402,F401
+
 DASH = Path(__file__).parent.parent.parent / "central" / "dashboard"
 
 
@@ -73,12 +75,12 @@ def test_the_html_has_no_inline_script_style_or_external_resources():
     "eval(", "new Function", "setTimeout(\"", "setInterval(\"",
     "localStorage", "sessionStorage"])
 def test_the_script_never_turns_data_into_markup_or_stores_the_token(banned):
-    js = (DASH / "app.js").read_text(encoding="utf-8")
+    js = all_js()
     assert banned not in js
 
 
 def test_the_script_only_talks_to_its_own_origin():
-    js = (DASH / "app.js").read_text(encoding="utf-8")
+    js = all_js()
     # the SVG namespace is an identifier for the charts' elements, not an address anything is fetched from
     js_without_namespace = js.replace("http://www.w3.org/2000/svg", "")
     assert not re.search(r"""https?://""", js_without_namespace)

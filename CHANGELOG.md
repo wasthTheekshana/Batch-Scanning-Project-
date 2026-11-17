@@ -19,6 +19,9 @@ All notable changes to DOK Scanner. The newest release is first. The version num
   rules from `designer_selection`, `designer_config`, `designer_zones`, `designer_save` and `designer_rules`; the main
   window (`ui/main_window.py`, 524 lines) takes its sidebar blocks, session handling and notices from
   `sidebar_blocks.py`, `main_session.py` and `main_notices.py`. Names tests and callers import are unchanged.
+- **The central dashboard's one 1261-line script is nine files** (`core`, `views_basic`, `views_config`, `views_settings`,
+  `fleet_common`, `views_search`, `views_fleet`, `views_activity`, `app`). They are plain scripts that share one page scope and
+  load in the order `index.html` lists; the strict content policy and the source-scan tests cover all of them.
 - **`scripts/check_layers.py`** (also a test and a CI step) fails when a package imports one it must not, so the layering
   described in the README cannot drift back.
 
